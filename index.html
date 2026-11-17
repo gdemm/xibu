@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>西部赏金 · 红石镇</title>
+<style>
+:root{--vw:1vw;--vh:1vh}
+#start.pz p,#start.pz h2,#start.pz h1{display:none}
+#start.pz .poster::before{content:"暂停";display:block;font-size:22px;letter-spacing:6px;margin-bottom:8px}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:#1a0f08;touch-action:none;font-family:"Songti SC","STSong",serif;color:#f1dcb4}
+canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block}
+.hidden{display:none!important}
+#portrait{display:none;position:fixed;inset:0;z-index:999;background:#1a0f08;align-items:center;justify-content:center;font-size:22px;text-align:center;padding:20px}
+@media (orientation:portrait){#portrait{display:flex;flex-direction:column;gap:18px}}
+body.rot #portrait{display:none!important}
+body.rot{position:fixed;top:0;left:0;width:var(--lw);height:var(--lh);transform-origin:0 0;transform:translateX(var(--sw)) rotate(90deg)}
+#portrait button{font:inherit;font-size:18px;padding:10px 22px;border-radius:10px;border:1px solid #c9a46a;background:#5a2a14;color:#f1dcb4}
+.btn.exit{background:#3a2418}
+.screen{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(40,22,10,.55),rgba(15,8,3,.92))}
+.poster{background:#e8d2a2 url() ;color:#3b2310;border:3px solid #6b4220;box-shadow:0 10px 40px #000,inset 0 0 40px rgba(110,70,30,.45);padding:14px 26px;text-align:center;max-width:calc(var(--vw) * 92);max-height:calc(var(--vh) * 94);overflow:auto}
+.poster h1{font-size:clamp(26px,calc(var(--vh) * 6),46px);letter-spacing:6px}
+.poster h2{font-size:clamp(16px,calc(var(--vh) * 4),24px);margin:4px 0;color:#7a1d10}
+.poster p{font-size:13px;margin:4px 0;line-height:1.5}
+.btn{font-family:inherit;font-size:20px;padding:8px 28px;margin:8px 6px 2px;border:2px solid #4a2a10;background:#7a1d10;color:#f6e3bd;border-radius:4px;box-shadow:0 3px 0 #3b0d06}
+.btn.alt{background:#5a3a1a}
+.set{display:grid;grid-template-columns:auto 1fr auto;gap:6px 10px;align-items:center;font-size:14px;text-align:left;margin:8px auto 0;max-width:360px}
+.set input[type=range]{width:100%}
+#loading{position:fixed;left:50%;bottom:20%;transform:translateX(-50%);z-index:60;font-size:18px}
+#hud{position:fixed;inset:0;pointer-events:none;z-index:10}
+#bars{position:absolute;left:14px;top:12px;width:calc(var(--vw) * 30);max-width:230px}
+.bar{height:10px;background:rgba(0,0,0,.5);border:1px solid rgba(255,230,190,.5);margin-bottom:5px;border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;width:100%}
+#hp i{background:linear-gradient(90deg,#8e1a12,#d9452c)}#de i{background:linear-gradient(90deg,#a87a12,#f0c43a);width:0}
+#info{position:absolute;top:10px;left:50%;transform:translateX(-50%);text-align:center;text-shadow:0 2px 3px #000;font-size:15px}
+#mini{position:absolute;right:12px;top:10px;width:96px;height:96px;border-radius:50%;background:rgba(20,10,4,.45);border:1px solid rgba(255,230,190,.5)}
+#ammo{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;gap:6px;align-items:center;font-size:15px;text-shadow:0 2px 3px #000}
+#ammo b{width:11px;height:16px;border-radius:5px 5px 2px 2px;background:#e8c27a;border:1px solid #5a3a1a}#ammo b.e{background:rgba(0,0,0,.45)}
+#cross{position:absolute;left:50%;top:50%;width:26px;height:26px;transform:translate(-50%,-50%)}
+#cross:before,#cross:after{content:"";position:absolute;background:#fff;box-shadow:0 0 2px #000}
+#cross:before{left:12px;top:0;width:2px;height:26px}#cross:after{top:12px;left:0;height:2px;width:26px}
+#cross.on:before,#cross.on:after{background:#ff4a3a}
+#hitm{position:absolute;left:50%;top:50%;width:34px;height:34px;transform:translate(-50%,-50%) rotate(45deg);border:2px solid #fff;opacity:0;transition:opacity .15s}
+#wave{position:absolute;top:30%;width:100%;text-align:center;font-size:clamp(26px,calc(var(--vh) * 7),52px);text-shadow:0 3px 8px #000;opacity:0;transition:opacity .4s;letter-spacing:4px}
+#dmg{position:absolute;inset:0;box-shadow:inset 0 0 120px rgba(170,0,0,.0);transition:box-shadow .3s}
+#marks{position:absolute;inset:0}
+.mk{position:absolute;color:#d61b10;font:bold 34px sans-serif;transform:translate(-50%,-50%);text-shadow:0 0 4px #000}
+#vign{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 45%,rgba(60,25,5,.75));opacity:0;transition:opacity .25s}
+#duel{position:absolute;top:22%;width:100%;text-align:center;font-size:clamp(34px,calc(var(--vh) * 10),72px);text-shadow:0 4px 10px #000;letter-spacing:8px}
+#touch{position:fixed;inset:0;z-index:20}
+#joy{position:absolute;left:calc(var(--vw) * 4);bottom:calc(var(--vh) * 5);width:min(190px,calc(var(--vh) * 42));height:min(190px,calc(var(--vh) * 42));border-radius:50%;background:rgba(255,235,200,.10);border:2px solid rgba(255,235,200,.35);pointer-events:none}
+#knob{position:absolute;left:50%;top:50%;width:42%;height:42%;margin:-21% 0 0 -21%;border-radius:50%;background:rgba(255,235,200,.45);border:2px solid rgba(255,255,255,.6)}
+.tb{position:absolute;border-radius:50%;background:rgba(40,20,8,.45);border:2px solid rgba(255,230,190,.55);color:#f6e3bd;display:flex;align-items:center;justify-content:center;font-size:14px;text-shadow:0 1px 2px #000}
+#bFire{right:calc(var(--vw) * 5);bottom:calc(var(--vh) * 9);width:min(110px,calc(var(--vh) * 25));height:min(110px,calc(var(--vh) * 25));background:rgba(130,25,12,.55);font-size:18px}
+#bDE{right:calc(calc(var(--vw) * 5) + min(110px,calc(var(--vh) * 25)) + 10px);bottom:calc(calc(var(--vh) * 9) + min(110px,calc(var(--vh) * 25)) - 20px);width:min(70px,calc(var(--vh) * 16));height:min(70px,calc(var(--vh) * 16));font-size:12px}
+#bRel{right:calc(calc(var(--vw) * 5) + min(110px,calc(var(--vh) * 25)) + 14px);bottom:calc(var(--vh) * 4);width:min(58px,calc(var(--vh) * 14));height:min(58px,calc(var(--vh) * 14));font-size:12px}
+#bJump{right:calc(calc(var(--vw) * 5) + 10px);bottom:calc(calc(var(--vh) * 9) + min(110px,calc(var(--vh) * 25)) + 12px);width:min(56px,calc(var(--vh) * 13));height:min(56px,calc(var(--vh) * 13));font-size:12px}
+#bSet{right:120px;top:12px;width:38px;height:38px;font-size:18px}
+#bMute{right:166px;top:12px;width:38px;height:38px;font-size:16px}
+.tb.on{background:rgba(240,190,60,.6)}
+#bAim{right:calc(calc(var(--vw) * 5) + min(110px,calc(var(--vh) * 25)) + min(70px,calc(var(--vh) * 16)) + 22px);bottom:calc(calc(var(--vh) * 9) + min(110px,calc(var(--vh) * 25)) - 6px);width:min(66px,calc(var(--vh) * 15));height:min(66px,calc(var(--vh) * 15));font-size:13px;background:rgba(60,40,20,.5)}
+#bAct{right:calc(calc(var(--vw) * 5) + min(110px,calc(var(--vh) * 25)) + min(58px,calc(var(--vh) * 14)) + 26px);bottom:calc(calc(var(--vh) * 4) + min(58px,calc(var(--vh) * 14)) + 12px);width:min(64px,calc(var(--vh) * 15));height:min(64px,calc(var(--vh) * 15));font-size:14px;background:rgba(200,150,50,.6)}
+#actHint{position:fixed;left:50%;bottom:22%;transform:translateX(-50%);z-index:20;background:rgba(30,16,8,.7);padding:6px 16px;border-radius:6px;font-size:16px}
+#shop .btn{display:block;margin:8px auto;min-width:220px}
+#bHorse{right:calc(calc(var(--vw) * 5) + min(110px,calc(var(--vh) * 25)) + min(58px,calc(var(--vh) * 14)) + 26px);bottom:calc(var(--vh) * 4);width:min(58px,calc(var(--vh) * 14));height:min(58px,calc(var(--vh) * 14));font-size:13px;background:rgba(90,60,25,.55)}
+#bGallop{left:calc(calc(var(--vw) * 4) + min(190px,calc(var(--vh) * 42)) + 12px);bottom:calc(var(--vh) * 6);width:min(62px,calc(var(--vh) * 15));height:min(62px,calc(var(--vh) * 15));font-size:13px;background:rgba(120,70,20,.55)}
+#cross{transition:opacity .15s,transform .15s}
+
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="portrait"><div>请把手机横过来游玩</div><button id="forceRot">手机锁了方向？点这里直接横屏玩</button></div>
+<div id="loading">正在装填子弹… 0%</div>
+
+<div id="hud" class="hidden">
+  <div id="bars"><div class="bar" id="hp"><i></i></div><div class="bar" id="de"><i></i></div></div>
+  <div id="info"><span id="bounty">赏金 $0</span> · <span id="wavei">第 1 波</span> · <span id="left">剩 0</span></div>
+  <canvas id="mini" width="192" height="192"></canvas>
+  <div id="cross"></div><div id="hitm"></div>
+  <div id="ammo"></div>
+  <div id="wave"></div><div id="dmg"></div><div id="vign"></div><div id="marks"></div>
+  <div id="duel"></div>
+</div>
+
+<div id="touch" class="hidden">
+  <div id="joy"><div id="knob"></div></div>
+  <div class="tb" id="bFire">开火</div>
+  <div class="tb" id="bDE">死神<br>之眼</div>
+  <div class="tb" id="bRel">换弹</div>
+  <div class="tb" id="bJump">跳</div>
+  <div class="tb" id="bAim">瞄准</div>
+  <div class="tb hidden" id="bAct">互动</div>
+  <div class="tb" id="bHorse">唤马</div>
+  <div class="tb" id="bGallop">疾驰</div>
+  <div class="tb" id="bSet">⚙</div>
+  <div class="tb" id="bMute">🔊</div>
+</div>
+
+<div id="start" class="screen hidden"><div class="poster">
+  <h2>悬 赏</h2><h1>秃鹫帮</h1><h2>赏金 $500 · 死活不论</h2>
+  <p>红石镇是开放的：逛街、去杂货铺买补给、在酒馆喝一杯；到警长告示板接下秃鹫帮的悬赏就开打。</p>
+  <p>左边摇杆走路（推到底奔跑），右半屏拖动转视角，按住「瞄准」越肩瞄准，开火键也能拖动瞄准。<br>「唤马」吹口哨叫马，靠近后「上马」，骑马时摇杆控制方向，推到底跑起来，「疾驰」或双击摇杆全速。<br>死神之眼：时间变慢，点敌人打标记，再按一次连发。电脑：WASD / 鼠标 / 右键瞄准 / F 上下马 / H 唤马 / Shift 疾驰 / T 互动。走到发光圆圈里按「互动」。</p>
+  <div class="set">
+    <span>视角灵敏度</span><input type="range" id="sSens" min="0.3" max="3" step="0.1"><span id="vSens"></span>
+    <span>辅助瞄准</span><select id="sAim"><option value="2">强</option><option value="1">弱</option><option value="0">关</option></select><span></span>
+    <span>画质</span><select id="sQ"><option value="2">高</option><option value="1">中</option><option value="0">低</option></select><span></span>
+    <span>旋转屏幕</span><select id="sRot"><option value="0">跟随手机</option><option value="1">强制横屏</option></select><span></span>
+  </div>
+  <button class="btn" id="go">开 始</button><button class="btn alt hidden" id="resume">继 续</button><button class="btn exit hidden" id="quit">退出到主菜单</button>
+</div></div>
+
+<div id="shop" class="screen hidden"><div class="poster"><h1 id="shopT"></h1><div id="shopBody"></div><button class="btn exit" id="shopX">离 开</button></div></div>
+<div id="actHint" class="hidden"></div>
+
+<div id="end" class="screen hidden"><div class="poster">
+  <h1 id="endT">你倒下了</h1><p id="endS"></p>
+  <button class="btn" id="again">再来一局</button><button class="btn alt hidden" id="roam">回镇上逛逛</button>
+</div></div>
+
+<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

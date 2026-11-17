@@ -1,0 +1,10 @@
+Realtime Rancher's 3D Model Pack — horse (LD_HorseRtime02.obj + 2k textures)
+Author: Lyndon Daniels (opengameart.org user "lyndon")
+Source: https://opengameart.org/content/realtime-ranchers-3d-model-pack
+File used: https://opengameart.org/sites/default/files/horse.zip
+License as listed on the source page (read 2026-11-15): CC0 — Creative Commons Zero 1.0 Universal (public domain dedication)
+https://creativecommons.org/publicdomain/zero/1.0/
+No attribution required; credited here anyway.
+
+Modifications in this project: mesh rescaled and skinned to the Quaternius Animated Animal Pack horse skeleton (CC0),
+textures downscaled to 1024 (JPG/WebP), AO map dropped. See tools/horse_build.mjs.
