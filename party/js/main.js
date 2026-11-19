@@ -125,6 +125,7 @@ function respawn(e) {
 }
 
 function startMatch(opts) {
+  G.paused = false; $('settings').classList.add('hidden');
   opts = { team: 'blue', size: 5, target: 30, diff: 'normal', ...(opts || {}) };
   G.opts = opts;
   const mapKind = opts.mode === 'br' && opts.brMap !== 'ship' ? 'island' : 'ship';
@@ -737,11 +738,32 @@ document.querySelectorAll('#settings .seg').forEach(seg => seg.addEventListener(
   S[k] = k === 'quality' ? v : +v; G.quality = S.quality; saveS(); syncSettingsUI(); if (k === 'quality') applyPixelRatio();
 }));
 $('sens').addEventListener('input', () => { S.sens = +$('sens').value; saveS(); syncSettingsUI(); });
-const openSettings = () => { syncSettingsUI(); $('btnQuit').classList.toggle('hidden', G.state !== 'playing'); $('settings').classList.remove('hidden'); if (document.pointerLockElement) document.exitPointerLock(); };
+const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+const openSettings = () => {
+  syncSettingsUI(); const play = G.state === 'playing';
+  G.paused = play; P.firing = false; P.joyX = P.joyY = 0;
+  $('setTitle').textContent = play ? '已暂停' : '画面设置'; $('setClose').textContent = play ? '继续游戏' : '确定';
+  $('btnQuit').classList.toggle('hidden', !play); $('btnExitFull').classList.toggle('hidden', !isFull());
+  $('settings').classList.remove('hidden'); if (document.pointerLockElement) document.exitPointerLock();
+};
+async function exitFull() {
+  try { screen.orientation?.unlock?.(); } catch (e) {}
+  try { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.webkitFullscreenElement) await document.webkitExitFullscreen?.(); } catch (e) {}
+}
+function syncFullBtns() { const f = isFull(); $('tExit').classList.toggle('hidden', !f); $('tFull').classList.toggle('hidden', f); $('btnExitFull').classList.toggle('hidden', !f); }
+let wasFull = false;
+function onFullChange() {
+  const f = isFull(); syncFullBtns();
+  if (wasFull && !f) { try { screen.orientation?.unlock?.(); } catch (e) {} if (G.state === 'playing' && $('settings').classList.contains('hidden')) openSettings(); }
+  wasFull = f;
+}
+document.addEventListener('fullscreenchange', onFullChange); document.addEventListener('webkitfullscreenchange', onFullChange);
+$('tExit').addEventListener('click', () => { exitFull(); openSettings(); });
+$('btnExitFull').addEventListener('click', () => { exitFull(); $('btnExitFull').classList.add('hidden'); });
 $('btnSettings').addEventListener('click', openSettings); $('tSet').addEventListener('click', openSettings);
-$('setClose').addEventListener('click', () => $('settings').classList.add('hidden'));
+$('setClose').addEventListener('click', () => { G.paused = false; $('settings').classList.add('hidden'); });
 function toLobby() {
-  P.inCar = null;
+  P.inCar = null; G.paused = false;
   G.state = 'lobby'; $('settings').classList.add('hidden'); $('endScr').classList.add('hidden');
   $('hud').classList.add('hidden'); $('touch').classList.add('hidden'); $('topBtns').classList.add('hidden'); $('lobby').classList.remove('hidden');
 }
@@ -763,7 +785,7 @@ function loop(ts) {
   const dt = Math.min(0.05, (ts - last) / 1000); last = ts;
   frames++; fpsT += dt; if (fpsT >= 1) { G.fps = Math.round(frames / fpsT); frames = 0; fpsT = 0; if (+S.showFps) $('fpsMeter').textContent = G.fps + ' FPS'; }
   if (G.state === 'lobby' || !G.map) return;
-  if (G.state === 'playing') {
+  if (G.state === 'playing' && !G.paused) {
     G.now += dt; G.timeLeft -= dt;
     if (G.timeLeft <= 0) { G.timeLeft = 0; endMatch(); }
     if (G.mode !== 'br') { for (const e of G.entities) if (!e.alive && G.now >= e.respawnAt && G.state === 'playing') respawn(e); }
@@ -774,7 +796,7 @@ function loop(ts) {
     for (const b of G.bots) updateBot(b, dt, G);
     for (const e of G.entities) { if (!e._pp) { e._pp = e.pos.clone(); e.hv = new THREE.Vector3(); } _hvT.subVectors(e.pos, e._pp).divideScalar(Math.max(dt, 1e-3)); _hvT.y = 0; if (_hvT.length() > 10) _hvT.set(0, 0, 0); e.hv.lerp(_hvT, 0.25); e._pp.copy(e.pos); }
   }
-  if (G.state === 'playing' || G.state === 'ended') updateArrows(dt, ARROW_H);
+  if ((G.state === 'playing' && !G.paused) || G.state === 'ended') updateArrows(dt, ARROW_H);
   // dead bot animation
   for (const b of G.bots) if (!b.alive && b.mesh.visible) {
     animateDeath(b.mesh, G.now - b.deadT);
