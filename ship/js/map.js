@@ -281,7 +281,7 @@ export function buildMap(scene, quality) {
     seaGeo.attributes.position.needsUpdate = true;
   }
 
-  return { solids, nodes, covers, spawns, minimapRects, findPath, nearestNode, rayWorld, hasLOS, update, walkY: WY };
+  return { solids, nodes, covers, spawns, minimapRects, findPath, nearestNode, rayWorld, hasLOS, update, walkY: WY, bounds: SHIP, kind: 'ship' };
 }
 
 // --------- shared character physics ---------

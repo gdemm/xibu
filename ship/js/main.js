@@ -1,17 +1,20 @@
 // 货轮突击 - main: renderer, match flow, player, input, settings
 import * as THREE from 'three';
 import { buildMap, moveEntity } from './map.js';
+import { buildIsland } from './island.js';
 import { WEAPONS, ORDER, buildViewmodels, MUZZLE } from './weapons.js';
 import { createBotMesh, updateBot, eyeOf } from './bots.js';
-import { animateDeath, resetSoldier, animateSoldier, soldierTris } from './soldier.js';
+import { animateDeath, resetSoldier, animateSoldier, soldierTris, createSoldier } from './soldier.js';
+import { spawnVehicles, driveVehicle, poseVehicle, inFootprint, vehicleBox, exitSpot } from './vehicles.js';
 import { sfx, unlockAudio } from './audio.js';
 import * as HUD from './hud.js';
+import { setupBR, updateBR, brKilled, brResult, brBoardHTML, brGoal, cleanup as brCleanup } from './br.js';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
 // ---------------- settings ----------------
-const DEF = { quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, showFps: 0 };
+const DEF = { quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, showFps: 0, tp: 0 };
 let S = { ...DEF };
 try { S = { ...DEF, ...JSON.parse(localStorage.getItem('shipfps.settings') || '{}') }; } catch (e) {}
 const saveS = () => { try { localStorage.setItem('shipfps.settings', JSON.stringify(S)); } catch (e) {} };
@@ -47,15 +50,16 @@ const G = window.__game = {
   diff: 'normal', target: 30, map: null, weapon: WEAPONS.rifle, ammo: {}, reloading: false, fps: 0, opts: null,
 };
 let builtQuality = null;
+let BRH = null; // battle-royale helpers, filled after functions are defined
 const tracers = [];
 
-function buildWorld() {
+function buildWorld(kind = 'ship') {
   // clear old world
   for (let i = scene.children.length - 1; i >= 0; i--) { const o = scene.children[i]; scene.remove(o); o.traverse?.(c => { c.geometry?.dispose?.(); }); }
   scene.add(new THREE.HemisphereLight(0xdcefff, 0x5a4a3a, 1.6));
   const sun = new THREE.DirectionalLight(0xfff1d6, 1.6); sun.position.set(-40, 60, 25); scene.add(sun);
-  G.map = buildMap(scene, S.quality);
-  builtQuality = S.quality;
+  G.map = kind === 'island' ? buildIsland(scene, S.quality) : buildMap(scene, S.quality);
+  builtQuality = S.quality + kind;
   scene.fog = new THREE.Fog(0x9cc6de, 35, { low: 120, mid: 170, high: 240 }[S.quality]);
   tracers.length = 0;
   const tm = new THREE.LineBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.9 });
@@ -85,10 +89,10 @@ function makeEntity(name, team, isPlayer) {
     yaw: 0, pitch: 0, crouch: false, onGround: true, lastFired: -9, respawnAt: 0, protectUntil: 0, lastHurt: -9, lastAttacker: null,
   };
 }
-function makeBot(name, team) {
+function makeBot(name, team, skin) {
   const b = makeEntity(name, team, false);
   Object.assign(b, {
-    mesh: createBotMesh(team), thinkT: Math.random() * 0.3, path: null, pathI: 0, target: null, reactT: 0, lastSeen: new THREE.Vector3(), lostT: 0,
+    mesh: createBotMesh(skin || team), thinkT: Math.random() * 0.3, path: null, pathI: 0, target: null, reactT: 0, lastSeen: new THREE.Vector3(), lostT: 0,
     aiState: 'patrol', coverUntil: 0, nextCoverOK: 0, strafeT: 0, strafeDir: 1, crouchFire: false, nextShot: 0, burstLeft: 4, shotsFired: 0,
     lastProgPos: new THREE.Vector3(), stuckT: 0, anim: 0, deadT: 0,
   });
@@ -116,9 +120,30 @@ function respawn(e) {
 function startMatch(opts) {
   opts = { team: 'blue', size: 5, target: 30, diff: 'normal', ...(opts || {}) };
   G.opts = opts;
-  if (!G.map || builtQuality !== S.quality) buildWorld();
+  const mapKind = opts.mode === 'br' && opts.brMap !== 'ship' ? 'island' : 'ship';
+  if (!G.map || builtQuality !== S.quality + mapKind) buildWorld(mapKind);
+  const mmEl = $('minimap'); if (mapKind === 'island') { mmEl.width = mmEl.height = 300; mmEl.classList.add('sq'); } else { mmEl.width = 400; mmEl.height = 104; mmEl.classList.remove('sq'); }
+  document.body.classList.toggle('brIsland', mapKind === 'island');
   for (const b of G.bots) scene.remove(b.mesh);
-  G.quality = S.quality; VM.setTeam(opts.team);
+  brCleanup(G, scene);
+  for (const v of G.vehicles || []) scene.remove(v.mesh);
+  G.vehicles = opts.mode === 'br' ? spawnVehicles(scene, G.map) : [];
+  P.inCar = null; if (P.body) { scene.remove(P.body); P.body = null; }
+  G.mode = opts.mode || 'tdm'; G.owned = null;
+  G.quality = S.quality; VM.setTeam(opts.mode === 'br' ? 'blue' : opts.team);
+  if (G.mode === 'br') {
+    G.diff = opts.diff; G.scores = { blue: 0, red: 0 }; G.now = G.now || 0;
+    setupBR(G, scene, BRH);
+    makeBody();
+    $('target').textContent = '';
+    $('lobby').classList.add('hidden'); $('endScr').classList.add('hidden'); $('scoreboard').classList.add('hidden'); $('deathScr').classList.add('hidden');
+    $('hud').classList.remove('hidden'); $('topBtns').classList.remove('hidden'); $('touch').classList.toggle('hidden', !isTouch);
+    document.body.classList.add('br');
+    G.state = 'playing';
+    HUD.centerMsg('绝地求生 · 搜集物资，活到最后', 2400);
+    return;
+  }
+  document.body.classList.remove('br');
   G.diff = opts.diff; G.target = +opts.target; G.scores = { blue: 0, red: 0 }; G.timeLeft = 600;
   const p = makeEntity('你', opts.team, true); G.player = p;
   const bots = [];
@@ -129,6 +154,7 @@ function startMatch(opts) {
   for (let i = 0; i < opts.size; i++) bots.push(makeBot(tagTheirs + theirs[i], enemyTeam));
   G.bots = bots; G.entities = [p, ...bots];
   for (const e of G.entities) respawn(e);
+  makeBody();
   $('target').textContent = `目标 ${G.target} 击杀`;
   $('lobby').classList.add('hidden'); $('endScr').classList.add('hidden'); $('scoreboard').classList.add('hidden');
   $('hud').classList.remove('hidden'); $('topBtns').classList.remove('hidden');
@@ -142,6 +168,11 @@ function endMatch() {
   if (G.state !== 'playing') return;
   G.state = 'ended'; P.firing = false; P.scoped = false;
   if (document.pointerLockElement) document.exitPointerLock();
+  if (G.mode === 'br') {
+    const r = brResult(G); const t = $('endTitle'); t.textContent = r.title; t.className = r.win ? 'win' : 'lose';
+    $('endBoard').innerHTML = brBoardHTML(G, ''); $('deathScr').classList.add('hidden');
+    $('endScr').classList.remove('hidden'); $('touch').classList.add('hidden'); $('scope').style.display = 'none'; return;
+  }
   const my = G.player.team, other = my === 'blue' ? 'red' : 'blue';
   const res = G.scores[my] > G.scores[other] ? 'win' : G.scores[my] < G.scores[other] ? 'lose' : 'draw';
   const t = $('endTitle'); t.textContent = { win: '胜 利', lose: '失 败', draw: '平 局' }[res]; t.className = res === 'win' ? 'win' : 'lose';
@@ -181,33 +212,118 @@ G.fire = function (shooter, origin, dir, weaponId, dmgScale = 1, muzzle) {
   return { hit: best, head, point: end };
 };
 
-function damage(t, amount, attacker, w, head) {
-  if (!t.alive || G.state !== 'playing' || G.now < t.protectUntil) return;
+function damage(t, amount, attacker, w, head, zone) {
+  if (!t.alive || G.state !== 'playing' || (!zone && G.now < t.protectUntil)) return;
   t.hp -= amount; t.lastHurt = G.now; t.lastAttacker = attacker;
   if (t.isPlayer) { $('dmg').style.opacity = 1; setTimeout(() => $('dmg').style.opacity = 0, 140); sfx.hurt(); }
-  if (attacker.isPlayer && t.hp > 0) { HUD.hitMarker(head ? 'head' : 'hit'); head ? sfx.head() : sfx.hit(); }
-  if (!t.isPlayer && attacker !== t && t.alive) { t.lastSeen.copy(attacker.pos); }
+  if (attacker.isPlayer && t.hp > 0 && !zone) { HUD.hitMarker(head ? 'head' : 'hit'); head ? sfx.head() : sfx.hit(); }
+  if (!t.isPlayer && attacker !== t && t.alive && !zone) { t.lastSeen.copy(attacker.pos); }
   if (t.hp <= 0) kill(t, attacker, w, head);
 }
 function kill(t, attacker, w, head) {
-  t.alive = false; t.hp = 0; t.deaths++; attacker.kills++; G.scores[attacker.team]++;
-  t.respawnAt = G.now + 3; t.deadT = G.now;
+  t.alive = false; t.hp = 0; t.deaths++; attacker.kills++; if (G.mode !== 'br') G.scores[attacker.team]++;
+  t.respawnAt = G.mode === 'br' ? Infinity : G.now + 3; t.deadT = G.now;
   HUD.killFeed(attacker, t, w.name, head);
   if (t.isPlayer) {
+    if (P.inCar) leaveCar();
     P.firing = false; P.scoped = false; G.reloading = false;
-    $('deathBy').textContent = `击败你的是 ${attacker.name}${head ? '（爆头）' : ''}`; $('deathScr').classList.remove('hidden');
+    $('deathBy').textContent = attacker.team === 'zone' ? '你倒在了安全区外' : `击败你的是 ${attacker.name}${head ? '（爆头）' : ''}`; $('deathScr').classList.remove('hidden');
   }
   if (attacker.isPlayer) { HUD.hitMarker('kill'); sfx.kill(); HUD.centerMsg(head ? `爆头！击杀 ${t.name}` : `击杀 ${t.name}`, 1100); }
+  if (G.mode === 'br') { brKilled(G, t, BRH); return; }
   if (G.scores[attacker.team] >= G.target) endMatch();
 }
+BRH = {
+  makeEntity, makeBot: (n, t, skin) => makeBot(n, t, skin), setWeapon, HUD, WEAPONS, sfx, $, endMatch,
+  damage: (t, a, att, w, head, zone) => damage(t, a, att, w, head, zone),
+  resetBot: (e) => { resetSoldier(e.mesh); e.mesh.visible = true; e.mesh.rotation.set(0, e.yaw, 0); e.mesh.position.copy(e.pos); e.aiState = 'patrol'; e.path = null; e.target = null; e.burstLeft = 4; e.lastSeen.copy(e.pos); },
+};
+G.brGoal = brGoal;
 G.debugKillBot = function () {
   if (G.state !== 'playing') return null;
   const enemy = G.player.team === 'blue' ? 'red' : 'blue';
   let b = G.bots.find(x => x.team === enemy && x.alive);
-  if (!b) { b = G.bots.find(x => x.team === enemy); respawn(b); }
+  if (G.mode === 'br') b = G.bots.find(x => x.alive);
+  if (!b) { if (G.mode === 'br') return null; b = G.bots.find(x => x.team === enemy); respawn(b); }
   b.protectUntil = 0; kill(b, G.player, WEAPONS.rifle, true);
   return b.name;
 };
+
+// ---------------- third person & vehicles ----------------
+G.solidsNear = (pos) => {
+  const base = G.map.near ? G.map.near(pos) : G.map.solids;
+  if (!G.vehicles?.length) return base;
+  const out = base.slice(); for (const v of G.vehicles) if (v !== P.inCar && Math.abs(v.pos.x - pos.x) < 14 && Math.abs(v.pos.z - pos.z) < 14) out.push(vehicleBox(v));
+  return out;
+};
+const thirdPerson = () => !!P.inCar || (S.tp && !P.scoped);
+function makeBody() { if (P.body) scene.remove(P.body); P.body = createSoldier(G.mode === 'br' ? 'blue' : G.player.team); P.body.visible = false; scene.add(P.body); $('bView')?.classList.toggle('on', !!S.tp); }
+function poseBody(dt, mx, mz, speed, seated) {
+  const b = P.body; if (!b) return;
+  b.visible = G.player.alive && thirdPerson() && !(P.inCar && (P.inCar.type === 'bus' || P.inCar.type === 'truck'));
+  if (!b.visible) return;
+  b.position.copy(G.player.pos); b.rotation.set(0, G.player.yaw, 0);
+  if (seated) { const v = P.inCar; b.rotation.set(0, v.yaw, v.lean, 'YXZ'); b.position.y += { jeep: 0.55, moto: 0.45, bike: 0.5 }[v.type] || 0.5; if (v.type === 'jeep') { b.position.x += Math.cos(v.yaw) * -0.45; b.position.z += -Math.sin(v.yaw) * -0.45; } }
+  animateSoldier(b, dt, { moveX: seated ? 0 : mx, moveZ: seated ? 0 : mz, speed, yaw: b.rotation.y, crouch: !!seated || G.player.crouch, aim: !seated, pitch: G.player.pitch * 0.6, reload: G.reloading ? 1 - Math.max(0, G.reloadEnd - G.now) / G.weapon.reload : -1 });
+}
+const _cd = new THREE.Vector3(), _cp = new THREE.Vector3();
+function chaseCam(x, y, z, dist, side, up) {
+  const p = G.player; _q.set(p.pitch, p.yaw, 0);
+  _cp.set(x, y + up, z);
+  const right = new THREE.Vector3(1, 0, 0).applyEuler(_q); _cp.addScaledVector(right, side);
+  _cd.set(0, 0, 1).applyEuler(_q);
+  const d = Math.min(dist, G.map.rayWorld(_cp, _cd, dist + 0.4) - 0.35);
+  camera.position.copy(_cp).addScaledVector(_cd, Math.max(0.4, d)); if (camera.position.y < 0.3) camera.position.y = 0.3;
+  camera.rotation.set(p.pitch, p.yaw, 0);
+}
+function nearestCar() {
+  const p = G.player; let best = null, bd = 1e9;
+  for (const v of G.vehicles || []) { if (v.driver) continue; if (!inFootprint(v, p.pos.x, p.pos.z, 2.2)) continue; const d = v.pos.distanceTo(p.pos); if (d < bd) { bd = d; best = v; } }
+  return best;
+}
+function toggleCar() {
+  if (G.state !== 'playing' || !G.player?.alive) return;
+  if (P.inCar) { leaveCar(); return; }
+  const v = nearestCar(); if (!v) return;
+  P.inCar = v; v.driver = G.player; P.scoped = false; P.firing = false; G.reloading = false; G.player.crouch = false;
+  G.player.yaw = v.yaw; G.player.pitch = -0.18; HUD.centerMsg(v.T.name + ' · 摇杆前后油门刹车，左右转向', 1600);
+}
+function leaveCar() {
+  const v = P.inCar; if (!v) return; P.inCar = null; v.driver = null;
+  const fr = (x, z) => G.solidsNear({ x, z }).every(b => !(x + 0.5 > b.min.x && x - 0.5 < b.max.x && z + 0.5 > b.min.z && z - 0.5 < b.max.z && b.max.y > 0.3)) && !inFootprint(v, x, z, 0.5);
+  G.player.pos.copy(exitSpot(v, fr)); G.player.vel.set(0, 0, 0);
+}
+function toggleView() { S.tp = S.tp ? 0 : 1; saveS(); const b = $('bView'); if (b) b.classList.toggle('on', !!S.tp); HUD.centerMsg(S.tp ? '第三人称' : '第一人称', 800); }
+function updateCarButton() {
+  const b = $('bCar'); if (!b) return;
+  const show = G.player?.alive && (P.inCar || nearestCar());
+  b.classList.toggle('hidden', !show); if (show) b.textContent = P.inCar ? '下车' : '上车';
+  const hint = $('carHint'); if (hint) { hint.classList.toggle('hidden', !show || isTouch); if (show) hint.textContent = (P.inCar ? 'F 下车' : 'F 上车 ' + nearestCar()?.T.name); }
+  document.body.classList.toggle('driving', !!P.inCar);
+}
+function updateDriving(dt) {
+  const p = G.player, v = P.inCar;
+  const thr = Math.max(-1, Math.min(1, -P.joyY + (P.keys.KeyW ? 1 : 0) - (P.keys.KeyS ? 1 : 0)));
+  const st = Math.max(-1, Math.min(1, P.joyX + (P.keys.KeyD ? 1 : 0) - (P.keys.KeyA ? 1 : 0)));
+  const prevYaw = v.yaw;
+  const hit = driveVehicle(v, dt, Math.abs(thr) > 0.15 ? thr : 0, Math.abs(st) > 0.1 ? st : 0, G.map, G.vehicles);
+  if (hit > 12) damage(p, (hit - 12) * 3, p, { name: '撞车' }, false, true);
+  p.yaw += v.yaw - prevYaw; // camera follows the turn
+  p.pos.set(v.pos.x, 0, v.pos.z); p.vel.set(0, 0, 0); p.onGround = true; p.moving = Math.abs(v.speed) > 0.5;
+  // run over
+  if (Math.abs(v.speed) > 4) for (const e of G.entities) {
+    if (e === p || !e.alive || G.now < (e.carHitT || 0)) continue;
+    if (!inFootprint(v, e.pos.x, e.pos.z, 0.45)) continue;
+    e.carHitT = G.now + 0.6; damage(e, Math.abs(v.speed) * 6 * v.T.hitK, p, { name: v.T.name }, false);
+    const fx = -Math.sin(v.yaw), fz = -Math.cos(v.yaw); e.pos.x += fx * 1.5; e.pos.z += fz * 1.5; e.vel.y = 4;
+  }
+  poseVehicle(v, dt);
+  chaseCam(v.pos.x, v.T.seatY, v.pos.z, v.T.cam, 0, 0.6);
+  poseBody(dt, 0, 0, 0, true);
+  $('scope').style.display = 'none'; $('cross').style.display = 'none';
+  if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); }
+  const kmh = Math.round(Math.abs(v.speed) * 3.6); const sp = $('speedo'); if (sp) sp.textContent = kmh + ' km/h';
+}
 
 // ---------------- player ----------------
 const VMB = G.VMB = { rifle: [0.2, -0.21, -0.52, 0.05], sniper: [0.2, -0.2, -0.5, 0.05], pistol: [0.15, -0.16, -0.42, 0.04], knife: [0.2, -0.19, -0.42, 0.12] };
@@ -219,7 +335,7 @@ function setWeapon(id, silent) {
   P.nextShot = G.now + (silent ? 0 : 0.35); P.switchT = silent ? 0 : 0.35;
   $('bScope').classList.toggle('hidden', !(id === 'sniper' || id === 'rifle'));
 }
-function cycleWeapon(dir = 1) { const i = ORDER.indexOf(G.weapon.id); setWeapon(ORDER[(i + dir + ORDER.length) % ORDER.length]); }
+function cycleWeapon(dir = 1) { let i = ORDER.indexOf(G.weapon.id); for (let n = 0; n < ORDER.length; n++) { i = (i + dir + ORDER.length) % ORDER.length; if (!G.owned || G.owned.has(ORDER[i])) return setWeapon(ORDER[i]); } }
 function startReload() {
   const w = G.weapon, a = G.ammo[w.id];
   if (w.melee || G.reloading || a.mag >= w.mag || a.reserve <= 0 || !G.player.alive) return;
@@ -239,8 +355,13 @@ function playerShoot() {
   if (p.crouch) spread *= 0.6;
   _q.set(p.pitch + (Math.random() - 0.5) * 2 * spread, p.yaw + (Math.random() - 0.5) * 2 * spread, 0);
   _dir.set(0, 0, -1).applyEuler(_q);
-  const muzzle = camera.position.clone().add(new THREE.Vector3(0.18, -0.15, -0.6).applyEuler(_q));
-  G.fire(p, camera.position.clone(), _dir.clone(), w.id, 1, muzzle);
+  let origin = camera.position.clone(), muzzle = camera.position.clone().add(new THREE.Vector3(0.18, -0.15, -0.6).applyEuler(_q));
+  if (thirdPerson()) { // aim where the crosshair points, shoot from the player's eye
+    const far = G.map.rayWorld(origin, _dir, w.range); const aim = origin.clone().addScaledVector(_dir, Math.max(far, 4));
+    origin = new THREE.Vector3(p.pos.x, p.pos.y + P.eye, p.pos.z); _dir.subVectors(aim, origin).normalize();
+    muzzle = origin.clone().addScaledVector(_dir, 0.7); if (P.body) P.body.userData.kick = 1;
+  }
+  G.fire(p, origin, _dir.clone(), w.id, 1, muzzle);
   if (!w.melee) a.mag--;
   P.streak++; P.lastShotT = G.now;
   P.nextShot = G.now + w.rate;
@@ -258,7 +379,7 @@ const keysMoving = () => P.keys.KeyW || P.keys.KeyA || P.keys.KeyS || P.keys.Key
 function updatePlayer(dt) {
   const p = G.player;
   if (!p.alive) {
-    $('respawnIn').textContent = `${Math.max(0, p.respawnAt - G.now).toFixed(1)} 秒后在舱室复活`;
+    if (G.mode !== 'br') $('respawnIn').textContent = `${Math.max(0, p.respawnAt - G.now).toFixed(1)} 秒后在舱室复活`;
     camera.position.y += (p.pos.y + 0.4 - camera.position.y) * Math.min(1, dt * 3);
     return;
   }
@@ -273,6 +394,7 @@ function updatePlayer(dt) {
   // recoil recovery
   const rec = Math.min(P.recoil, dt * 0.12); p.pitch -= rec; P.recoil -= rec;
   p.pitch = Math.max(-1.45, Math.min(1.45, p.pitch));
+  if (P.inCar) { updateDriving(dt); return; }
   // move
   let fx = 0, fz = 0;
   if (P.keys.KeyW) fz += 1; if (P.keys.KeyS) fz -= 1; if (P.keys.KeyD) fx += 1; if (P.keys.KeyA) fx -= 1;
@@ -284,13 +406,15 @@ function updatePlayer(dt) {
   const mx = (-sy * fz + cy * fx) * speed * dt, mz = (-cy * fz - sy * fx) * speed * dt;
   if (P.jumpQ && p.onGround) { p.vel.y = 6.8; }
   P.jumpQ = false;
-  moveEntity(p, mx, mz, dt, G.map.solids);
+  moveEntity(p, mx, mz, dt, G.solidsNear(p.pos));
   p.moving = l > 0.1;
   // eye / camera
   const eyeT = p.crouch ? 1.05 : 1.6; P.eye += (eyeT - P.eye) * Math.min(1, dt * 12);
   P.bob += dt * (p.moving && p.onGround ? speed * 1.6 : 0);
   camera.position.set(p.pos.x, p.pos.y + P.eye + Math.sin(P.bob * 2) * 0.03, p.pos.z);
   camera.rotation.set(p.pitch, p.yaw, 0);
+  if (thirdPerson()) chaseCam(p.pos.x, p.pos.y + P.eye, p.pos.z, 3.4, 0.75, 0.3);
+  poseBody(dt, l > 0.1 ? (-sy * fz + cy * fx) : 0, l > 0.1 ? (-cy * fz - sy * fx) : 0, speed);
   const wantFov = P.scoped ? (G.weapon.scope ? 20 : 52) : 75;
   if (Math.abs(camera.fov - wantFov) > 0.1) { camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 18); camera.updateProjectionMatrix(); }
   // reload
@@ -370,8 +494,10 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Space') { P.jumpQ = true; e.preventDefault(); }
   if (e.code === 'KeyC' || e.code === 'ControlLeft') G.player.crouch = true;
   if (e.code === 'KeyR') startReload();
-  const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code); if (n >= 0) setWeapon(ORDER[n]);
+  const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code); if (n >= 0 && (!G.owned || G.owned.has(ORDER[n]))) setWeapon(ORDER[n]);
   if (e.code === 'KeyQ') cycleWeapon(1);
+  if (e.code === 'KeyF') toggleCar();
+  if (e.code === 'KeyV') toggleView();
 });
 addEventListener('keyup', (e) => {
   P.keys[e.code] = false;
@@ -400,6 +526,8 @@ function btnDown(btn, el) {
   else if (btn === 'reload') startReload();
   else if (btn === 'switch') cycleWeapon(1);
   else if (btn === 'scope') toggleScope();
+  else if (btn === 'car') toggleCar();
+  else if (btn === 'view') toggleView();
 }
 touchLayer.addEventListener('touchstart', (e) => {
   e.preventDefault(); unlockAudio();
@@ -436,12 +564,13 @@ function touchEnd(e) {
 touchLayer.addEventListener('touchend', touchEnd); touchLayer.addEventListener('touchcancel', touchEnd);
 
 // ---------------- UI wiring ----------------
-const lobbyOpts = { team: 'blue', size: 5, target: 30, diff: 'normal' };
+const lobbyOpts = { mode: 'tdm', team: 'blue', size: 5, target: 30, diff: 'normal', brSize: 16, brMap: 'island' };
 document.querySelectorAll('#lobby .seg').forEach(seg => seg.addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   seg.querySelectorAll('button').forEach(x => x.classList.remove('on', 'blue', 'red'));
   b.classList.add('on'); if (seg.dataset.k === 'team') b.classList.add(b.dataset.v);
   const v = b.dataset.v; lobbyOpts[seg.dataset.k] = isNaN(+v) ? v : +v;
+  if (seg.dataset.k === 'mode') document.getElementById('lobby').classList.toggle('brMode', v === 'br');
 }));
 $('btnStart').addEventListener('click', () => { unlockAudio(); startMatch({ ...lobbyOpts }); });
 async function goFull() {
@@ -450,7 +579,7 @@ async function goFull() {
 }
 $('btnFull').addEventListener('click', goFull); $('btnFull2').addEventListener('click', goFull); $('tFull').addEventListener('click', goFull);
 function showScoreboard(on) {
-  $('sbPanel').innerHTML = HUD.scoreboardHTML(G, '战绩') + '<button class="close" id="sbClose">关闭</button>';
+  $('sbPanel').innerHTML = (G.mode === 'br' ? brBoardHTML(G, '战绩') : HUD.scoreboardHTML(G, '战绩')) + '<button class="close" id="sbClose">关闭</button>';
   $('scoreboard').classList.toggle('hidden', !on);
   $('sbClose').onclick = () => showScoreboard(false);
 }
@@ -471,6 +600,7 @@ const openSettings = () => { syncSettingsUI(); $('btnQuit').classList.toggle('hi
 $('btnSettings').addEventListener('click', openSettings); $('tSet').addEventListener('click', openSettings);
 $('setClose').addEventListener('click', () => $('settings').classList.add('hidden'));
 function toLobby() {
+  P.inCar = null;
   G.state = 'lobby'; $('settings').classList.add('hidden'); $('endScr').classList.add('hidden');
   $('hud').classList.add('hidden'); $('touch').classList.add('hidden'); $('topBtns').classList.add('hidden'); $('lobby').classList.remove('hidden');
 }
@@ -493,8 +623,10 @@ function loop(ts) {
   if (G.state === 'playing') {
     G.now += dt; G.timeLeft -= dt;
     if (G.timeLeft <= 0) { G.timeLeft = 0; endMatch(); }
-    for (const e of G.entities) if (!e.alive && G.now >= e.respawnAt && G.state === 'playing') respawn(e);
+    if (G.mode !== 'br') { for (const e of G.entities) if (!e.alive && G.now >= e.respawnAt && G.state === 'playing') respawn(e); }
+    else updateBR(G, dt, BRH);
     updatePlayer(dt);
+    updateCarButton();
     for (const b of G.bots) updateBot(b, dt, G);
   }
   // dead bot animation
@@ -512,6 +644,6 @@ function loop(ts) {
   }
   renderer.clear();
   renderer.render(scene, camera);
-  if (G.player?.alive && !(P.scoped && G.weapon.scope) && G.state === 'playing') { renderer.clearDepth(); renderer.render(vmScene, vmCamera); }
+  if (G.player?.alive && !(P.scoped && G.weapon.scope) && !thirdPerson() && G.state === 'playing') { renderer.clearDepth(); renderer.render(vmScene, vmCamera); }
 }
 requestAnimationFrame(loop);

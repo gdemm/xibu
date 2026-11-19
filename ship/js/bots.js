@@ -17,6 +17,7 @@ const _d = new THREE.Vector3(), _e = new THREE.Vector3(), _t = new THREE.Vector3
 export function eyeOf(e, out = new THREE.Vector3()) { return out.set(e.pos.x, e.pos.y + (e.crouch ? 1.05 : 1.6), e.pos.z); }
 
 function pickPatrolGoal(bot, G) {
+  if (G.br) return G.brGoal(bot, G);
   const nodes = G.map.nodes;
   // bias toward the enemy half / middle of ship
   const dir = bot.team === 'blue' ? 1 : -1;
@@ -79,6 +80,13 @@ export function updateBot(bot, dt, G) {
       }
       if (best) { bot.aiState = 'cover'; bot.coverUntil = G.now + rnd(2.5, 4); bot.nextCoverOK = G.now + 8; setPath(bot, G, best.clone()); }
     }
+    // battle royale: get back inside the safe zone unless the fight is point-blank
+    if (G.br) {
+      const B = G.br, out = Math.hypot(bot.pos.x - B.c.x, bot.pos.z - B.c.y) > B.r - 1.5;
+      const close = bot.target && bot.target.pos.distanceTo(bot.pos) < 10;
+      if (out && !close) { if (!bot.zoneRun) { bot.zoneRun = true; bot.target = null; bot.aiState = 'patrol'; setPath(bot, G, pickPatrolGoal(bot, G)); } }
+      else if (!out) bot.zoneRun = false;
+    }
     if (bot.aiState === 'cover' && G.now > bot.coverUntil) { bot.aiState = bot.target ? 'engage' : 'patrol'; if (!bot.target) setPath(bot, G, pickPatrolGoal(bot, G)); }
   }
 
@@ -119,19 +127,21 @@ export function updateBot(bot, dt, G) {
       const dir = _d.subVectors(_t, eye).normalize();
       const s = D.spread * (1 + (t.isPlayer && t.moving ? 0.5 : 0));
       dir.x += rnd(-s, s); dir.y += rnd(-s, s) * 0.7; dir.z += rnd(-s, s); dir.normalize();
-      G.fire(bot, eye.clone(), dir.clone(), 'rifle', D.dmg);
+      const gun = G.br ? (bot.armed ? bot.gun : 'pistol') : 'rifle';
+      G.fire(bot, eye.clone(), dir.clone(), gun, D.dmg);
       bot.shotsFired++; bot.lastFired = G.now; ud.muzzle.visible = true; ud.muzzle.rotation.z = Math.random() * 3; soldierFired(bot.mesh);
       if (--bot.mag <= 0) { bot.reloadUntil = G.now + 2.2; bot.burstLeft = 0; }
       bot.burstLeft--;
       if (bot.burstLeft <= 0) { bot.burstLeft = (rnd(D.burst[0], D.burst[1]) | 0); bot.nextShot = G.now + rnd(D.pause[0], D.pause[1]); }
       else bot.nextShot = G.now + 0.11;
+      if (gun === 'pistol') { bot.burstLeft = 1; bot.nextShot = G.now + rnd(0.35, 0.7); } else if (gun === 'sniper') { bot.burstLeft = 1; bot.nextShot = G.now + rnd(1.3, 2); }
     }
   }
   // separation from friends
   for (const o of G.entities) { if (o === bot || !o.alive) continue; const dx = bot.pos.x - o.pos.x, dz = bot.pos.z - o.pos.z, d2 = dx * dx + dz * dz; if (d2 < 0.8 && d2 > 0.0001) { const d = Math.sqrt(d2); moveX += dx / d * 0.6; moveZ += dz / d * 0.6; } }
   const ml = Math.hypot(moveX, moveZ); if (ml > 1) { moveX /= ml; moveZ /= ml; }
   if (bot.crouch) speed *= 0.6;
-  const blocked = moveEntity(bot, moveX * speed * dt, moveZ * speed * dt, dt, G.map.solids);
+  const blocked = moveEntity(bot, moveX * speed * dt, moveZ * speed * dt, dt, G.solidsNear ? G.solidsNear(bot.pos) : G.map.solids);
   // stuck detection
   bot.stuckT += dt;
   if (bot.stuckT > 1.5) {

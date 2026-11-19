@@ -45,6 +45,15 @@ button{font-family:inherit;cursor:pointer}
 #topbar .r{color:#ff6a5c;font-size:22px;min-width:30px}
 #timer{font-size:15px;color:#fff;padding:0 6px;border-left:1px solid #fff3;border-right:1px solid #fff3}
 #target{font-size:10px;color:#cbd;position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap;margin-top:2px;text-shadow:0 1px 2px #000}
+#bCar{width:64px;height:64px;right:calc(150px + env(safe-area-inset-right));top:calc(50% - 32px);background:rgba(60,140,230,.55);font-weight:700}
+#bView{width:44px;height:44px;left:calc(22px + env(safe-area-inset-left));bottom:calc(62px + env(safe-area-inset-bottom));font-size:12px}
+#bView.on{background:rgba(255,190,60,.55)}
+#speedo{position:absolute;left:50%;top:calc(52px + env(safe-area-inset-top));transform:translateX(-50%);font:700 22px system-ui;color:#fff;text-shadow:0 1px 3px #000;display:none}
+body.driving #speedo{display:block}
+body.driving #bFire,body.driving #bFire2,body.driving #bScope,body.driving #bJump,body.driving #bCrouch,body.driving #bReload,body.driving #bSwitch{display:none}
+#carHint{position:absolute;left:50%;top:62%;transform:translateX(-50%);color:#fff;font:600 14px system-ui;background:rgba(0,0,0,.45);padding:4px 10px;border-radius:6px}
+#minimap.sq{width:120px;height:120px}
+body.brIsland #bFire2{top:calc(136px + env(safe-area-inset-top))}
 #minimap{position:absolute;top:calc(6px + env(safe-area-inset-top));left:calc(8px + env(safe-area-inset-left));width:200px;height:52px;border-radius:6px;border:1px solid rgba(255,255,255,.25)}
 #killfeed{position:absolute;top:calc(44px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));display:flex;flex-direction:column;align-items:flex-end;gap:3px}
 .kf{background:rgba(0,0,0,.5);padding:2px 8px;border-radius:5px;font-size:12px;transition:opacity .6s;white-space:nowrap}
@@ -117,6 +126,9 @@ button{font-family:inherit;cursor:pointer}
 .endBtns button{padding:9px 22px;border-radius:9px;border:none;font-weight:800;font-size:15px}
 #rotateHint{position:fixed;inset:0;z-index:50;background:#0d1b26;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;font-size:18px;text-align:center;padding:20px}
 #rotateHint .ph{width:44px;height:74px;border:3px solid #fff;border-radius:8px;animation:rot 1.6s ease-in-out infinite}
+#lobby .brOnly{display:none}#lobby.brMode .brOnly{display:flex}#lobby.brMode .tdmOnly{display:none}
+body.br #topbar .b,body.br #topbar .r{font-size:15px;min-width:0;white-space:nowrap}
+#dmg.zone{opacity:.5!important;background:radial-gradient(ellipse at center,transparent 40%,rgba(40,110,255,.65))}
 @keyframes rot{0%,20%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
 @media (orientation:portrait) and (pointer:coarse){#rotateHint{display:flex}}
 @media (max-height:380px){.brand h1{font-size:38px}.opts{gap:6px;padding:10px 14px}.seg button{padding:5px 4px}}
@@ -134,9 +146,12 @@ button{font-family:inherit;cursor:pointer}
       <p>夜航货轮上的团队死斗。海鹰队与赤鲨队在集装箱迷阵、甲板与高架走廊间争夺每一次击杀。</p>
     </div>
     <div class="opts">
-      <div class="row"><label>阵营</label><div class="seg" data-k="team"><button data-v="blue" class="on blue">海鹰队</button><button data-v="red">赤鲨队</button></div></div>
-      <div class="row"><label>规模</label><div class="seg" data-k="size"><button data-v="3">3 v 3</button><button data-v="5" class="on">5 v 5</button></div></div>
-      <div class="row"><label>击杀目标</label><div class="seg" data-k="target"><button data-v="30" class="on">30</button><button data-v="50">50</button></div></div>
+      <div class="row"><label>模式</label><div class="seg" data-k="mode"><button data-v="tdm" class="on">团队死斗</button><button data-v="br">绝地求生</button></div></div>
+      <div class="row tdmOnly"><label>阵营</label><div class="seg" data-k="team"><button data-v="blue" class="on blue">海鹰队</button><button data-v="red">赤鲨队</button></div></div>
+      <div class="row tdmOnly"><label>规模</label><div class="seg" data-k="size"><button data-v="3">3 v 3</button><button data-v="5" class="on">5 v 5</button></div></div>
+      <div class="row tdmOnly"><label>击杀目标</label><div class="seg" data-k="target"><button data-v="30" class="on">30</button><button data-v="50">50</button></div></div>
+      <div class="row brOnly"><label>地图</label><div class="seg" data-k="brMap"><button data-v="island" class="on">港口岛</button><button data-v="ship">货轮</button></div></div>
+      <div class="row brOnly"><label>人数</label><div class="seg" data-k="brSize"><button data-v="12">12 人</button><button data-v="16" class="on">16 人</button><button data-v="20">20 人</button></div></div>
       <div class="row"><label>机器人</label><div class="seg" data-k="diff"><button data-v="easy">简单</button><button data-v="normal" class="on">普通</button><button data-v="hard">困难</button></div></div>
       <div class="actions">
         <button id="btnStart">开始</button>
@@ -159,6 +174,7 @@ button{font-family:inherit;cursor:pointer}
   <div id="centerMsg"></div>
   <div id="hpBox"><span class="plus">✚</span><span id="hpNum">100</span><div id="hpBar"><div id="hpFill"></div></div></div>
   <div id="ammoBox"><div id="wName">步枪</div><div id="ammo"><b>30</b><span> / 90</span></div></div>
+  <div id="speedo"></div><div id="carHint" class="hidden"></div>
   <div id="deathScr" class="hidden"><b>你被击败了</b><span id="deathBy"></span><span id="respawnIn"></span></div>
 </div>
 
@@ -171,6 +187,8 @@ button{font-family:inherit;cursor:pointer}
   <div class="tb" id="bCrouch" data-btn="crouch">蹲</div>
   <div class="tb" id="bReload" data-btn="reload">换弹</div>
   <div class="tb" id="bSwitch" data-btn="switch">切枪</div>
+  <div class="tb hidden" id="bCar" data-btn="car">上车</div>
+  <div class="tb" id="bView" data-btn="view">视角</div>
 </div>
 <div id="topBtns" class="hidden"><button id="tSb" title="战绩">≡</button><button id="tFull" title="横屏/全屏">⤢</button><button id="tSet" title="设置">⚙</button></div>
 
