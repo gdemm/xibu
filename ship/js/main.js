@@ -117,7 +117,7 @@ function respawn(e) {
   }
 }
 
-function startMatch(opts) {
+function startMatch(opts) { G.paused = false;
   opts = { team: 'blue', size: 5, target: 30, diff: 'normal', ...(opts || {}) };
   G.opts = opts;
   const mapKind = opts.mode === 'br' && opts.brMap !== 'ship' ? 'island' : 'ship';
@@ -488,6 +488,7 @@ G.setVmTeam = (t) => VM.setTeam(t);
 
 // ---------------- input: desktop ----------------
 addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && G.state === 'playing') { if ($('settings').classList.contains('hidden')) openSettings(); else closeSettings(); return; }
   if (e.code === 'Tab') { e.preventDefault(); if (G.state === 'playing') showScoreboard(true); return; }
   P.keys[e.code] = true;
   if (G.state !== 'playing') return;
@@ -578,6 +579,24 @@ async function goFull() {
   try { await screen.orientation?.lock?.('landscape'); } catch (e) { if (innerHeight > innerWidth) HUD.centerMsg('请手动将手机横过来', 1800); }
 }
 $('btnFull').addEventListener('click', goFull); $('btnFull2').addEventListener('click', goFull); $('tFull').addEventListener('click', goFull);
+// fullscreen exit: small always-visible button in play, pause menu entry, Esc/back handled; never auto re-enter
+const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+async function leaveFull() {
+  try { screen.orientation?.unlock?.(); } catch (e) {}
+  try { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.webkitFullscreenElement) document.webkitExitFullscreen?.(); } catch (e) {}
+  syncFsUI();
+}
+function syncFsUI() {
+  const f = isFull();
+  $('tExitFs').classList.toggle('hidden', !f); $('tFull').classList.toggle('hidden', f);
+  $('btnExitFs').classList.toggle('hidden', !f);
+}
+function onFsChange() {
+  syncFsUI();
+  if (!isFull()) { try { screen.orientation?.unlock?.(); } catch (e) {} if (G.state === 'playing' && $('settings').classList.contains('hidden')) openSettings(); }
+}
+document.addEventListener('fullscreenchange', onFsChange); document.addEventListener('webkitfullscreenchange', onFsChange);
+$('tExitFs').addEventListener('click', async () => { await leaveFull(); if (G.state === 'playing' && $('settings').classList.contains('hidden')) openSettings(); });
 function showScoreboard(on) {
   $('sbPanel').innerHTML = (G.mode === 'br' ? brBoardHTML(G, '战绩') : HUD.scoreboardHTML(G, '战绩')) + '<button class="close" id="sbClose">关闭</button>';
   $('scoreboard').classList.toggle('hidden', !on);
@@ -596,12 +615,16 @@ document.querySelectorAll('#settings .seg').forEach(seg => seg.addEventListener(
   S[k] = k === 'quality' ? v : +v; G.quality = S.quality; saveS(); syncSettingsUI(); if (k === 'quality') applyPixelRatio();
 }));
 $('sens').addEventListener('input', () => { S.sens = +$('sens').value; saveS(); syncSettingsUI(); });
-const openSettings = () => { syncSettingsUI(); $('btnQuit').classList.toggle('hidden', G.state !== 'playing'); $('settings').classList.remove('hidden'); if (document.pointerLockElement) document.exitPointerLock(); };
+function openSettings() { syncSettingsUI(); syncFsUI(); $('setTitle').textContent = G.state === 'playing' ? '已暂停 · 设置' : '画面设置'; $('btnQuit').classList.toggle('hidden', G.state !== 'playing'); $('settings').classList.remove('hidden'); if (document.pointerLockElement) document.exitPointerLock();
+  if (G.state === 'playing') { G.paused = true; P.firing = false; P.joyX = P.joyY = 0; for (const k in P.keys) P.keys[k] = false; } }
+const closeSettings = () => { $('settings').classList.add('hidden'); G.paused = false; };
 $('btnSettings').addEventListener('click', openSettings); $('tSet').addEventListener('click', openSettings);
-$('setClose').addEventListener('click', () => $('settings').classList.add('hidden'));
+$('setClose').addEventListener('click', closeSettings);
+$('btnExitFs').addEventListener('click', () => leaveFull());
+$('btnHome').addEventListener('click', async () => { await leaveFull(); location.href = '../'; });
 function toLobby() {
   P.inCar = null;
-  G.state = 'lobby'; $('settings').classList.add('hidden'); $('endScr').classList.add('hidden');
+  G.state = 'lobby'; G.paused = false; $('settings').classList.add('hidden'); $('endScr').classList.add('hidden');
   $('hud').classList.add('hidden'); $('touch').classList.add('hidden'); $('topBtns').classList.add('hidden'); $('lobby').classList.remove('hidden');
 }
 $('btnQuit').addEventListener('click', toLobby);
@@ -620,7 +643,7 @@ function loop(ts) {
   const dt = Math.min(0.05, (ts - last) / 1000); last = ts;
   frames++; fpsT += dt; if (fpsT >= 1) { G.fps = Math.round(frames / fpsT); frames = 0; fpsT = 0; if (+S.showFps) $('fpsMeter').textContent = G.fps + ' FPS'; }
   if (G.state === 'lobby' || !G.map) return;
-  if (G.state === 'playing') {
+  if (G.state === 'playing' && !G.paused) {
     G.now += dt; G.timeLeft -= dt;
     if (G.timeLeft <= 0) { G.timeLeft = 0; endMatch(); }
     if (G.mode !== 'br') { for (const e of G.entities) if (!e.alive && G.now >= e.respawnAt && G.state === 'playing') respawn(e); }
