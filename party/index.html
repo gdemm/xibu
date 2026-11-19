@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#3fa9ff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>派对突击</title>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#0d1b26;color:#fff;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;touch-action:none}
+canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+.hidden{display:none!important}
+button{font-family:inherit;cursor:pointer}
+/* ---------- lobby ---------- */
+#lobby{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;overflow:hidden;
+ background:radial-gradient(circle at 18% 22%,rgba(255,255,255,.55) 0 7%,transparent 7.5%),radial-gradient(circle at 25% 20%,rgba(255,255,255,.55) 0 9%,transparent 9.5%),radial-gradient(circle at 82% 14%,rgba(255,255,255,.5) 0 6%,transparent 6.5%),radial-gradient(circle at 88% 16%,rgba(255,255,255,.5) 0 8%,transparent 8.5%),linear-gradient(180deg,#3fa9ff 0%,#8fd3ff 60%,#c9f0ff 100%)}
+#lobby .bgSea{position:absolute;left:0;right:0;bottom:0;height:20%;background:linear-gradient(#5fe08a,#2fb35a);border-top-left-radius:50% 30px;border-top-right-radius:50% 30px}
+#lobbyChars{position:absolute;left:1%;bottom:3%;width:44%;height:40%;pointer-events:none}
+#lobby .bgShip{display:none;position:absolute;bottom:14%;width:100%;height:24%;opacity:.95;background:
+ radial-gradient(circle at 10% 60%,#2a2230 0 3px,#fff 4px 8px,transparent 9px),radial-gradient(circle at 14% 60%,#2a2230 0 3px,#fff 4px 8px,transparent 9px),radial-gradient(circle at 12% 70%,#ff8fb1 0 34px,transparent 35px),
+ radial-gradient(circle at 95.8% 63%,#2a2230 0 3px,#fff 4px 7px,transparent 8px),radial-gradient(circle at 98.2% 63%,#2a2230 0 3px,#fff 4px 7px,transparent 8px),radial-gradient(circle at 97% 72%,#7fd6ff 0 30px,transparent 31px),
+ radial-gradient(circle at 35.2% 74%,#2a2230 0 2px,#fff 3px 5px,transparent 6px),radial-gradient(circle at 36.8% 74%,#2a2230 0 2px,#fff 3px 5px,transparent 6px),radial-gradient(circle at 36% 80%,#ffd45c 0 22px,transparent 23px),
+ radial-gradient(circle at 27.2% 76%,#2a2230 0 2px,#fff 3px 5px,transparent 6px),radial-gradient(circle at 28.8% 76%,#2a2230 0 2px,#fff 3px 5px,transparent 6px),radial-gradient(circle at 28% 82%,#9be37a 0 20px,transparent 21px)}
+.lobbyCard{position:relative;display:flex;gap:22px;align-items:stretch;padding:18px 22px;max-width:96vw;max-height:96vh}
+.brand{display:flex;flex-direction:column;justify-content:center;min-width:220px}
+.brand h1{font-size:50px;letter-spacing:4px;font-weight:900;line-height:1.05;color:#ffd45c;-webkit-text-stroke:2px #5a2a8a;paint-order:stroke fill;text-shadow:0 5px 0 #5a2a8a,0 8px 18px rgba(0,0,0,.25);transform:rotate(-3deg)}
+.brand .en{font-size:12px;letter-spacing:6px;color:#fff;margin-top:10px;font-weight:800;text-shadow:0 1px 2px #2a5a8a}
+.brand p{font-size:13px;color:#fff;margin-top:10px;line-height:1.6;max-width:240px;text-shadow:0 1px 2px #2a5a8a}
+.opts{background:rgba(40,30,90,.62);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:12px 16px;display:flex;flex-direction:column;gap:9px;min-width:380px;backdrop-filter:blur(6px)}
+.row{display:flex;align-items:center;gap:10px}
+.row>label{width:64px;font-size:13px;color:#9fb6c6;flex:none}
+.seg{display:flex;gap:6px;flex:1}
+.seg button{flex:1;padding:7px 4px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#dfe8ee;font-size:14px;white-space:nowrap}
+.seg button.on{background:#ffd45c;color:#1b1b1b;border-color:#ffb347;font-weight:700}
+.seg button.on.blue{background:#2f7bff;color:#fff;border-color:#2f7bff}
+.seg button.on.red{background:#e2392d;color:#fff;border-color:#e2392d}
+.actions{display:flex;gap:8px;margin-top:4px}
+#btnStart{flex:2;padding:11px;border:none;border-radius:14px;background:linear-gradient(#ffe36b,#ffb52e);color:#5a2a8a;font-size:19px;font-weight:900;letter-spacing:6px;box-shadow:0 4px 0 #b4621a}
+.ghost{flex:1;padding:9px 6px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font-size:14px;white-space:nowrap}
+.tip{font-size:11px;color:#d8d0ff}
+/* ---------- HUD ---------- */
+#hud{position:fixed;inset:0;z-index:5;pointer-events:none}
+#topbar{position:absolute;top:calc(6px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.42);padding:3px 12px;border-radius:10px;font-weight:800}
+#topbar .b{color:#5fb0ff;font-size:22px;min-width:30px;text-align:right}
+#topbar .r{color:#ff6a5c;font-size:22px;min-width:30px}
+#timer{font-size:15px;color:#fff;padding:0 6px;border-left:1px solid #fff3;border-right:1px solid #fff3}
+#target{font-size:10px;color:#cbd;position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap;margin-top:2px;text-shadow:0 1px 2px #000}
+#bCar{width:64px;height:64px;right:calc(150px + env(safe-area-inset-right));top:calc(50% - 32px);background:rgba(60,140,230,.55);font-weight:700}
+#bView{width:44px;height:44px;left:calc(22px + env(safe-area-inset-left));bottom:calc(62px + env(safe-area-inset-bottom));font-size:12px}
+#bView.on{background:rgba(255,190,60,.55)}
+#speedo{position:absolute;left:50%;top:calc(52px + env(safe-area-inset-top));transform:translateX(-50%);font:700 22px system-ui;color:#fff;text-shadow:0 1px 3px #000;display:none}
+body.driving #speedo{display:block}
+body.driving #bFire,body.driving #bFire2,body.driving #bScope,body.driving #bJump,body.driving #bCrouch,body.driving #bReload,body.driving #bSwitch{display:none}
+#carHint{position:absolute;left:50%;top:62%;transform:translateX(-50%);color:#fff;font:600 14px system-ui;background:rgba(0,0,0,.45);padding:4px 10px;border-radius:6px}
+#bEject{width:96px;height:96px;right:calc(130px + env(safe-area-inset-right));top:calc(50% - 48px);background:rgba(255,77,109,.75);font-size:22px;border-color:#fff;box-shadow:0 4px 0 rgba(120,20,60,.6)}
+body.air #speedo{display:block}
+body.air #bFire,body.air #bFire2,body.air #bScope,body.air #bJump,body.air #bCrouch,body.air #bReload,body.air #bSwitch,body.air #bCar,body.air #ammoBox,body.air #cross{display:none!important}
+#gear{position:absolute;left:calc(222px + env(safe-area-inset-left));bottom:calc(10px + env(safe-area-inset-bottom));display:flex;gap:6px}
+body:not(.br) #gear{display:none}
+#gear span{display:flex;align-items:center;gap:3px;background:rgba(0,0,0,.4);border-radius:8px;padding:2px 7px 2px 4px;font-size:13px;font-weight:800;border:2px solid transparent}
+#gear svg{width:20px;height:20px;fill:#777}
+#gear .lv1 svg{fill:#e8eef2}#gear .lv1{border-color:#e8eef2}
+#gear .lv2 svg{fill:#4d9bff}#gear .lv2{border-color:#4d9bff}
+#gear .lv3 svg{fill:#b46bff}#gear .lv3{border-color:#b46bff}
+#minimap.sq{width:120px;height:120px}
+body.brIsland #bFire2{top:calc(136px + env(safe-area-inset-top))}
+#minimap{position:absolute;top:calc(6px + env(safe-area-inset-top));left:calc(8px + env(safe-area-inset-left));width:200px;height:52px;border-radius:6px;border:1px solid rgba(255,255,255,.25)}
+#killfeed{position:absolute;top:calc(44px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.kf{background:rgba(0,0,0,.5);padding:2px 8px;border-radius:5px;font-size:12px;transition:opacity .6s;white-space:nowrap}
+.kf.out{opacity:0}.kf i{color:#ccc;font-style:normal}.kf em{color:#ffcf4a;font-style:normal;font-weight:700}
+.kf .blue{color:#6db8ff}.kf .red{color:#ff7468}.kf .me{text-decoration:underline}
+#hpBox{position:absolute;left:calc(14px + env(safe-area-inset-left));bottom:calc(8px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.4);padding:4px 10px;border-radius:8px}
+#hpBox .plus{color:#4cd17a;font-weight:900;font-size:18px}
+#hpNum{font-size:20px;font-weight:800;min-width:38px}
+#hpBar{width:110px;height:7px;background:rgba(255,255,255,.18);border-radius:4px;overflow:hidden}
+#hpFill{height:100%;width:100%;background:#4cd17a;transition:width .15s}
+#ammoBox{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(8px + env(safe-area-inset-bottom));background:rgba(0,0,0,.4);padding:3px 12px;border-radius:8px;text-align:center;white-space:nowrap}
+#wName{font-size:11px;color:#cfd8de}
+#ammo b{font-size:22px}#ammo span{font-size:14px;color:#bbb}#ammo.low b{color:#ff6a5c}
+#cross{position:absolute;left:50%;top:50%;width:0;height:0}
+#cross i{position:absolute;background:rgba(255,255,255,.9);box-shadow:0 0 2px #000}
+#cross .h1{width:8px;height:2px;left:-14px;top:-1px}#cross .h2{width:8px;height:2px;left:6px;top:-1px}
+#cross .v1{width:2px;height:8px;left:-1px;top:-14px}#cross .v2{width:2px;height:8px;left:-1px;top:6px}
+#cross .dot{width:2px;height:2px;left:-1px;top:-1px}
+#hitmark{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;opacity:0}
+#hitmark.show{opacity:1}
+#bowBar{position:absolute;left:50%;top:calc(50% + 24px);width:64px;margin-left:-32px;height:6px;border-radius:3px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.5);display:none;overflow:hidden}
+#bowBar i{display:block;height:100%;width:0;background:#fff}#bowBar.full i{background:#ffcf4a}
+#hitmark:before,#hitmark:after{content:"";position:absolute;left:12px;top:0;width:2px;height:26px;background:#fff;transform:rotate(45deg);box-shadow:0 0 2px #000}
+#hitmark:after{transform:rotate(-45deg)}
+#hitmark.head:before,#hitmark.head:after{background:#ffcf4a}
+#hitmark.kill:before,#hitmark.kill:after{background:#ff3b30;height:30px;top:-2px}
+#scope{position:absolute;inset:0;background:radial-gradient(circle at 50% 50%,transparent 0 30vh,#000 calc(30vh + 2px));display:none}
+#scope:before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:#000}
+#scope:after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:#000}
+#dmg{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 45%,rgba(220,0,0,.65));opacity:0;transition:opacity .25s}
+#centerMsg{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);font-size:22px;font-weight:900;text-shadow:0 2px 6px #000;opacity:0;transition:opacity .2s;white-space:nowrap}
+#centerMsg.show{opacity:1}
+#deathScr{position:absolute;inset:0;background:rgba(80,0,0,.35);display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:16px}
+#deathScr b{font-size:30px;margin-bottom:6px}
+/* ---------- touch controls ---------- */
+#touch{position:fixed;inset:0;z-index:6}
+#joyBase{position:absolute;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;border:2px solid rgba(255,255,255,.3);background:rgba(255,255,255,.06);pointer-events:none;opacity:.55}
+#joyKnob{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;background:rgba(255,255,255,.4)}
+.tb{position:absolute;border-radius:50%;border:2px solid rgba(255,255,255,.4);background:rgba(20,30,40,.4);color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;text-shadow:0 1px 2px #000}
+.tb.on{background:rgba(255,179,71,.6)}
+.tb:active,.tb.pressed{background:rgba(255,255,255,.35)}
+#bFire{width:82px;height:82px;right:calc(104px + env(safe-area-inset-right));bottom:calc(56px + env(safe-area-inset-bottom));background:rgba(220,60,40,.45);font-size:17px}
+#bFire2{width:56px;height:56px;left:calc(26px + env(safe-area-inset-left));top:calc(84px + env(safe-area-inset-top));background:rgba(220,60,40,.35);font-size:12px}
+#bJump{width:56px;height:56px;right:calc(26px + env(safe-area-inset-right));bottom:calc(110px + env(safe-area-inset-bottom))}
+#bCrouch{width:50px;height:50px;right:calc(30px + env(safe-area-inset-right));bottom:calc(40px + env(safe-area-inset-bottom))}
+#bScope{width:52px;height:52px;right:calc(118px + env(safe-area-inset-right));bottom:calc(152px + env(safe-area-inset-bottom))}
+#bReload{width:50px;height:50px;right:calc(200px + env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom))}
+#bSwitch{width:50px;height:50px;right:calc(30px + env(safe-area-inset-right));bottom:calc(180px + env(safe-area-inset-bottom))}
+#topBtns{position:fixed;z-index:7;top:calc(6px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));display:flex;gap:6px}
+#topBtns button{width:34px;height:30px;border-radius:7px;border:1px solid rgba(255,255,255,.3);background:rgba(0,0,0,.4);color:#fff;font-size:13px}
+/* ---------- dialogs ---------- */
+.modal{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center}
+.panel{background:#132532;border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:14px 18px;min-width:340px;max-width:94vw;max-height:94vh;overflow:auto}
+.panel h2{font-size:18px;margin-bottom:10px;text-align:center}
+.panel .row{margin-bottom:9px}
+.panel input[type=range]{flex:1}
+.panel .close{display:block;margin:8px auto 0;padding:8px 28px;border-radius:9px;border:none;background:#ffb347;color:#222;font-weight:800;font-size:15px}
+#scoreboard .panel{min-width:520px}
+.sbWrap{display:flex;gap:12px}
+.sbTeam{flex:1;border-radius:10px;padding:6px 8px}
+.sbTeam.blue{background:rgba(47,123,255,.18)}.sbTeam.red{background:rgba(226,57,45,.18)}
+.sbTeam h3{font-size:14px;display:flex;justify-content:space-between;margin-bottom:4px}
+.sbTeam table{width:100%;border-collapse:collapse;font-size:13px}
+.sbTeam th{color:#9fb6c6;font-weight:500;text-align:left;padding:2px 4px}
+.sbTeam td{padding:3px 4px;border-top:1px solid rgba(255,255,255,.08)}
+.sbTeam td:nth-child(n+2),.sbTeam th:nth-child(n+2){text-align:center;width:44px}
+.sbTeam tr.me td{color:#ffcf4a;font-weight:700}
+#endScr .panel{min-width:540px}
+#endTitle{font-size:28px;font-weight:900;text-align:center;margin-bottom:8px;letter-spacing:4px}
+#endTitle.win{color:#ffcf4a}#endTitle.lose{color:#9fb6c6}
+.endBtns{display:flex;gap:10px;justify-content:center;margin-top:10px}
+.endBtns button{padding:9px 22px;border-radius:9px;border:none;font-weight:800;font-size:15px}
+#rotateHint{position:fixed;inset:0;z-index:50;background:#0d1b26;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;font-size:18px;text-align:center;padding:20px}
+#rotateHint .ph{width:44px;height:74px;border:3px solid #fff;border-radius:8px;animation:rot 1.6s ease-in-out infinite}
+#lobby .brOnly{display:none}#lobby.brMode .brOnly{display:flex}#lobby.brMode .tdmOnly{display:none}
+body.br #topbar .b,body.br #topbar .r{font-size:15px;min-width:0;white-space:nowrap}
+#dmg.zone{opacity:.5!important;background:radial-gradient(ellipse at center,transparent 40%,rgba(40,110,255,.65))}
+@keyframes rot{0%,20%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
+@media (orientation:portrait) and (pointer:coarse){#rotateHint{display:flex}}
+@media (max-height:380px){.brand h1{font-size:38px}.opts{gap:6px;padding:10px 14px}.seg button{padding:5px 4px}}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="lobby" class="brMode">
+  <div class="bgSea"></div><div class="bgShip"></div>
+  <div class="lobbyCard">
+    <div class="brand">
+      <h1>派对突击</h1>
+      <div class="en">PARTY STRIKE · 派对大乱斗</div>
+      <p>萌萌的派对小伙伴们坐上派对飞机，跳伞落岛、抢空投、穿护甲，在缩小的安全区里争夺最后的胜利！</p>
+    </div>
+    <div class="opts">
+      <div class="row"><label>模式</label><div class="seg" data-k="mode"><button data-v="br" class="on">派对吃鸡</button><button data-v="tdm">团队死斗</button></div></div>
+      <div class="row tdmOnly"><label>阵营</label><div class="seg" data-k="team"><button data-v="blue" class="on blue">海鹰队</button><button data-v="red">赤鲨队</button></div></div>
+      <div class="row tdmOnly"><label>规模</label><div class="seg" data-k="size"><button data-v="3">3 v 3</button><button data-v="5" class="on">5 v 5</button></div></div>
+      <div class="row tdmOnly"><label>击杀目标</label><div class="seg" data-k="target"><button data-v="30" class="on">30</button><button data-v="50">50</button></div></div>
+      <div class="row brOnly"><label>地图</label><div class="seg" data-k="brMap"><button data-v="island" class="on">港口岛</button><button data-v="ship">货轮</button></div></div>
+      <div class="row brOnly"><label>人数</label><div class="seg" data-k="brSize"><button data-v="12">12 人</button><button data-v="16" class="on">16 人</button><button data-v="20">20 人</button></div></div>
+      <div class="row"><label>机器人</label><div class="seg" data-k="diff"><button data-v="easy">简单</button><button data-v="normal" class="on">普通</button><button data-v="hard">困难</button></div></div>
+      <div class="actions">
+        <button id="btnStart">开始</button>
+        <button class="ghost" id="btnSettings">画面设置</button>
+        <button class="ghost" id="btnFull">横屏/全屏</button>
+      </div>
+      <div class="tip">电脑：WASD 移动 · 鼠标瞄准 · 左键开火 · 右键开镜 · F 跳伞/开伞/上车 · V 视角 · Tab 战绩</div>
+    </div>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <canvas id="minimap" width="400" height="104"></canvas>
+  <div id="topbar"><span class="b" id="sBlue">0</span><span id="timer">10:00</span><span class="r" id="sRed">0</span><div id="target">目标 30 击杀</div></div>
+  <div id="killfeed"></div>
+  <div id="scope"></div>
+  <div id="cross"><i class="h1"></i><i class="h2"></i><i class="v1"></i><i class="v2"></i><i class="dot"></i></div>
+  <div id="hitmark"></div>
+  <div id="bowBar"><i></i></div>
+  <div id="dmg"></div>
+  <div id="centerMsg"></div>
+  <div id="gear"><span id="gArm" class="lv0"><svg viewBox="0 0 24 24"><path d="M7 3l2 2h6l2-2 4 3-2 5h-1v10H6V11H5L3 6z"/></svg><b>0</b></span><span id="gHelm" class="lv0"><svg viewBox="0 0 24 24"><path d="M3 15a9 9 0 0118 0v2H3zM2 17h20v2H2z"/></svg><b>0</b></span><span id="gScope" class="lv0"><svg viewBox="0 0 24 24"><path d="M1 10h4v4H1zM5 8h13v8H5zM18 7h5v10h-5zM9 4h4v4H9z"/></svg><b>-</b></span></div>
+  <div id="hpBox"><span class="plus">✚</span><span id="hpNum">100</span><div id="hpBar"><div id="hpFill"></div></div></div>
+  <div id="ammoBox"><div id="wName">步枪</div><div id="ammo"><b>30</b><span> / 90</span></div></div>
+  <div id="speedo"></div><div id="carHint" class="hidden"></div>
+  <div id="deathScr" class="hidden"><b>你被击败了</b><span id="deathBy"></span><span id="respawnIn"></span></div>
+</div>
+
+<div id="touch" class="hidden">
+  <div id="joyBase" class="hidden"><div id="joyKnob"></div></div>
+  <div class="tb" id="bFire2" data-btn="fire">开火</div>
+  <div class="tb" id="bScope" data-btn="scope">开镜</div>
+  <div class="tb" id="bFire" data-btn="fire">开火</div>
+  <div class="tb" id="bJump" data-btn="jump">跳</div>
+  <div class="tb" id="bCrouch" data-btn="crouch">蹲</div>
+  <div class="tb" id="bReload" data-btn="reload">换弹</div>
+  <div class="tb" id="bSwitch" data-btn="switch">切枪</div>
+  <div class="tb hidden" id="bCar" data-btn="car">上车</div>
+  <div class="tb hidden" id="bEject" data-btn="eject">跳伞</div>
+  <div class="tb" id="bView" data-btn="view">视角</div>
+</div>
+<div id="topBtns" class="hidden"><button id="tSb" title="战绩">≡</button><button id="tFull" title="横屏/全屏">⤢</button><button id="tSet" title="设置">⚙</button></div>
+
+<div id="settings" class="modal hidden"><div class="panel">
+  <h2>画面设置</h2>
+  <div class="row"><label>画质</label><div class="seg" data-s="quality"><button data-v="low">流畅</button><button data-v="mid">均衡</button><button data-v="high">高清</button></div></div>
+  <div class="row"><label>帧率上限</label><div class="seg" data-s="fps"><button data-v="30">30</button><button data-v="60">60</button><button data-v="90">90</button><button data-v="120">120</button></div></div>
+  <div class="row"><label>灵敏度</label><input type="range" id="sens" min="0.3" max="2.5" step="0.1"><span id="sensV" style="width:32px;text-align:right">1.0</span></div>
+  <div class="row"><label>显示帧率</label><div class="seg" data-s="showFps"><button data-v="0">关</button><button data-v="1">开</button></div></div>
+  <div class="tip" id="setTip">画质更改在下一局完全生效（分辨率立即生效）。</div>
+  <button class="close" id="setClose">确定</button>
+  <button class="close hidden" id="btnQuit" style="background:#46535d;color:#fff">退出对局</button>
+</div></div>
+
+<div id="scoreboard" class="modal hidden"><div class="panel" id="sbPanel"></div></div>
+<div id="endScr" class="modal hidden"><div class="panel"><div id="endTitle"></div><div id="endBoard"></div>
+  <div class="endBtns"><button id="btnAgain" style="background:#ffb347">再来一局</button><button id="btnLobby" style="background:#46535d;color:#fff">返回大厅</button></div></div></div>
+<div id="fpsMeter" class="hidden" style="position:fixed;z-index:8;left:8px;top:62px;font:11px monospace;color:#9f9;text-shadow:0 1px 1px #000"></div>
+<div id="rotateHint"><div class="ph"></div><div>请将手机横屏游玩</div><button class="ghost" id="btnFull2" style="flex:none;padding:10px 24px">横屏/全屏</button></div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
