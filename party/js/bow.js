@@ -17,13 +17,14 @@ function limbPoints() {
   return pts;
 }
 // bow body (limbs + grip + tips), merged and vertex-coloured; string is separate (it moves)
-export function bowGeometry() {
+// th: thickness multiplier (the third-person bow uses chunkier limbs so it reads at a distance)
+export function bowGeometry(th = 1) {
   const B = new Builder();
   const curve = new THREE.CatmullRomCurve3(limbPoints());
-  B.add(new THREE.TubeGeometry(curve, 24, 0.017, 6, false), new THREE.Matrix4(), WOOD);
-  B.add(new THREE.CylinderGeometry(0.026, 0.026, 0.16, 8), M(0, 0, 0.004), WRAP);             // grip wrap
-  B.add(new THREE.BoxGeometry(0.03, 0.05, 0.05), M(0, 0.1, 0.01), WOOD2);                       // arrow shelf
-  for (const s of [-1, 1]) B.add(new THREE.SphereGeometry(0.026, 8, 6), M(0, s * LIMB_H, -TIP_BACK + 0.04), TIP);
+  B.add(new THREE.TubeGeometry(curve, 24, 0.017 * th, 6, false), new THREE.Matrix4(), WOOD);
+  B.add(new THREE.CylinderGeometry(0.026 * th, 0.026 * th, 0.16, 8), M(0, 0, 0.004), WRAP);   // grip wrap
+  B.add(new THREE.BoxGeometry(0.03 * th, 0.05, 0.05), M(0, 0.1, 0.01), WOOD2);                 // arrow shelf
+  for (const s of [-1, 1]) B.add(new THREE.SphereGeometry(0.026 * th, 8, 6), M(0, s * LIMB_H, -TIP_BACK + 0.04), TIP);
   return B.build(false);
 }
 export function arrowGeometry() {
@@ -33,16 +34,17 @@ export function arrowGeometry() {
   for (let i = 0; i < 3; i++) B.add(new THREE.BoxGeometry(0.002, 0.03, 0.1), M(0, 0, 0.08, 0, 0, (i / 3) * Math.PI * 2).multiply(M(0, 0.018, 0)), FLETCH);
   return B.build(false);
 }
-let BOWGEO = null, ARROWGEO = null;
-const bowGeo = () => BOWGEO || (BOWGEO = bowGeometry());
+let ARROWGEO = null;
+const BOWGEO = {};
+const bowGeo = (th = 1) => BOWGEO[th] || (BOWGEO[th] = bowGeometry(th));
 const arrowGeo = () => ARROWGEO || (ARROWGEO = arrowGeometry());
 export { bowGeo, arrowGeo };
 const stringMat = new THREE.LineBasicMaterial({ color: 0xf4f0e6 });
 
 // a bow with a live string and a nocked arrow; setDraw(0..1), setNocked(bool)
-export function makeBow(scale = 1) {
+export function makeBow(scale = 1, th = 1) {
   const g = new THREE.Group();
-  g.add(new THREE.Mesh(bowGeo(), critterMaterial()));
+  g.add(new THREE.Mesh(bowGeo(th), critterMaterial()));
   const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
   const str = new THREE.Line(sg, stringMat); str.frustumCulled = false; g.add(str);
   const arrow = new THREE.Mesh(arrowGeo(), critterMaterial()); g.add(arrow);
@@ -54,6 +56,16 @@ export function makeBow(scale = 1) {
     sg.attributes.position.needsUpdate = true;
     arrow.position.set(0.02, 0.1, nz);
     g.userData.nockZ = nz;
+  };
+  // third person: pull the nock from rest toward a bow-local point t (the drawing hand) by k; the arrow aims through the shelf
+  const _n = new THREE.Vector3(), _sh = new THREE.Vector3(0.02, 0.1, 0.03), _z = new THREE.Vector3(0, 0, 1), _a = new THREE.Vector3();
+  g.userData.setDrawTo = (k, t) => {
+    _n.set(0, 0.1, tipZ - BRACE).lerp(t, k);
+    const p = sg.attributes.position.array;
+    p[0] = 0; p[1] = LIMB_H; p[2] = tipZ; p[3] = _n.x; p[4] = _n.y; p[5] = _n.z; p[6] = 0; p[7] = -LIMB_H; p[8] = tipZ;
+    sg.attributes.position.needsUpdate = true;
+    arrow.position.copy(_n); arrow.quaternion.setFromUnitVectors(_z, _a.subVectors(_sh, _n).normalize());
+    g.userData.nockZ = _n.z;
   };
   g.userData.setNocked = (v) => { arrow.visible = v; };
   g.userData.arrow = arrow;

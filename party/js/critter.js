@@ -17,6 +17,7 @@ const BLASTERS = ['b', 'c', 'd', 'h', 'k'];
 const PLAYER_CHAR = 'rogue', PLAYER_BLASTER = 'h';
 const SCALE = 0.79;                    // model units -> metres: bare head-top 2.15 u -> 1.70 m (see main.js hitBoxes)
 const GUN_LEN = 0.62;
+const BOW3_S = 1.13, BOW3_TH = 1.9;     // third-person bow: 1.13 x 1.15 m ≈ 1.3 m tall (characters ~1.72 m), limbs 1.9x thicker
 const TWIST = 0.85;                     // how much of the crossbow stance's sideways twist is squared to the front                   // blaster length, metres
 const LOWER = ['idle', 'walk', 'sprint', 'crouch'], UPPER = ['hold', 'reload'], FULL = ['fall', 'drive', 'die', 'cheer'];
 const UPPER_BONE = /^(chest|upperarm|lowerarm|wrist|hand|handslot)/;   // head follows the lower-body clip (looks ahead)
@@ -222,8 +223,9 @@ export function createSoldier(skin = 'party', variant) {
   const gunPivot = new THREE.Group(); gunPivot.quaternion.copy(T.gunQ); gunPivot.position.copy(T.gunOff);
   gun.position.set(0, -(gunT.box.min.y + (gunT.box.max.y - gunT.box.min.y) * 0.3) * gs, -(gunT.box.min.z + (gunT.box.max.z - gunT.box.min.z) * 0.4) * gs);
   gunPivot.add(gun); bones.handslotr.add(gunPivot);
-  // bow (shown instead of the blaster when the owner carries 弓箭): grip between the fists, slightly canted
-  const bow = makeBow(1 / SCALE); bow.position.set(0, 0.04 / SCALE, 0.12 / SCALE); bow.rotation.set(0, 0, 0.28); bow.visible = false; gunPivot.add(bow);
+  // bow (shown instead of the blaster when the owner carries 弓箭): held in the LEFT fist, arm swung out to the side so it reads
+  // from behind; ~1.3 m tall with chunky limbs; the string is pulled toward the right fist while charging (see bowPose)
+  const bow = makeBow(BOW3_S / SCALE, BOW3_TH); bow.visible = false; bones.handslotl.add(bow);
   const muzzle = new THREE.Mesh(flashGeo(), flashMat);
   muzzle.position.set(0, (gunT.box.max.y - gunT.box.min.y) * 0.62 * gs + gun.position.y, gunT.box.max.z * gs + gun.position.z + 0.01);
   muzzle.rotation.set(0, Math.PI, 0); muzzle.scale.setScalar(0.9 / SCALE); muzzle.visible = false; gunPivot.add(muzzle);
@@ -292,7 +294,7 @@ export function animateSoldier(g, dt, o) {
   u.A.sprint.timeScale = clamp((o.speed || 5) * ml / 5.0, 0.7, 1.4);
   const showW = !o.air && !o.seat && full !== 'cheer';
   u.gunMesh.visible = showW && !o.bow; u.bow.visible = showW && !!o.bow;
-  if (o.bow) { const dk = o.draw || 0; if (dk !== u.drawK) { u.drawK = dk; u.bow.userData.setDraw(dk); } u.bow.userData.setNocked(o.nocked !== false); }
+  if (o.bow) u.bow.userData.setNocked(o.nocked !== false);
   // advance (far bots at ~15 Hz)
   u.acc += dt;
   if (u.lo && u.acc < 1 / 15) return;
@@ -306,6 +308,34 @@ export function animateSoldier(g, dt, o) {
   const p = lerp(-0.12, u.pitch, u.aimK) * (1 - u.relK) + u.kick * 0.12;
   _q.setFromEuler(_e.set(-p * 0.75, 0, 0)); offsetBone(u, 'chest', _q);
   _q.setFromEuler(_e.set(p * 0.35, 0, 0)); offsetBone(u, 'head', _q);   // head stays a bit more level
+  if (o.bow && u.bow.visible) bowPose(g, u, o.draw || 0);
+  else if (u.bowArm) { u.bowArm = false; _q.identity(); offsetBone(u, 'upperarml', _q); offsetBone(u, 'upperarmr', _q); offsetBone(u, 'lowerarmr', _q); }
+}
+// archer stance, in model space (+Z forward, +Y up, +X = character's left): left arm swung out to the side holding the bow upright,
+// right arm pulls back toward the shoulder with the draw; then the string's nock follows the right fist
+// la/ra/fa: left upper arm, right upper arm, right forearm (Euler ZYX, radians; *K = extra at full draw); yaw/cant: bow in model space
+const BT = { la: [-0.6, 1.4, 0.2], ra: [-0.4, 1.1, 0], raK: [0, -1.8, 0], fa: [0, 0, 0], faK: [0, 1.4, 0], cant: 0, yaw: -0.7 };
+const _ea = new THREE.Euler(0, 0, 0, 'ZYX'), _mq = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _aq = new THREE.Quaternion(), _bq = new THREE.Quaternion(), _hp = new THREE.Vector3();
+function armOffset(u, name, ex, ey, ez) {      // rotate a bone about model-space axes (through its own pivot)
+  const b = u.bones[name];
+  b.parent.getWorldQuaternion(_pq);
+  _aq.setFromEuler(_ea.set(ex, ey, ez)); _aq.premultiply(_mq).multiply(_bq.copy(_mq).invert());   // M E M^-1 (world)
+  _q.copy(_pq).invert().multiply(_aq).multiply(_pq);                                               // into the parent's frame
+  offsetBone(u, name, _q);
+  b.updateMatrixWorld(true);
+}
+function bowPose(g, u, k) {
+  u.bowArm = true;
+  g.updateMatrixWorld(true); u.model.getWorldQuaternion(_mq);
+  armOffset(u, 'upperarml', BT.la[0], BT.la[1], BT.la[2]);
+  armOffset(u, 'upperarmr', BT.ra[0] + BT.raK[0] * k, BT.ra[1] + BT.raK[1] * k, BT.ra[2] + BT.raK[2] * k);
+  armOffset(u, 'lowerarmr', BT.fa[0] + BT.faK[0] * k, BT.fa[1] + BT.faK[1] * k, BT.fa[2] + BT.faK[2] * k);
+  // bow upright in model space (slight outward cant), whatever the fist's own twist
+  const sl = u.bones.handslotl; sl.getWorldQuaternion(_pq);
+  _aq.setFromEuler(_ea.set(0, BT.yaw, BT.cant)); _aq.premultiply(_mq);
+  u.bow.quaternion.copy(_pq.invert().multiply(_aq)); u.bow.updateMatrixWorld(true);
+  u.bones.handslotr.getWorldPosition(_hp); u.bow.worldToLocal(_hp);
+  u.bow.userData.setDrawTo(k, _hp);
 }
 // the mixer skips re-writing a bone whose animated value did not change, so layer offsets on a remembered base pose
 function offsetBone(u, n, q) {
