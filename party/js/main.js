@@ -817,6 +817,8 @@ function loop(ts) {
   }
   if (G.sky) G.sky.position.copy(camera.position);
   renderer.clear();
+  // depth precision: high in the air (plane / parachute) the 0.05 near plane makes roads and ground flicker
+  { const hy = camera.position.y, nn = hy > 12 ? Math.min(2, hy * 0.02) : 0.05; if (Math.abs(camera.near - nn) > 0.005) { camera.near = nn; camera.updateProjectionMatrix(); } }
   renderer.render(scene, camera);
   if (G.player?.alive && !scopeOverlay() && !thirdPerson() && G.state === 'playing') { renderer.clearDepth(); renderer.render(vmScene, vmCamera); }
 }

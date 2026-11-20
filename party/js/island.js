@@ -69,7 +69,7 @@ export function buildIsland(scene, quality) {
   // edge: low sea wall keeps players on the island (bullets pass over)
   for (const s of [-1, 1]) { solid(-HALF - 12, 0, s * (HALF + 11) - 1, HALF + 12, 1.1, s * (HALF + 11) + 1, MAT.concrete); solid(s * (HALF + 11) - 1, 0, -HALF - 12, s * (HALF + 11) + 1, 1.1, HALF + 12, MAT.concrete); }
   // roads (decor, minimap)
-  const road = (x0, z0, x1, z1) => { const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(-Math.PI / 2); const t = T.asphalt.clone(); t.needsUpdate = true; t.repeat.set(Math.max(1, (x1 - x0) / 8), Math.max(1, (z1 - z0) / 8)); if (z1 - z0 > x1 - x0) { t.rotation = Math.PI / 2; t.repeat.set(Math.max(1, (z1 - z0) / 8), Math.max(1, (x1 - x0) / 8)); } const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: t })); m.position.set((x0 + x1) / 2, 0.02, (z0 + z1) / 2); scene.add(m); minimapRects.push({ x0, z0, x1, z1, c: '#55585c' }); };
+  const road = (x0, z0, x1, z1) => { const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(-Math.PI / 2); const t = T.asphalt.clone(); t.needsUpdate = true; t.repeat.set(Math.max(1, (x1 - x0) / 8), Math.max(1, (z1 - z0) / 8)); if (z1 - z0 > x1 - x0) { t.rotation = Math.PI / 2; t.repeat.set(Math.max(1, (z1 - z0) / 8), Math.max(1, (x1 - x0) / 8)); } const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: t })); m.material.polygonOffset = true; m.material.polygonOffsetFactor = -2; m.material.polygonOffsetUnits = -4; m.position.set((x0 + x1) / 2, 0.07, (z0 + z1) / 2); scene.add(m); minimapRects.push({ x0, z0, x1, z1, c: '#55585c' }); };
   road(-128, -4, 128, 4); road(-4, -128, 4, 128); road(30, -100, 36, -4); road(-100, 40, -4, 46);
 
   // ---------- port (south-east): container yard + cranes + pier ----------
@@ -80,8 +80,9 @@ export function buildIsland(scene, quality) {
   for (let gx = 0; gx < 6; gx++) for (let gz = 0; gz < 7; gz++) {
     if (rand() < 0.22) continue;
     const x = 44 + gx * 12 + rr(-1, 1), z = 22 + gz * 9 + rr(-1, 1);
-    containerStack(x, z, rand() < 0.2, 1 + ((rand() * 3) | 0));
-    if (rand() < 0.5) containerStack(x, z + 3, false, 1);
+    const rot = rand() < 0.2;
+    containerStack(x, z, rot, 1 + ((rand() * 3) | 0));
+    if (rand() < 0.5 && !rot) containerStack(x, z + 3, false, 1);   // no second stack next to a rotated one (they overlapped)
   }
   // cranes
   for (const x of [56, 84, 112]) {
