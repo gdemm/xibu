@@ -138,7 +138,7 @@ function startMatch(opts) {
   G.vehicles = opts.mode === 'br' ? spawnVehicles(scene, G.map) : [];
   for (const v of G.vehicles) toonify(v.mesh);
   P.inCar = null; if (P.body) { scene.remove(P.body); P.body = null; }
-  G.mode = opts.mode || 'tdm'; G.owned = null; G.scope = 0; P.draw = 0; clearArrows();
+  G.mode = opts.mode || 'tdm'; G.owned = null; P.runLock = false; P.sprint = false; G.scope = 0; P.draw = 0; clearArrows();
   G.quality = S.quality; VM.setTeam(opts.mode === 'br' ? 'blue' : opts.team);
   if (G.mode === 'br') {
     G.diff = opts.diff; G.scores = { blue: 0, red: 0 }; G.now = G.now || 0;
@@ -401,7 +401,7 @@ function updateAirButton() {
 
 // ---------------- player ----------------
 const VMB = G.VMB = { rifle: [0.2, -0.21, -0.52, 0.05], sniper: [0.2, -0.2, -0.5, 0.05], pistol: [0.15, -0.16, -0.42, 0.04], knife: [0.2, -0.19, -0.42, 0.12], bow: [0, 0, 0, 0] };
-const P = { firing: false, fireLatch: false, scoped: false, recoil: 0, nextShot: 0, jumpQ: false, lookX: 0, lookY: 0, joyX: 0, joyY: 0, keys: {}, bob: 0, eye: 1.6, kick: 0, switchT: 0, streak: 0, lastShotT: 0, aimAt: null, debugFireUntil: 0, draw: 0 };
+const P = { firing: false, fireLatch: false, scoped: false, recoil: 0, nextShot: 0, jumpQ: false, lookX: 0, lookY: 0, joyX: 0, joyY: 0, keys: {}, bob: 0, eye: 1.6, kick: 0, switchT: 0, streak: 0, lastShotT: 0, aimAt: null, debugFireUntil: 0, draw: 0, sprint: false, runLock: false };
 function setWeapon(id, silent) {
   const w = WEAPONS[id]; G.weapon = w; G.reloading = false; P.scoped = false;
   for (const k of ORDER) VM.models[k].visible = k === id;
@@ -513,9 +513,12 @@ function updatePlayer(dt) {
   let fx = 0, fz = 0;
   if (P.keys.KeyW) fz += 1; if (P.keys.KeyS) fz -= 1; if (P.keys.KeyD) fx += 1; if (P.keys.KeyA) fx -= 1;
   fx += P.joyX; fz += -P.joyY;
+  if (P.runLock) { fx = 0; fz = 1; }
   const l = Math.hypot(fx, fz); if (l > 1) { fx /= l; fz /= l; }
   const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
   let speed = G.weapon.melee ? 6.8 : G.weapon.id === 'sniper' ? 5.4 : 6.0;
+  const running = (P.sprint || P.runLock || P.keys.ShiftLeft) && fz > 0.5 && !p.crouch && !P.scoped;
+  if (running) speed *= 1.45; p.running = running;
   if (p.crouch) speed *= 0.5; if (P.scoped) speed *= 0.55; if (P.draw > 0) speed *= 0.7;
   const mx = (-sy * fz + cy * fx) * speed * dt, mz = (-cy * fz - sy * fx) * speed * dt;
   if (P.jumpQ && p.onGround) { p.vel.y = 6.8; }
@@ -678,7 +681,7 @@ touchLayer.addEventListener('touchstart', (e) => {
     const el = t.target.closest && t.target.closest('[data-btn]');
     if (el) { const btn = el.dataset.btn; T.set(t.identifier, { type: 'btn', btn, el, x: t.clientX, y: t.clientY }); btnDown(btn, el); continue; }
     if (t.clientX < innerWidth * 0.4) {
-      T.set(t.identifier, { type: 'joy', ox: t.clientX, oy: t.clientY });
+      T.set(t.identifier, { type: 'joy', ox: t.clientX, oy: t.clientY }); P.runLock = false; P.sprint = false; joyBase.classList.remove('run', 'lock');
       joyBase.style.left = t.clientX + 'px'; joyBase.style.top = t.clientY + 'px'; joyBase.classList.remove('hidden'); joyKnob.style.transform = '';
     } else T.set(t.identifier, { type: 'look', x: t.clientX, y: t.clientY });
   }
@@ -689,6 +692,8 @@ touchLayer.addEventListener('touchmove', (e) => {
     const s = T.get(t.identifier); if (!s) continue;
     if (s.type === 'joy') {
       let dx = t.clientX - s.ox, dy = t.clientY - s.oy; const d = Math.hypot(dx, dy), R = 50;
+      // long pull upward past the ring = run mode; release there = keep running
+      P.sprint = dy < -R * 1.7 && Math.abs(dx) < -dy * 0.6; joyBase.classList.toggle('run', P.sprint);
       if (d > R) { dx = dx / d * R; dy = dy / d * R; }
       P.joyX = dx / R; P.joyY = dy / R; joyKnob.style.transform = `translate(${dx}px,${dy}px)`;
     } else if (s.type === 'look' || (s.type === 'btn' && s.btn === 'fire')) {
@@ -699,7 +704,7 @@ touchLayer.addEventListener('touchmove', (e) => {
 function touchEnd(e) {
   for (const t of e.changedTouches) {
     const s = T.get(t.identifier); if (!s) continue; T.delete(t.identifier);
-    if (s.type === 'joy') { P.joyX = P.joyY = 0; joyBase.classList.add('hidden'); }
+    if (s.type === 'joy') { P.joyX = P.joyY = 0; if (P.sprint) { P.runLock = true; HUD.centerMsg && HUD.centerMsg('自动奔跑中，碰摇杆取消', 1200); } P.sprint = false; joyBase.classList.remove('run'); joyBase.classList.add('hidden'); }
     if (s.type === 'btn') { s.el.classList.remove('pressed'); if (s.btn === 'fire' && ![...T.values()].some(v => v.btn === 'fire')) P.firing = false; }
   }
 }

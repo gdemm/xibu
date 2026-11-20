@@ -121,8 +121,15 @@ export function updateBot(bot, dt, G) {
     const aimErr = Math.abs(angDiff(bot.yaw, want));
     if (bot.mag == null) bot.mag = 30;
     if (bot.reloadUntil && G.now >= bot.reloadUntil) { bot.reloadUntil = 0; bot.mag = 30; }
-    const gunNow = G.br ? (bot.armed ? bot.gun : 'pistol') : (bot.gun || 'rifle');
-    if (gunNow === 'bow') {   // archer: draw 0.8 s, then loose with lead + drop compensation
+    const gunNow = G.br ? (bot.armed ? bot.gun : 'knife') : (bot.gun || 'rifle');
+    if (gunNow === 'knife') {   // unarmed in BR: rush in and stab
+      moveX = dx / d; moveZ = dz / d; speed /= 0.55; bot.crouch = false;
+      if (bot.reactT <= 0 && aimErr < 0.5 && d < 1.9 && G.now >= bot.nextShot) {
+        const dir = _d.set(dx, (t.pos.y + 1.0) - eye.y, dz).normalize();
+        G.fire(bot, eye.clone(), dir.clone(), 'knife', D.dmg);
+        soldierFired(bot.mesh); bot.nextShot = G.now + rnd(0.6, 0.9);
+      }
+    } else if (gunNow === 'bow') {   // archer: draw 0.8 s, then loose with lead + drop compensation
       if (bot.reactT <= 0 && aimErr < 0.3 && G.now >= bot.nextShot) {
         if (!bot.drawT) bot.drawT = G.now;
         else if (G.now - bot.drawT >= 0.8) {
@@ -144,7 +151,7 @@ export function updateBot(bot, dt, G) {
       const dir = _d.subVectors(_t, eye).normalize();
       const s = D.spread * (1 + (t.isPlayer && t.moving ? 0.5 : 0));
       dir.x += rnd(-s, s); dir.y += rnd(-s, s) * 0.7; dir.z += rnd(-s, s); dir.normalize();
-      const gun = G.br ? (bot.armed ? bot.gun : 'pistol') : 'rifle';
+      const gun = G.br ? (bot.armed ? bot.gun : 'knife') : 'rifle';
       G.fire(bot, eye.clone(), dir.clone(), gun, D.dmg);
       bot.shotsFired++; bot.lastFired = G.now; ud.muzzle.visible = true; ud.muzzle.rotation.z = Math.random() * 3; soldierFired(bot.mesh);
       if (--bot.mag <= 0) { bot.reloadUntil = G.now + 2.2; bot.burstLeft = 0; }
@@ -172,7 +179,7 @@ export function updateBot(bot, dt, G) {
   let pitch = 0;
   if (engaging) { const t = bot.target; pitch = Math.atan2(t.pos.y + (t.crouch ? 0.95 : 1.2) - (bot.pos.y + (bot.crouch ? 1.1 : 1.45)), Math.hypot(t.pos.x - bot.pos.x, t.pos.z - bot.pos.z)); }
   if (!engaging) bot.drawT = 0;
-  const bowNow = (G.br ? (bot.armed ? bot.gun : 'pistol') : (bot.gun || 'rifle')) === 'bow';
+  const bowNow = (G.br ? (bot.armed ? bot.gun : 'knife') : (bot.gun || 'rifle')) === 'bow';
   const reload = bot.reloadUntil ? 1 - Math.max(0, bot.reloadUntil - G.now) / 2.2 : -1;
   const lo = G.quality === 'low' || (G.player && bot.pos.distanceTo(G.player.pos) > 24);
   setSoldierLOD(bot.mesh, lo);
