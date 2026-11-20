@@ -76,6 +76,7 @@ body.air #btnAtk,body.air #btnSup{display:none}
 #endList{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;font-size:12px;overflow:auto;max-height:120px}
 #endList div{display:flex;justify-content:space-between;gap:8px}
 #endList .me{color:#ffd23f;font-weight:900}
+#endList .mate{color:#7fdcff;font-weight:800}
 #endList .eh{height:18px;width:18px;object-fit:cover;object-position:50% 20%;border-radius:50%;background:#3b4fd1;vertical-align:middle;margin-right:4px}
 #rotHint{position:absolute;inset:0;z-index:60;background:#1b2a6b;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;font-size:18px;font-weight:900;text-align:center}
 #rotHint .ph{width:44px;height:74px;border:3px solid #fff;border-radius:8px;animation:rotp 1.6s ease-in-out infinite}

@@ -1,6 +1,6 @@
 // 6 original chunky humanoid heroes + robot-dog pet: stats + procedural toon meshes (faces +Z)
 import * as THREE from 'three';
-import { Builder, M, outlined, vcMat } from './util.js';
+import { Builder, M, outlined, heroMat } from './util.js';
 
 // ---------- primitive helpers ----------
 let DET = 1; // segment multiplier: 1 = lobby/close-up, <1 = in-game LOD
@@ -31,8 +31,9 @@ function feat(B, h, geo, x, y, inset, sx, sy, sz, col, extraRz = 0, extraRx = 0)
   const z = onHead(h, x, y, inset), ry = Math.atan2(x, z - h.z), rx = -Math.atan2(y - h.y, z - h.z);
   B.add(geo, M(x, y, z, rx + extraRx, ry, extraRz, sx, sy, sz), col);
 }
+let HEAD = null; // last head sphere of the hero being built (used to enlarge the head afterwards)
 function face(B, h, o) {
-  Builder.noOut = true;
+  HEAD = h; Builder.noOut = true;
   const ex = o.ex ?? h.R * 0.38, ey = o.ey ?? h.y + h.R * 0.08, er = o.er ?? h.R * 0.24;
   for (const s of [-1, 1]) {
     feat(B, h, S(er, 20, 14), s * ex, ey, er * 0.45, 0.9, 1.2, 0.5, WHITE);
@@ -60,7 +61,7 @@ function armBase(B, o) {
   B.add(S(r * 1.25), M(0, 0, 0), o.sleeve);
   B.add(CAP(r, len * 0.7), M(hx * 0.45, hy * 0.45, hz * 0.45, ax, 0, -hx * 0.8), o.sleeve2 ?? o.sleeve);
   if (o.cuff !== undefined) B.add(TOR(r * 1.05, r * 0.32, Math.PI * 2, 8, 18), M(hx * 0.78, hy * 0.78, hz * 0.78, tx, 0, 0), o.cuff);
-  B.add(S(o.hand ?? 0.17), M(hx, hy, hz, 0, 0, 0, 1, 0.95, 1.05), o.handCol ?? o.skin);
+  B.add(S((o.hand ?? 0.17) * 1.2), M(hx, hy, hz, 0, 0, 0, 1, 0.95, 1.05), o.handCol ?? o.skin); // chunkier hands
   return [hx, hy, hz];
 }
 
@@ -116,7 +117,7 @@ export const PET = { kind: 'dog', name: '铁皮旺财' };
 const GEO = {};
 function parts(kind, lod) {
   const key = kind + (lod ? ':lo' : ''); if (GEO[key]) return GEO[key];
-  DET = lod ? 0.62 : 1;
+  DET = lod ? 0.62 : 1; HEAD = null;
   const body = new Builder(), foot = new Builder(), arm = new Builder(), armL = new Builder();
   let fx = 0.24, fy = 0.12, armPos = [0.6, 1.2, 0.02], melee = false, two = true;
 
@@ -255,6 +256,7 @@ function parts(kind, lod) {
     body.add(S(0.6), M(0, 1.72, 0), BR).add(S(0.4), M(0, 1.7, 0.26), SK);
     const h = { y: 1.7, z: 0.26, R: 0.4 };
     face(body, h, { skin: SK, er: 0.095, ex: 0.14, ey: 1.73, browAng: 0.1, browT: 0.03, mouth: 'open', mw: 0.09, my: 1.56, ears: false, cheekCol: 0xff9f8f });
+    HEAD = { y: 1.72, z: 0, R: 0.6 }; // scale the whole helmet, not just the face window
     body.add(TOR(0.32, 0.075, Math.PI * 2, 10, 32), M(0, 1.7, 0.5), BRD);
     for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2 + 0.39; body.add(S(0.04), M(Math.cos(a) * 0.32, 1.7 + Math.sin(a) * 0.32, 0.57), 0xe8c56a); }
     body.add(CAP(0.025, 0.1, 6), M(-0.2, 1.86, 0.55, 0, 0, -0.75), WHITE);
@@ -283,8 +285,21 @@ function parts(kind, lod) {
     arm.add(C(0.04, 0.04, 0.3, 8), M(0, 0.12, -0.12, -0.6), MTD).add(TOR(0.08, 0.025, Math.PI * 2, 6, 14), M(0, 0.12, -0.1, 0, 0, 0), MTD).add(S(0.12), M(0, 0.28, -0.28), OR);
     armPos = [0, 1.0, -0.75]; fx = 0.38; two = false;
   }
-  const P = { body: body.build(), foot: foot.build(), arm: buildArm(arm), armL: two ? armL.build() : null, fx, fy, armPos, melee };
+  const bodyG = body.build(); if (HEAD) bigHead(bodyG, HEAD);
+  const P = { body: bodyG, foot: foot.build(), arm: buildArm(arm), armL: two ? armL.build() : null, fx, fy, armPos, melee };
   DET = 1; return (GEO[key] = P);
+}
+// enlarge everything above the neck around the head centre (smooth blend over the neck) — chunkier, more readable heads
+function bigHead(g, h, K = 1.13) {
+  const neck = h.y - h.R * 0.95, band = 0.2;
+  for (const geo of [g, g.userData.outline]) {
+    if (!geo) continue; const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i); if (y < neck) continue; const t = Math.min(1, (y - neck) / band), k = 1 + (K - 1) * t * t * (3 - 2 * t);
+      p.setXYZ(i, p.getX(i) * k, h.y + (y - h.y) * k + (K - 1) * h.R * 0.6 * t, h.z + (p.getZ(i) - h.z) * k);
+    }
+    p.needsUpdate = true; geo.computeBoundingSphere();
+  }
 }
 // arm builder may hold a pre-coloured sub-geometry (sword); merge it as-is
 function buildArm(b) {
@@ -298,31 +313,39 @@ function buildArm(b) {
 // lod=true for the in-game crowd (fewer segments), false for lobby / portraits / lineup close-ups
 export function makeBrawler(kind, lod = false) {
   const P = parts(kind, lod), root = new THREE.Group(), inner = new THREE.Group(); root.add(inner);
-  const body = outlined(P.body, vcMat(), 0.04); inner.add(body);
-  const fl = outlined(P.foot, vcMat(), 0.035), fr = outlined(P.foot, vcMat(), 0.035);
+  const OC = 0x14101c, OP = 0.07; // outline colour + depth push (silhouette-only lines)
+  const body = outlined(P.body, heroMat(), 0.052, OC, OP); inner.add(body);
+  const fl = outlined(P.foot, heroMat(), 0.045, OC, OP), fr = outlined(P.foot, heroMat(), 0.045, OC, OP);
   fl.position.set(-P.fx, P.fy, 0); fr.position.set(P.fx, P.fy, 0); inner.add(fl, fr);
-  const arm = outlined(P.arm, vcMat(), 0.035); arm.position.set(-P.armPos[0], P.armPos[1], P.armPos[2]); // weapon in the hero's right hand (screen-left when facing camera)
+  const arm = outlined(P.arm, heroMat(), 0.045, OC, OP); arm.position.set(-P.armPos[0], P.armPos[1], P.armPos[2]); // weapon in the hero's right hand (screen-left when facing camera)
   inner.add(arm);
   let arm2 = null;
-  if (P.armL) { arm2 = outlined(P.armL, vcMat(), 0.035); arm2.position.set(P.armPos[0], P.armPos[1], P.armPos[2]); inner.add(arm2); }
-  root.userData = { kind, inner, body, fl, fr, arm, arm2, armBase: P.armPos.slice(), melee: P.melee, t: Math.random() * 6, kick: 0, kick2: 0 };
+  if (P.armL) { arm2 = outlined(P.armL, heroMat(), 0.045, OC, OP); arm2.position.set(P.armPos[0], P.armPos[1], P.armPos[2]); inner.add(arm2); }
+  root.userData = { kind, inner, body, fl, fr, arm, arm2, armBase: P.armPos.slice(), melee: P.melee, t: Math.random() * 6, kick: 0, kick2: 0, w: 0, lean: 0 };
   return root;
 }
 // walk cycle / idle bob / attack kick (gun recoil or sword slash)
 export function animBrawler(g, dt, speed) {
-  const u = g.userData; u.t += dt * (speed > 0.3 ? 11 : 3);
-  const w = Math.min(1, speed / 5), sn = Math.sin(u.t);
-  u.fl.position.z = sn * 0.26 * w; u.fr.position.z = -sn * 0.26 * w;
-  u.fl.position.y = 0.12 + Math.max(0, Math.cos(u.t)) * 0.14 * w; u.fr.position.y = 0.12 + Math.max(0, -Math.cos(u.t)) * 0.14 * w;
-  const bob = Math.abs(sn) * 0.07 * w + Math.sin(u.t * 0.5) * 0.025 * (1 - w);
-  u.body.position.y = bob; u.body.rotation.z = sn * 0.04 * w; u.body.rotation.x = 0.06 * w;
+  const u = g.userData;
+  u.w += (Math.min(1, speed / 5) - u.w) * Math.min(1, dt * 9); const w = u.w; // smoothed run weight: no snapping between idle and run
+  u.t += dt * (2.2 + 9.5 * w); u.it = (u.it || 0) + dt;
+  const sn = Math.sin(u.t), cs = Math.cos(u.t);
+  // feet: arc steps (lift on the forward swing)
+  u.fl.position.z = sn * 0.27 * w; u.fr.position.z = -sn * 0.27 * w;
+  u.fl.position.y = 0.12 + Math.max(0, cs) ** 1.5 * 0.16 * w; u.fr.position.y = 0.12 + Math.max(0, -cs) ** 1.5 * 0.16 * w;
+  u.fl.rotation.x = -cs * 0.35 * w; u.fr.rotation.x = cs * 0.35 * w;
+  // body: run bounce + lean, idle breathing
+  const breath = Math.sin(u.it * 2.4), bob = Math.abs(sn) * 0.075 * w + breath * 0.018 * (1 - w);
+  u.lean += (0.13 * w - u.lean) * Math.min(1, dt * 8);
+  u.body.position.y = bob; u.body.rotation.z = sn * 0.045 * w + Math.sin(u.it * 1.1) * 0.012 * (1 - w); u.body.rotation.x = u.lean;
+  u.body.scale.set(1 - breath * 0.008 * (1 - w), 1 + breath * 0.012 * (1 - w), 1);
   u.kick = Math.max(0, u.kick - dt * 6); u.kick2 = Math.max(0, u.kick2 - dt * 6);
   const b = u.armBase, A = u.arm;
   A.position.y = b[1] + bob;
   if (u.kind === 'dog') { A.rotation.y = Math.sin(u.t * 3) * 0.5; A.position.z = b[2]; }
   else if (u.melee) { // sword: wind-up and slash across, alternate direction for the 2nd hit
-    const k = u.kick, k2 = u.kick2; A.rotation.set(-0.5 * (k + k2) + sn * 0.15 * w, 1.3 * (k - k2) * Math.sin(Math.max(k, k2) * Math.PI), 0); A.position.z = b[2] + (k + k2) * 0.25;
-  } else { A.position.z = b[2] - u.kick * 0.22 - sn * 0.05 * w; A.rotation.x = -u.kick * 0.45 - sn * 0.12 * w; }
-  if (u.arm2) { u.arm2.position.y = b[1] + bob; u.arm2.rotation.x = -sn * 0.7 * w + Math.sin(u.t * 0.5) * 0.05 * (1 - w); u.arm2.rotation.z = 0.12; }
+    const k = u.kick, k2 = u.kick2; A.rotation.set(-0.5 * (k + k2) + sn * 0.15 * w - breath * 0.03 * (1 - w), 1.3 * (k - k2) * Math.sin(Math.max(k, k2) * Math.PI), 0); A.position.z = b[2] + (k + k2) * 0.25;
+  } else { const ke = u.kick * u.kick * (3 - 2 * u.kick); A.position.z = b[2] - ke * 0.22 - sn * 0.05 * w; A.rotation.x = -ke * 0.45 - sn * 0.12 * w - breath * 0.03 * (1 - w); }
+  if (u.arm2) { u.arm2.position.y = b[1] + bob; u.arm2.rotation.x = -sn * 0.7 * w + breath * 0.05 * (1 - w); u.arm2.rotation.z = 0.12 + Math.max(0, breath) * 0.04 * (1 - w); }
 }
 export function kickBrawler(g, alt) { const u = g.userData; if (alt && u.melee) u.kick2 = 1; else u.kick = 1; }

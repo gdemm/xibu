@@ -8,17 +8,40 @@ export function toonRamp() {
   RAMP = new THREE.DataTexture(d, 4, 1, THREE.RGBAFormat); RAMP.minFilter = RAMP.magFilter = THREE.NearestFilter; RAMP.needsUpdate = true;
   return RAMP;
 }
+// heroes: brighter, softer 3-band ramp + stepped rim light (separate from the world material)
+let HRAMP = null;
+function heroRamp() {
+  if (HRAMP) return HRAMP;
+  const d = new Uint8Array([150, 140, 178, 255, 212, 206, 224, 255, 255, 255, 255, 255]);
+  HRAMP = new THREE.DataTexture(d, 3, 1, THREE.RGBAFormat); HRAMP.minFilter = HRAMP.magFilter = THREE.NearestFilter; HRAMP.needsUpdate = true; return HRAMP;
+}
+let HMAT = null;
+export function heroMat(fresh = false) {
+  if (HMAT && !fresh) return HMAT;
+  const m = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: heroRamp() });
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
+  { float rim = 1.0 - clamp(dot(normal, geometryViewDir), 0.0, 1.0);
+    outgoingLight += mix(vec3(1.0, 0.97, 0.9), diffuseColor.rgb, 0.35) * smoothstep(0.62, 0.78, rim) * 0.32; }
+  #include <opaque_fragment>`);
+  };
+  m.customProgramCacheKey = () => 'heroRim';
+  if (fresh) { m.transparent = true; return m; }
+  return (HMAT = m);
+}
 let VMAT = null;
 export function vcMat() { return VMAT || (VMAT = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonRamp() })); }
 export function toonMat(color, extra = {}) { return new THREE.MeshToonMaterial({ color, gradientMap: toonRamp(), ...extra }); }
 
 // inverted-hull outline: vertices pushed along normals, back faces only
 const OUT = {};
-export function outlineMat(w = 0.05, color = 0x1a1022) {
-  const k = w + ':' + color; if (OUT[k]) return OUT[k];
+// push > 0 moves the hull away from the camera in view space, so it only shows at silhouettes
+// (no dark seams where hair, beards or hats meet the face)
+export function outlineMat(w = 0.05, color = 0x1a1022, push = 0) {
+  const k = w + ':' + color + ':' + push; if (OUT[k]) return OUT[k];
   return (OUT[k] = new THREE.ShaderMaterial({
-    uniforms: { w: { value: w }, c: { value: new THREE.Color(color) } },
-    vertexShader: `uniform float w;
+    uniforms: { w: { value: w }, c: { value: new THREE.Color(color) }, push: { value: push } },
+    vertexShader: `uniform float w; uniform float push;
 #include <common>
 #ifdef USE_INSTANCING
 #endif
@@ -28,6 +51,7 @@ void main(){ vec3 p = position + normalize(normal) * w;
 #else
  vec4 mv = modelViewMatrix * vec4(p,1.0);
 #endif
+ mv.z -= push;
  gl_Position = projectionMatrix * mv; }`,
     fragmentShader: `uniform vec3 c; void main(){ gl_FragColor = vec4(c,1.0); }`,
     side: THREE.BackSide,
@@ -61,9 +85,9 @@ export class Builder {
   }
 }
 // mesh + outline child
-export function outlined(geo, mat, w = 0.05) {
+export function outlined(geo, mat, w = 0.05, color, push = 0) {
   const m = new THREE.Mesh(geo, mat || vcMat());
-  const o = new THREE.Mesh(geo.userData.outline || geo, outlineMat(w)); o.renderOrder = -1; m.add(o);
+  const o = new THREE.Mesh(geo.userData.outline || geo, outlineMat(w, color ?? 0x1a1022, push)); o.renderOrder = -1; m.add(o);
   return m;
 }
 export const rnd = (a, b) => a + Math.random() * (b - a);

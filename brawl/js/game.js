@@ -2,12 +2,17 @@
 import * as THREE from 'three';
 import { CHARS, ORDER, PET, makeBrawler, animBrawler, kickBrawler } from './chars.js';
 import { buildWorld, T, SOLID, BLOCKSHOT, CELL, HALF, N, cx, cz, wx } from './world.js';
-import { vcMat, outlined, rnd, clamp } from './util.js';
+import { vcMat, heroMat, outlined, rnd, clamp } from './util.js';
 
 const NAMES = ['小番茄', '暴走土豆', '奶茶侠', '电光虾', '麻辣烫', '芝士喵', '跳跳糖', '可乐君', '布丁', '雷公蛋', '豆包', '烤肠王', '彩虹糖', '咕噜噜', '小钢炮', '泡泡龙', '大白菜', '橘子汽水', '饭团', '铁锅炖'];
 const PHASES = [
   { wait: 32, shrink: 24, r: 62, dps: 400 }, { wait: 28, shrink: 22, r: 38, dps: 600 }, { wait: 24, shrink: 18, r: 22, dps: 900 },
   { wait: 20, shrink: 15, r: 11, dps: 1200 }, { wait: 15, shrink: 14, r: 4, dps: 1600 }, { wait: 10, shrink: 12, r: 0.3, dps: 2200 },
+];
+// classic arena gas: a square closing from the map edges to the centre (r = half-width of the safe square)
+const CPHASES = [
+  { wait: 22, shrink: 22, r: 36 }, { wait: 14, shrink: 22, r: 27 }, { wait: 12, shrink: 20, r: 19 },
+  { wait: 10, shrink: 18, r: 11.5 }, { wait: 8, shrink: 16, r: 5 }, { wait: 8, shrink: 12, r: 1.6 },
 ];
 const ARMOR_RED = [0, 0.12, 0.2, 0.28], HELM_RED = [0, 0.06, 0.1, 0.15];
 const PLANE_ALT = 44, PLANE_SPEED = 13, FALL_V = 13, CHUTE_V = 4.5, FALL_H = 10, CHUTE_H = 7, CHUTE_AT = 16;
@@ -19,7 +24,10 @@ export function createGame(scene, FX, H) {
   const G = { scene, FX, ents: [], projs: [], lobs: [], items: [], storms: [], drops: [], now: 0, state: 'plane', diff: 1, aliveCount: 0 };
 
   function setup(opts) {
-    G.world = buildWorld(scene); G.opts = opts; G.diff = opts.diff ?? 1; G.now = 0; G.over = false; G.placeSeq = opts.n;
+    G.mode = opts.mode || 'party'; G.classic = G.mode !== 'party'; G.duo = G.mode === 'duo';
+    G.phases = (G.classic ? CPHASES : PHASES).map(p => ({ ...p })); if (opts.fastZone) for (const ph of G.phases) { ph.wait /= 4; ph.shrink /= 4; }
+    G.world = buildWorld(scene, G.classic); G.opts = opts; G.diff = opts.diff ?? 1; G.now = 0; G.over = false; G.placeSeq = opts.n; G.dropTimes = []; G.plane = null;
+    if (G.classic) return setupClassic(opts);
     const kinds = []; for (let i = 0; i < opts.n - 1; i++) kinds.push(ORDER[(Math.random() * ORDER.length) | 0]);
     const names = NAMES.slice().sort(() => Math.random() - 0.5);
     G.player = makeEnt(opts.kind, '你', true);
@@ -32,18 +40,39 @@ export function createGame(scene, FX, H) {
     FX.plane.visible = true; FX.plane.rotation.y = Math.atan2(dir.x, dir.z);
     for (const e of G.ents) { e.air = 'plane'; e.mesh.visible = false; if (!e.isPlayer) e.jumpK = rnd(G.plane.k0 + 0.03, G.plane.k1 - 0.05); }
     // zone
-    if (opts.fastZone) for (const ph of PHASES) { ph.wait /= 4; ph.shrink /= 4; }
     G.zone = { phase: -1, stage: 'wait', t: 0, c: new THREE.Vector2(rnd(-10, 10), rnd(-10, 10)), r: 112, from: null, next: null, dps: 300 };
     nextPhase(); G.zone.t += G.plane.len / PLANE_SPEED;
     G.dropTimes = [G.plane.len / PLANE_SPEED + 45, G.plane.len / PLANE_SPEED + 105, G.plane.len / PLANE_SPEED + 165, G.plane.len / PLANE_SPEED + 215];
     G.state = 'plane';
   }
 
+  // classic (solo 10 / duo 5x2): no plane, fixed spawn ring around the outer part of the arena, 3-2-1 countdown
+  function setupClassic(opts) {
+    const n = 10, W = G.world, PH = W.PH; opts.n = n; G.placeSeq = n;
+    const kinds = []; for (let i = 0; i < n - 1; i++) kinds.push(ORDER[(Math.random() * ORDER.length) | 0]);
+    const names = NAMES.slice().sort(() => Math.random() - 0.5);
+    G.player = makeEnt(opts.kind, '你', true);
+    for (let i = 0; i < n - 1; i++) makeEnt(kinds[i], names[i], false);
+    if (G.duo) for (let i = 0; i < n; i++) { const e = G.ents[i]; e.team = 100 + (i >> 1); e.mate = G.ents[i ^ 1]; }
+    // spawn slots evenly spaced on a ring at ~80% of the arena half-width (pairs side by side in duo)
+    const slots = G.duo ? 5 : 10, R0 = PH * 0.8, a0 = Math.random() * Math.PI * 2, order = [...Array(slots).keys()].sort(() => Math.random() - 0.5);
+    const place = (e, a, side) => {
+      let x = Math.cos(a) * R0, z = Math.sin(a) * R0;
+      if (side) { x += -Math.sin(a) * side; z += Math.cos(a) * side; }
+      for (let r = 0; r <= 2; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const i = cx(x) + di, j = cz(z) + dj; if (!W.inb(i, j)) continue; const t = W.type[W.idx(i, j)]; if (t === T.WALL || t === T.BUSH) W.remove(i, j); }
+      [x, z] = W.freeNear(x, z); e.pos.set(x, 0, z); e.yaw = Math.atan2(-x, -z); e.spawnA = a;
+    };
+    for (let i = 0; i < n; i++) { const e = G.ents[i], slot = G.duo ? order[i >> 1] : order[i]; place(e, a0 + slot / slots * Math.PI * 2, G.duo ? (i & 1 ? 1.6 : -1.6) : 0); e.mesh.visible = true; e.protect = 0; }
+    G.zone = { sq: true, phase: -1, stage: 'wait', t: 0, c: new THREE.Vector2(0, 0), r: PH + 0.01, from: null, next: null, dps: 0 };
+    nextPhase(); G.zone.t += 3;
+    G.countT = 3; G.state = 'count'; G.aliveCount = n; G.boxTick = 0;
+  }
+
   function makeEnt(kind, name, isPlayer, owner) {
     const d = kind === PET.kind ? { hp: CHARS.granny.sup.hp, speed: 6.4, range: 3 } : CHARS[kind];
     const mesh = makeBrawler(kind, true); scene.add(mesh);
     if (isPlayer) { // own translucent-capable material so hiding in bushes can fade only us
-      const mat = vcMat().clone(); mat.transparent = true; mesh.traverse(o => { if (o.isMesh && o.material === vcMat()) o.material = mat; }); mesh.userData.mat = mat;
+      const mat = heroMat(true); mesh.traverse(o => { if (o.isMesh && o.material === heroMat()) o.material = mat; }); mesh.userData.mat = mat;
     }
     const e = {
       id: G.ents.length, kind, def: d, name, isPlayer, pos: new THREE.Vector3(), yaw: 0, hp: d.hp, baseHp: d.hp, maxHp: d.hp, cubes: 0, armor: 0, helmet: 0,
@@ -58,18 +87,27 @@ export function createGame(scene, FX, H) {
 
   // ---------------- zone ----------------
   function nextPhase() {
-    const Z = G.zone; Z.phase++; const ph = PHASES[Z.phase];
+    const Z = G.zone; Z.phase++; const ph = G.phases[Z.phase];
     if (!ph) { Z.stage = 'final'; Z.next = null; return; }
+    if (Z.sq) { Z.next = { c: new THREE.Vector2(0, 0), r: ph.r }; Z.stage = 'wait'; Z.t = ph.wait; Z.from = { c: Z.c.clone(), r: Z.r }; return; }
     const ang = Math.random() * Math.PI * 2, off = Math.max(0, (Z.r - ph.r)) * Math.sqrt(Math.random()) * 0.6;
     const c = new THREE.Vector2(Z.c.x + Math.cos(ang) * off, Z.c.y + Math.sin(ang) * off); const lim = HALF - 10 - ph.r * 0.5; c.x = clamp(c.x, -lim, lim); c.y = clamp(c.y, -lim, lim);
     Z.next = { c, r: ph.r }; Z.stage = 'wait'; Z.t = ph.wait; Z.from = { c: Z.c.clone(), r: Z.r };
   }
   function updateZone(dt) {
     const Z = G.zone; if (Z.stage === 'final') return; Z.t -= dt;
-    if (Z.stage === 'wait' && Z.t <= 0) { Z.stage = 'shrink'; Z.t = PHASES[Z.phase].shrink; Z.dur = Z.t; Z.dps = PHASES[Z.phase].dps; H.msg('毒雾开始扩散！', 1500); }
+    if (Z.stage === 'wait' && Z.t <= 0) { Z.stage = 'shrink'; Z.t = G.phases[Z.phase].shrink; Z.dur = Z.t; Z.dps = G.phases[Z.phase].dps || 0; H.msg(Z.sq ? '毒雾从四周逼近！' : '毒雾开始扩散！', 1500); }
     else if (Z.stage === 'shrink') { const k = 1 - Math.max(0, Z.t) / Z.dur; Z.c.lerpVectors(Z.from.c, Z.next.c, k); Z.r = Z.from.r + (Z.next.r - Z.from.r) * k; if (Z.t <= 0) nextPhase(); }
   }
-  const outside = (e, m = 0) => Math.hypot(e.pos.x - G.zone.c.x, e.pos.z - G.zone.c.y) > G.zone.r - m;
+  // distance metric of the zone: square (Chebyshev) in classic, circle in party
+  const zd = (x, z, c) => G.zone.sq ? Math.max(Math.abs(x - c.x), Math.abs(z - c.y)) : Math.hypot(x - c.x, z - c.y);
+  const outside = (e, m = 0) => zd(e.pos.x, e.pos.z, G.zone.c) > G.zone.r - m;
+  G.zd = zd;
+  // classic: gas swallows cube boxes it reaches (box breaks and leaves its cube)
+  function gasBoxes(dt) {
+    G.boxTick -= dt; if (G.boxTick > 0) return; G.boxTick = 0.5; const W = G.world;
+    for (const [i, j] of W.boxes) { if (W.type[W.idx(i, j)] !== T.BOX) continue; if (zd(wx(i), wx(j), G.zone.c) > G.zone.r + 0.4) hitCell(wx(i), wx(j), 1e9, false); }
+  }
 
   // ---------------- damage ----------------
   function damage(t, amt, src, kx = 0, kz = 0) {
@@ -91,18 +129,39 @@ export function createGame(scene, FX, H) {
     if (t.pet) return;
     const real = src && src.owner ? src.owner : src;
     if (real && real !== t && !real.pet) real.kills++;
-    t.place = alive().length + 1;
-    // drop cubes (at least one) + a med kit
-    const n = Math.max(1, t.cubes); for (let i = 0; i < n; i++) spawnItem('cube', 0, t.pos.x + rnd(-1, 1), t.pos.z + rnd(-1, 1));
-    if (Math.random() < 0.5) spawnItem('med', 0, t.pos.x + rnd(-1, 1), t.pos.z + rnd(-1, 1));
     for (const p of G.ents) if (p.pet && p.owner === t && p.alive) kill(p, null);
+    if (G.classic) {
+      // original rule: drops 1 + a third of its cubes, max 5
+      const n = Math.min(5, 1 + Math.floor(t.cubes / 3)); for (let i = 0; i < n; i++) spawnItem('cube', 0, t.pos.x + rnd(-1, 1), t.pos.z + rnd(-1, 1));
+      t.queue.length = 0; t.action = null;
+      if (G.duo && t.mate && t.mate.alive) { // teammate still up: come back in 5 s, keeping the cubes not dropped
+        t.cubes = Math.max(0, t.cubes - n); t.respawnT = G.now + 5;
+        H.killFeed(real && real !== t ? real.name : (byZone ? '毒雾' : '意外'), t.name, t.isPlayer || real?.isPlayer); if (t.isPlayer) H.msg('5 秒后在队友身边复活', 2000);
+        checkEnd(); return;
+      }
+      const left = teamsLeft(t.team); t.place = left + 1; if (t.mate) { t.mate.respawnT = 0; if (!t.mate.alive) t.mate.place = t.place; }
+    } else {
+      t.place = alive().length + 1;
+      // drop cubes (at least one) + a med kit
+      const n = Math.max(1, t.cubes); for (let i = 0; i < n; i++) spawnItem('cube', 0, t.pos.x + rnd(-1, 1), t.pos.z + rnd(-1, 1));
+      if (Math.random() < 0.5) spawnItem('med', 0, t.pos.x + rnd(-1, 1), t.pos.z + rnd(-1, 1));
+    }
     H.killFeed(real && real !== t ? real.name : (byZone ? '毒雾' : '意外'), t.name, t.isPlayer || real?.isPlayer);
     checkEnd();
   }
   const alive = () => G.ents.filter(e => e.alive && !e.pet);
+  // teams still in the match (a member alive or waiting to respawn), optionally ignoring one team
+  const teamsLeft = (skip) => { const s = new Set(); for (const e of G.ents) if (!e.pet && (e.alive || e.respawnT) && e.team !== skip) s.add(e.team); return s.size; };
+  G.teamsLeft = teamsLeft;
   function checkEnd() {
     const a = alive(); G.aliveCount = a.length;
     if (G.over) return;
+    if (G.classic) {
+      const p = G.player, left = teamsLeft();
+      if (!p.alive && !p.respawnT) { G.over = true; G.result = { place: p.place, kills: p.kills, teams: G.duo }; setTimeout(() => H.onEnd(G.result), 1600); return; }
+      if (left === 1) { G.over = true; for (const e of G.ents) if (!e.pet && e.team === p.team) e.place = 1; G.result = { place: 1, kills: p.kills, teams: G.duo }; H.msg(G.duo ? '双人组夺冠！' : '大吉大利，今晚吃鸡！', 3000); setTimeout(() => H.onEnd(G.result), 2200); }
+      return;
+    }
     if (!G.player.alive) { G.over = true; G.result = { place: G.player.place, kills: G.player.kills }; setTimeout(() => H.onEnd(G.result), 1600); return; }
     if (a.length === 1) { G.over = true; G.player.place = 1; G.result = { place: 1, kills: G.player.kills }; H.msg('大吉大利，今晚吃鸡！', 3000); setTimeout(() => H.onEnd(G.result), 2200); }
   }
@@ -134,7 +193,7 @@ export function createGame(scene, FX, H) {
       else if (it.kind === 'armor' && it.lv > e.armor) { e.armor = it.lv; ok = true; }
       else if (it.kind === 'helmet' && it.lv > e.helmet) { e.helmet = it.lv; ok = true; }
       else if (it.kind === 'med' && e.hp < e.maxHp * 0.9) { e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.4); ok = true; FX.burst(e.pos.x, 1, e.pos.z, 0x5dff7a, 10, 3, 0.16, 0.6); }
-      if (ok) { if (e.isPlayer) H.msg({ cube: '能量晶 +1 ⚡', armor: it.lv + '级护甲', helmet: it.lv + '级头盔', med: '医疗包 +40%' }[it.kind], 900); FX.burst(it.pos.x, 0.8, it.pos.z, 0xffd23f, 8, 4, 0.14, 0.4); scene.remove(it.mesh); G.items.splice(i, 1); }
+      if (ok) { if (e.isPlayer) H.msg({ cube: G.classic ? '能量块 +1 ⚡' : '能量晶 +1 ⚡', armor: it.lv + '级护甲', helmet: it.lv + '级头盔', med: '医疗包 +40%' }[it.kind], 900); FX.burst(it.pos.x, 0.8, it.pos.z, 0xffd23f, 8, 4, 0.14, 0.4); scene.remove(it.mesh); G.items.splice(i, 1); }
     }
   }
   function spawnLoot() {
@@ -147,7 +206,7 @@ export function createGame(scene, FX, H) {
     const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
     G.projs.push({ x: ox + dx * 0.6, z: oz + dz * 0.6, dx, dz, sp: a.speed, left: range, dmg: a.dmg * e.dmgMul, r: a.r, col: a.col, owner: e, pierce: !!a.pierce, breakWalls: !!a.breakWalls, knock: a.knock || 0, hit: a.pierce ? new Set() : null, wave: a.kind === 'wave', y: 1.0 });
   }
-  function canAct(e) { return e.alive && !e.air && !e.action; }
+  function canAct(e) { return e.alive && !e.air && !e.action && G.state !== 'count'; }
   function attack(e, dx, dz, dist) {
     if (!canAct(e) || e.ammo < 1 || e.queue.length) return false;
     const def = e.def, a = def.atk; e.ammo -= 1; e.lastAtkT = G.now; e.revealT = G.now + 1.0;
@@ -191,12 +250,29 @@ export function createGame(scene, FX, H) {
   // ---------------- per-frame ----------------
   function update(dt, input) {
     G.now += dt;
-    if (G.state === 'plane' || G.state === 'play') { updatePlane(dt, input); updateZone(dt); }
+    if (G.classic) updateClassic(dt);
+    else if (G.state === 'plane' || G.state === 'play') { updatePlane(dt, input); updateZone(dt); }
     for (const e of G.ents) if (e.alive) updateEnt(e, dt, input);
     updateProjs(dt); updateLobs(dt); updateStorms(dt); updateDrops(dt);
     // item bobbing
     for (const it of G.items) { it.t += dt; it.mesh.position.y = 0.7 + Math.sin(it.t * 3) * 0.15; it.mesh.rotation.y += dt * 1.6; }
     FX.updateParts(dt);
+  }
+  function updateClassic(dt) {
+    if (G.state === 'count') {
+      const before = Math.ceil(G.countT); G.countT -= dt; const now = Math.ceil(G.countT);
+      if (G.countT <= 0) { G.state = 'play'; H.msg('开战！', 1000); } else if (now !== before || G.now <= dt) H.msg(String(now), 800);
+      return;
+    }
+    updateZone(dt); if (G.zone.stage !== 'wait' || G.zone.phase > 0) gasBoxes(dt);
+    // duo respawn next to the living teammate
+    for (const e of G.ents) if (!e.alive && e.respawnT && G.now >= e.respawnT) {
+      e.respawnT = 0; const m = e.mate; if (!m || !m.alive) continue;
+      const [x, z] = G.world.freeNear(m.pos.x + rnd(-1.5, 1.5), m.pos.z + rnd(-1.5, 1.5));
+      Object.assign(e, { alive: true, hp: e.baseHp + 400 * e.cubes, maxHp: e.baseHp + 400 * e.cubes, dmgMul: 1 + 0.1 * e.cubes, ammo: 3, superC: 0, protect: G.now + 2, lastDmgT: G.now, gasN: 0, zoneT: 0, place: 0 });
+      e.pos.set(x, 0, z); e.vel.set(0, 0, 0); e.mesh.visible = true; FX.burst(x, 1, z, 0x7fdcff, 18, 5, 0.22, 0.6);
+      if (e.isPlayer) H.msg('复活！', 1000);
+    }
   }
   function updatePlane(dt, input) {
     const P = G.plane; if (P.k > 1.2) { FX.plane.visible = false; return; }
@@ -231,13 +307,17 @@ export function createGame(scene, FX, H) {
       if (mx || mz) e.yaw = Math.atan2(mx, mz);
       airStep(e, dt, mx, mz); poseMesh(e, dt, 0); return;
     }
+    if (G.state === 'count') { poseMesh(e, dt, 0); return; }
     // ammo reload + regen
     if (!e.pet) {
       if (e.ammo < 3) e.ammo = Math.min(3, e.ammo + dt / def.reload);
       if (G.now - e.lastDmgT > 3 && G.now - e.lastAtkT > 3 && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.1 * dt);
     } else { e.life -= dt; if (e.life <= 0 || !e.owner.alive) { kill(e, null); return; } }
     // zone damage
-    if (outside(e)) { e.zoneT = (e.zoneT || 0) + dt; if (e.zoneT > 1) { e.zoneT = 0; damage(e, G.zone.dps, 'zone'); if (!e.alive) return; } } else e.zoneT = 0.7;
+    if (outside(e)) {
+      e.zoneT = (e.zoneT || 0) + dt;
+      if (e.zoneT > 1) { e.zoneT = 0; e.gasN = (e.gasN || 0) + 1; damage(e, G.zone.sq ? e.maxHp * (0.2 + 0.05 * Math.max(0, e.gasN - 5)) : G.zone.dps, 'zone'); if (!e.alive) return; }
+    } else { e.zoneT = 0.7; e.gasN = 0; }
     // queued shots / punches
     while (e.queue.length && e.queue[0].t <= G.now) { const q = e.queue.shift(); if (q.punch) doPunch(e, q); else { const j = q.a.jitter || 0; shoot(e, e.pos.x, e.pos.z, q.dx + rnd(-j, j), q.dz + rnd(-j, j), q.a, q.range); kickBrawler(e.mesh); } }
     // special movement
@@ -311,7 +391,7 @@ export function createGame(scene, FX, H) {
   }
   // ---------------- airdrops ----------------
   function updateDrops(dt) {
-    if (G.state === 'play' && G.dropTimes.length && G.now >= G.dropTimes[0]) {
+    if (G.state === 'play' && G.dropTimes && G.dropTimes.length && G.now >= G.dropTimes[0]) {
       G.dropTimes.shift(); const Z = G.zone, tgt = Z.next || Z; let x = 0, z = 0;
       for (let t = 0; t < 30; t++) { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * tgt.r * 0.75; x = tgt.c.x + Math.cos(a) * d; z = tgt.c.y + Math.sin(a) * d; if (!SOLID(G.world.at(x, z))) break; }
       [x, z] = G.world.freeNear(x, z);
@@ -359,9 +439,9 @@ export function createGame(scene, FX, H) {
       if (b.lastPos.distanceTo(e.pos) < 0.25 && b.want) { b.stuckT += 0.25; } else b.stuckT = 0; b.lastPos.copy(e.pos);
       if (b.stuckT > 0.8) { b.unstuck = G.now + 0.8; b.uDir = Math.random() * Math.PI * 2; b.stuckT = 0; b.wander = null; }
       const Z = G.zone, safe = Z.stage === 'shrink' || (Z.stage === 'wait' && Z.t < 10) ? (Z.next || Z) : Z;
-      const dzC = Math.hypot(e.pos.x - safe.c.x, e.pos.z - safe.c.y);
-      b.tgt = nearestEnemy(e, Math.max(10, def.range + 3));
-      if (b.tgt && G.now - (e.landT || 0) < 14 && G.now - e.lastDmgT > 2 && Math.hypot(b.tgt.pos.x - e.pos.x, b.tgt.pos.z - e.pos.z) > 6) b.tgt = null;
+      const dzC = zd(e.pos.x, e.pos.z, safe.c);
+      b.tgt = nearestEnemy(e, G.classic ? def.range + 1.5 : Math.max(10, def.range + 3));
+      if (b.tgt && G.now - (e.landT || 0) < (G.classic ? 30 : 14) && G.now - e.lastDmgT > 2 && Math.hypot(b.tgt.pos.x - e.pos.x, b.tgt.pos.z - e.pos.z) > 6) b.tgt = null; // early game: farm boxes first
       if (b.tgt && !b.seen) b.seen = G.now + D.react; if (!b.tgt) b.seen = 0;
       if (outside(e, -0.5) || dzC > safe.r * 0.92) b.mode = 'zone';
       else if (b.tgt && e.hp < e.maxHp * 0.3 && b.tgt.hp > e.hp * 1.4) b.mode = 'flee';
@@ -370,13 +450,16 @@ export function createGame(scene, FX, H) {
       b.safe = safe;
       if (b.mode === 'loot') {
         let best = null, bd = 26;
-        for (const it of G.items) { const d = Math.hypot(it.pos.x - e.pos.x, it.pos.z - e.pos.z); const want = it.kind === 'cube' || (it.kind === 'armor' && it.lv > e.armor) || (it.kind === 'helmet' && it.lv > e.helmet) || (it.kind === 'med' && e.hp < e.maxHp * 0.8); if (want && d < bd && Math.hypot(it.pos.x - safe.c.x, it.pos.z - safe.c.y) < safe.r) { bd = d; best = { x: it.pos.x, z: it.pos.z }; } }
+        for (const it of G.items) { const d = Math.hypot(it.pos.x - e.pos.x, it.pos.z - e.pos.z); const want = it.kind === 'cube' || (it.kind === 'armor' && it.lv > e.armor) || (it.kind === 'helmet' && it.lv > e.helmet) || (it.kind === 'med' && e.hp < e.maxHp * 0.8); if (want && d < bd && zd(it.pos.x, it.pos.z, safe.c) < safe.r) { bd = d; best = { x: it.pos.x, z: it.pos.z }; } }
         for (const d0 of G.drops) if (d0.landed) { const d = Math.hypot(d0.x - e.pos.x, d0.z - e.pos.z); if (d < 40 && d < bd + 10) { bd = d; best = { x: d0.x, z: d0.z }; } }
         if (!best) { // nearest power box / crate
           const W = G.world, i0 = cx(e.pos.x), j0 = cz(e.pos.z);
-          for (let r = 1; r < 14 && !best; r++) for (let dj = -r; dj <= r && !best; dj++) for (let di = -r; di <= r; di++) { if (Math.abs(di) !== r && Math.abs(dj) !== r) continue; const i = i0 + di, j = j0 + dj; if (!W.inb(i, j)) continue; const t = W.type[W.idx(i, j)]; if (t === T.BOX || (t === T.CRATE && r < 5)) { best = { x: wx(i), z: wx(j), box: true }; break; } }
+          const RB = G.classic ? 26 : 14;
+          for (let r = 1; r < RB && !best; r++) for (let dj = -r; dj <= r && !best; dj++) for (let di = -r; di <= r; di++) { if (Math.abs(di) !== r && Math.abs(dj) !== r) continue; const i = i0 + di, j = j0 + dj; if (!W.inb(i, j)) continue; const t = W.type[W.idx(i, j)]; if ((t === T.BOX && (!G.classic || zd(wx(i), wx(j), safe.c) < safe.r - 1)) || (t === T.CRATE && r < 5)) { best = { x: wx(i), z: wx(j), box: true }; break; } }
         }
         if (!best) { if (!b.wander || Math.hypot(b.wander.x - e.pos.x, b.wander.z - e.pos.z) < 2) { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * safe.r * 0.7; b.wander = { x: safe.c.x + Math.cos(a) * d, z: safe.c.y + Math.sin(a) * d }; } best = b.wander; }
+        // duo: don't drift away from the teammate
+        if (G.duo && e.mate && e.mate.alive && Math.hypot(e.mate.pos.x - e.pos.x, e.mate.pos.z - e.pos.z) > 13 && (!best || !best.box || Math.hypot(best.x - e.mate.pos.x, best.z - e.mate.pos.z) > 13)) best = { x: e.mate.pos.x, z: e.mate.pos.z };
         b.goal = best;
       }
     }

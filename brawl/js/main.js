@@ -24,7 +24,7 @@ const lcam = new THREE.PerspectiveCamera(30, 2, 0.1, 100);
 const podium = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 0.4, 40), new THREE.MeshToonMaterial({ color: 0xffd23f })); podium.position.y = -0.2; lob.add(podium);
 const podO = new THREE.Mesh(podium.geometry, new THREE.MeshBasicMaterial({ color: 0x1a1022, side: THREE.BackSide })); podO.scale.setScalar(1.04); podium.add(podO);
 let lobMesh = null, sel = localStorage.getItem('mdl_kind') || 'chef'; if (!CHARS[sel]) sel = 'chef';
-let opts = { n: 16, diff: 1 };
+let opts = { n: 16, diff: 1, mode: localStorage.getItem('mdl_mode') || 'party' }; if (!['party', 'solo', 'duo'].includes(opts.mode)) opts.mode = 'party';
 
 // ---------- sizes / rotation ----------
 let W = 1, Hh = 1;
@@ -56,7 +56,7 @@ $('btnRotNo').onclick = () => document.body.classList.add('noRot');
 
 // ---------- portraits for the select cards ----------
 function portraits() {
-  const out = {}; const c = new THREE.PerspectiveCamera(26, 1, 0.1, 50); c.position.set(0, 1.85, 5.4); c.lookAt(0, 1.38, 0);
+  const out = {}; const c = new THREE.PerspectiveCamera(26, 1, 0.1, 50); c.position.set(0, 2.0, 5.9); c.lookAt(0, 1.5, 0);
   const s = new THREE.Scene(); s.add(new THREE.HemisphereLight(0xffffff, 0x8a9ab0, 1.6)); const d = new THREE.DirectionalLight(0xffffff, 2.2); d.position.set(3, 8, 7); s.add(d);
   renderer.setSize(160, 160, false); renderer.setClearColor(0x000000, 0);
   for (const k of ORDER) { const m = makeBrawler(k); m.rotation.y = 0.35; s.add(m); animBrawler(m, 0.016, 0); renderer.render(s, c); out[k] = canvas.toDataURL(); s.remove(m); }
@@ -73,6 +73,10 @@ function showSel() {
   if (lobMesh) lob.remove(lobMesh); lobMesh = makeBrawler(sel); lobMesh.scale.setScalar(1.15); lob.add(lobMesh);
 }
 for (const b of $('segN').children) b.onclick = () => { opts.n = +b.dataset.n; for (const x of $('segN').children) x.classList.toggle('on', x === b); };
+const MODE_SUB = { party: '派对吃鸡 · 最后一个站着的赢', solo: '经典单人 · 10人抢能量块', duo: '经典双人 · 队友在就能复活' };
+function showMode() { for (const x of $('segM').children) x.classList.toggle('on', x.dataset.m === opts.mode); $('rowN').classList.toggle('hidden', opts.mode !== 'party'); document.querySelector('.lbLeft .sub').textContent = MODE_SUB[opts.mode]; }
+for (const b of $('segM').children) b.onclick = () => { opts.mode = b.dataset.m; localStorage.setItem('mdl_mode', opts.mode); showMode(); };
+showMode();
 for (const b of $('segD').children) b.onclick = () => { opts.diff = +b.dataset.d; for (const x of $('segD').children) x.classList.toggle('on', x === b); };
 buildCards(); showSel();
 
@@ -92,8 +96,10 @@ const input = { mx: 0, mz: 0, auto: Q.has('auto'), jumped: false, aiming: false,
 const camPos = new THREE.Vector3(0, 40, 30), camLook = new THREE.Vector3();
 
 function startMatch() {
-  G.cleanup(); G.setup({ kind: sel, n: opts.n, diff: opts.diff, fastZone: Q.has('fastzone'), god: Q.has('god') }); state = 'game'; paused = false; input.jumped = false;
+  G.cleanup(); G.setup({ kind: sel, n: opts.n, diff: opts.diff, mode: opts.mode, fastZone: Q.has('fastzone'), god: Q.has('god') }); state = 'game'; paused = false; input.jumped = false;
   $('lobby').classList.add('hidden'); $('hud').classList.remove('hidden'); $('end').classList.add('hidden'); $('pause').classList.add('hidden');
+  $('gArmor').style.display = $('gHelm').style.display = G.classic ? 'none' : '';
+  if (G.classic) { document.body.classList.remove('air'); $('btnJump').classList.add('hidden'); camPos.set(G.player.pos.x, 30, G.player.pos.z + 16); camLook.copy(G.player.pos); return; }
   document.body.classList.add('air'); $('btnJump').classList.remove('hidden'); $('btnJump').textContent = '跳 伞';
   camPos.set(G.plane.pos.x, 70, G.plane.pos.z + 40);
   H.msg('选好落点，点「跳伞」！', 2200);
@@ -101,10 +107,12 @@ function startMatch() {
 function toLobby() { G.cleanup(); state = 'lobby'; paused = false; $('lobby').classList.remove('hidden'); $('hud').classList.add('hidden'); $('end').classList.add('hidden'); $('pause').classList.add('hidden'); document.body.classList.remove('air'); }
 function showEnd(r) {
   if (state !== 'game') return; state = 'end';
-  $('endRank').textContent = r.place === 1 ? '🏆 第 1 名！' : `第 ${r.place} 名`;
-  $('endSub').textContent = r.place === 1 ? `大吉大利，今晚吃鸡！击败 ${r.kills} 人` : `击败 ${r.kills} 人 · 再接再厉`;
-  const list = G.ents.filter(e => !e.pet).sort((a, b) => (a.place || 0) - (b.place || 0));
-  $('endList').innerHTML = list.map(e => `<div class="${e.isPlayer ? 'me' : ''}"><span>${e.place ? e.place + '.' : '存活'} ${e.name}</span><span><img class="eh" src="${PORT[e.kind]}">${CHARS[e.kind].name} · ${e.kills}杀</span></div>`).join('');
+  const of = G.duo ? ' / 5 队' : G.classic ? ' / 10' : '';
+  $('endRank').textContent = r.place === 1 ? '🏆 第 1 名！' : `第 ${r.place} 名${of}`;
+  const mk = G.duo && G.player.mate ? `，队友击败 ${G.player.mate.kills} 人` : '';
+  $('endSub').textContent = r.place === 1 ? `${G.duo ? '双人组夺冠' : '大吉大利，今晚吃鸡'}！击败 ${r.kills} 人${mk}` : `击败 ${r.kills} 人${mk} · 再接再厉`;
+  const list = G.ents.filter(e => !e.pet).sort((a, b) => (a.place || 0) - (b.place || 0) || (a.team - b.team) || (b.isPlayer - a.isPlayer));
+  $('endList').innerHTML = list.map(e => `<div class="${e.isPlayer ? 'me' : G.duo && e.team === G.player.team ? 'mate' : ''}"><span>${e.place ? e.place + '.' : '存活'} ${e.name}${G.duo && e.team === G.player.team && !e.isPlayer ? '（队友）' : ''}</span><span><img class="eh" src="${PORT[e.kind]}">${CHARS[e.kind].name} · ${e.kills}杀</span></div>`).join('');
   $('end').classList.remove('hidden');
 }
 function pause() { if (state !== 'game') return; paused = true; $('pause').classList.remove('hidden'); }
@@ -222,12 +230,13 @@ function drawOverlay(dt) {
     if (!e.alive || !e.mesh.visible || e.air) continue;
     const s = toScreen(e.pos.x, e.pos.y + (e.pet ? 2.6 : 2.85), e.pos.z); if (!s.ok || s.x < -60 || s.x > W + 60 || s.y < -40 || s.y > Hh + 40) continue;
     const bw = e.isPlayer ? 64 : 56, bh = 10, x = s.x - bw / 2, y = s.y;
-    const col = e.isPlayer ? '#4cff6a' : e.pet && e.owner === P ? '#7fdcff' : '#ff4d5e';
+    const ally = !e.isPlayer && e.team === P.team;
+    const col = e.isPlayer ? '#4cff6a' : ally ? '#4cc9ff' : '#ff4d5e';
     rr(x - 2, y - 2, bw + 4, bh + 4, 5); octx.fillStyle = '#1a1022'; octx.fill();
     rr(x, y, bw * clamp(e.hp / e.maxHp, 0, 1), bh, 3); octx.fillStyle = col; octx.fill();
     octx.font = '900 10px system-ui'; octx.lineWidth = 3; octx.strokeStyle = '#1a1022'; octx.fillStyle = '#fff';
     octx.strokeText(Math.ceil(e.hp), s.x, y + 9); octx.fillText(Math.ceil(e.hp), s.x, y + 9);
-    octx.font = '800 11px system-ui'; octx.strokeText(e.name, s.x, y - 6); octx.fillText(e.name, s.x, y - 6);
+    octx.font = '800 11px system-ui'; if (ally && !e.pet) octx.fillStyle = '#7fdcff'; octx.strokeText(e.name, s.x, y - 6); octx.fillText(e.name, s.x, y - 6);
     if (e.cubes) { octx.fillStyle = '#ff9f1c'; octx.beginPath(); octx.arc(x - 9, y + 5, 8, 0, 7); octx.fill(); octx.strokeStyle = '#1a1022'; octx.lineWidth = 2; octx.stroke(); octx.fillStyle = '#fff'; octx.font = '900 10px system-ui'; octx.fillText(e.cubes, x - 9, y + 9); }
     if (e.isPlayer && !e.air) { // ammo bar
       for (let i = 0; i < 3; i++) { const sx = x + i * (bw / 3), sw = bw / 3 - 2; rr(sx, y + bh + 4, sw, 6, 2); octx.fillStyle = '#1a1022'; octx.fill(); const f = clamp(e.ammo - i, 0, 1); if (f > 0) { rr(sx + 1, y + bh + 5, (sw - 2) * f, 4, 2); octx.fillStyle = f >= 1 ? '#ff9f1c' : '#a86a20'; octx.fill(); } }
@@ -240,10 +249,13 @@ function drawOverlay(dt) {
 // ---------- minimap ----------
 const mini = $('mini'), mctx = mini.getContext('2d');
 function drawMini() {
-  const w = 110, sc = w / 144, mx = (x) => (x + 72) * sc;
-  mctx.imageSmoothingEnabled = false; mctx.drawImage(G.world.mm, 0, 0, w, w);
-  const Z = G.zone; mctx.save(); mctx.beginPath(); mctx.rect(0, 0, w, w); mctx.arc(mx(Z.c.x), mx(Z.c.y), Z.r * sc, 0, 7, true); mctx.fillStyle = 'rgba(60,200,60,.55)'; mctx.fill('evenodd'); mctx.restore();
-  if (Z.next) { mctx.strokeStyle = '#fff'; mctx.lineWidth = 1.5; mctx.beginPath(); mctx.arc(mx(Z.next.c.x), mx(Z.next.c.y), Z.next.r * sc, 0, 7); mctx.stroke(); }
+  const Wd = G.world, w = 110, sc = w / (Wd.PH * 2), mx = (x) => (x + Wd.PH) * sc;
+  mctx.imageSmoothingEnabled = false; mctx.drawImage(Wd.mm, Wd.O, Wd.O, Wd.S, Wd.S, 0, 0, w, w);
+  const Z = G.zone; mctx.save(); mctx.beginPath(); mctx.rect(0, 0, w, w);
+  if (Z.sq) mctx.rect(mx(Z.c.x - Z.r), mx(Z.c.y - Z.r), 2 * Z.r * sc, 2 * Z.r * sc); else mctx.arc(mx(Z.c.x), mx(Z.c.y), Z.r * sc, 0, 7, true);
+  mctx.fillStyle = 'rgba(60,200,60,.55)'; mctx.fill('evenodd'); mctx.restore();
+  for (const e of G.ents) if (e.alive && !e.pet && !e.isPlayer && e.team === G.player.team) { mctx.fillStyle = '#7fdcff'; mctx.strokeStyle = '#1a1022'; mctx.lineWidth = 1.5; mctx.beginPath(); mctx.arc(mx(e.pos.x), mx(e.pos.z), 3, 0, 7); mctx.fill(); mctx.stroke(); }
+  if (Z.next && !Z.sq) { mctx.strokeStyle = '#fff'; mctx.lineWidth = 1.5; mctx.beginPath(); mctx.arc(mx(Z.next.c.x), mx(Z.next.c.y), Z.next.r * sc, 0, 7); mctx.stroke(); }
   if (G.state === 'plane') { mctx.strokeStyle = 'rgba(255,255,255,.8)'; mctx.setLineDash([3, 3]); mctx.beginPath(); mctx.moveTo(mx(G.plane.a.x), mx(G.plane.a.z)); mctx.lineTo(mx(G.plane.b.x), mx(G.plane.b.z)); mctx.stroke(); mctx.setLineDash([]); mctx.fillStyle = '#ff8a3d'; mctx.fillRect(mx(G.plane.pos.x) - 3, mx(G.plane.pos.z) - 3, 6, 6); }
   for (const d of G.drops) { mctx.fillStyle = '#ffd23f'; mctx.strokeStyle = '#1a1022'; mctx.beginPath(); mctx.arc(mx(d.x), mx(d.z), 3.5, 0, 7); mctx.fill(); mctx.stroke(); }
   const p = G.player; if (p.alive) { mctx.fillStyle = '#4cc9ff'; mctx.strokeStyle = '#fff'; mctx.lineWidth = 1.5; mctx.beginPath(); mctx.arc(mx(p.pos.x), mx(p.pos.z), 3.5, 0, 7); mctx.fill(); mctx.stroke(); }
@@ -252,12 +264,12 @@ const fmt = (s) => { s = Math.max(0, Math.ceil(s)); return ((s / 60) | 0) + ':' 
 let hudT = 0;
 function updateHud(dt) {
   hudT -= dt; if (hudT > 0) return; hudT = 0.1;
-  const p = G.player; $('alive').textContent = '存活 ' + G.alive().length;
-  const Z = G.zone; $('zoneT').textContent = Z.stage === 'final' ? '最终决战！' : Z.stage === 'wait' ? `毒雾将在 ${fmt(Z.t)} 后扩散` : `毒雾扩散中 ${fmt(Z.t)}`;
+  const p = G.player; $('alive').textContent = G.duo ? `剩余 ${G.teamsLeft()} 队` : '存活 ' + G.alive().length;
+  const Z = G.zone; $('zoneT').textContent = G.state === 'count' ? '准备开战…' : Z.stage === 'final' ? '最终决战！' : Z.sq ? (Z.stage === 'wait' ? `毒雾将在 ${fmt(Z.t)} 后逼近` : `毒雾逼近中 ${fmt(Z.t)}`) : Z.stage === 'wait' ? `毒雾将在 ${fmt(Z.t)} 后扩散` : `毒雾扩散中 ${fmt(Z.t)}`;
   $('gCube').textContent = '⚡' + p.cubes; $('gArmor').textContent = '甲' + p.armor; $('gArmor').className = 'lv' + p.armor; $('gHelm').textContent = '盔' + p.helmet; $('gHelm').className = 'lv' + p.helmet;
   const sb = $('btnSup'); sb.classList.toggle('ready', p.superC >= 1); sb.style.setProperty('--p', Math.round(p.superC * 100) + '%');
   const air = !!p.air && p.alive; document.body.classList.toggle('air', air); $('btnJump').classList.toggle('hidden', !(p.air === 'plane' || p.air === 'fall'));
-  $('hint').textContent = p.air === 'plane' ? (G.plane.k > G.plane.k0 ? '点「跳伞」跳下飞机' : '飞机即将到达小岛…') : p.air === 'fall' ? '摇杆控制方向，可提前开伞' : p.air === 'chute' ? '滑翔中，选好落点' : (G.outside(p) ? '⚠ 你在毒雾里！快跑回安全区' : '');
+  $('hint').textContent = !p.alive && p.respawnT ? `${Math.max(0, Math.ceil(p.respawnT - G.now))} 秒后在队友身边复活` : p.air === 'plane' ? (G.plane.k > G.plane.k0 ? '点「跳伞」跳下飞机' : '飞机即将到达小岛…') : p.air === 'fall' ? '摇杆控制方向，可提前开伞' : p.air === 'chute' ? '滑翔中，选好落点' : (p.alive && G.outside(p) ? '⚠ 你在毒雾里！快跑回安全区' : '');
   drawMini();
 }
 
@@ -281,22 +293,24 @@ function frame(now) {
 }
 const off = new THREE.Vector3();
 function render(dt) {
-  const p = G.player; let tgt = p.pos, h = 20, back = 11.5;
+  const p = G.player; let tgt = p.pos, h = G.classic ? 19 : 20, back = G.classic ? 9.5 : 11.5;
+  if (G.duo && !p.alive && p.mate && p.mate.alive) tgt = p.mate.pos; // spectate the teammate while waiting to respawn
+  if (Q.has('overview')) { tgt = new THREE.Vector3(); h = 105; back = 1; } // localhost-only test camera
   if (p.air === 'plane') { tgt = G.plane.pos; h = 52; back = 30; }
   else if (p.air) { h = 16 + p.pos.y * 0.55; back = 9 + p.pos.y * 0.25; }
   off.set(tgt.x, tgt.y + h, tgt.z + back); camPos.lerp(off, Math.min(1, dt * (p.air ? 3 : 8)));
   camLook.lerp(new THREE.Vector3(tgt.x, tgt.y, tgt.z - 0.5), Math.min(1, dt * (p.air ? 3 : 10)));
   camera.position.copy(camPos); camera.lookAt(camLook);
-  const nearWanted = p.air ? 2 : 1; if (camera.near !== nearWanted) { camera.near = nearWanted; camera.far = p.air ? 260 : 120; camera.updateProjectionMatrix(); }
+  const nearWanted = p.air ? 2 : 1; if (camera.near !== nearWanted) { camera.near = nearWanted; camera.far = p.air || Q.has('overview') ? 260 : 120; camera.updateProjectionMatrix(); }
   // visibility, culling, shadows, rings
   FX.shadow.begin(); FX.ring.begin();
   for (const e of G.ents) {
-    if (!e.alive) continue; const far = Math.hypot(e.pos.x - camLook.x, e.pos.z - camLook.z) > (p.air ? 90 : 34);
+    if (!e.alive) continue; const far = Math.hypot(e.pos.x - camLook.x, e.pos.z - camLook.z) > (p.air || Q.has('overview') ? 90 : 34);
     const vis = e.air !== 'plane' && !far && (e.isPlayer || !p.alive || G.visibleTo(e, p) || e.air);
     e.mesh.visible = vis; if (e.chute) e.chute.visible = e.air === 'chute' && !far;
     if (!vis) continue;
     if (e.isPlayer) { const m = e.mesh.userData.mat; m.opacity = e.inBush ? 0.55 : 1; m.depthWrite = !e.inBush; }
-    if (!e.air) { const s = e.pet ? 1.3 : 0.75; FX.shadow.push(e.pos.x, 0.03, e.pos.z, s, 1, s); FX.ring.push(e.pos.x, 0.05, e.pos.z, e.pet ? 1.4 : 1, 1, e.pet ? 1.4 : 1, e.isPlayer || (e.pet && e.owner === p) ? 0x4cc9ff : 0xff4d5e); }
+    if (!e.air) { const s = e.pet ? 1.3 : 0.75; FX.shadow.push(e.pos.x, 0.03, e.pos.z, s, 1, s); FX.ring.push(e.pos.x, 0.05, e.pos.z, e.pet ? 1.4 : 1, 1, e.pet ? 1.4 : 1, e.isPlayer ? 0x4cff6a : e.team === p.team ? 0x4cc9ff : 0xff4d5e); }
     else FX.shadow.push(e.pos.x, 0.03, e.pos.z, 0.6, 1, 0.6);
   }
   for (const it of G.items) { const far = Math.hypot(it.pos.x - camLook.x, it.pos.z - camLook.z) > 34; it.mesh.visible = !far; if (!far) FX.shadow.push(it.pos.x, 0.03, it.pos.z, 0.4, 1, 0.4); }
@@ -307,9 +321,20 @@ function render(dt) {
   for (const L of G.lobs) { const k = L.t / L.T, x = L.x0 + (L.x1 - L.x0) * k, z = L.z0 + (L.z1 - L.z0) * k, y = 1 + Math.sin(k * Math.PI) * 4.5; FX.proj.push(x, y, z, 0.38, 0.38, 0.38, L.col); FX.projO.push(x, y, z, 0.38, 0.38, 0.38); FX.shadow.push(x, 0.03, z, 0.35, 1, 0.35); }
   FX.proj.end(); FX.projO.end();
   // zone
-  const Z = G.zone; FX.zoneU.c.value.copy(Z.c); FX.zoneU.r.value = Z.r; FX.zoneU.t.value = G.now; if (Z.next && Z.stage !== 'final') { FX.zoneU.nc.value.copy(Z.next.c); FX.zoneU.nr.value = Z.next.r; } else FX.zoneU.nr.value = -1;
+  const Z = G.zone; FX.zoneU.c.value.copy(Z.c); FX.zoneU.r.value = Z.r; FX.zoneU.t.value = G.now; FX.zoneU.sq.value = Z.sq ? 1 : 0; FX.zoneU.lim.value = G.world.PH + (Z.sq ? 0 : 0.5);
+  if (Z.next && Z.stage !== 'final' && !Z.sq) { FX.zoneU.nc.value.copy(Z.next.c); FX.zoneU.nr.value = Z.next.r; } else FX.zoneU.nr.value = -1;
   FX.cloud.begin(); FX.cloudO.begin();
-  if (Z.r < 140) {
+  const gasCol = Z.sq ? 0xc9a2ff : 0xc9ff7a; if (FX.cloud.m.material.color.getHex() !== gasCol) { FX.cloud.m.material.color.setHex(gasCol); FX.cloud.m.material.emissive.setHex(Z.sq ? 0x3a1a55 : 0x335500); FX.cloudO.m.material.uniforms.c.value.setHex(Z.sq ? 0x6a3c9a : 0x4f9a1a); }
+  if (Z.sq && Z.r < G.world.PH) { // puffs along the four edges of the square, only near the camera
+    let k = 0; const r = Z.r + 0.4;
+    for (let side = 0; side < 4; side++) for (let u = -r; u <= r; u += 1.1) {
+      const x = side < 2 ? u : (side === 2 ? -r : r), z = side < 2 ? (side === 0 ? -r : r) : u;
+      if (Math.abs(x - camLook.x) > 26 || Math.abs(z - camLook.z) > 20) continue; k++;
+      const s = 0.5 + (Math.sin(k * 3.1 + side) * 0.5 + 0.5) * 0.45 + Math.sin(G.now * 2 + k) * 0.08, y = 0.35 + s * 0.5 + (k % 2) * 0.3 + Math.sin(G.now * 1.5 + k * 0.7) * 0.15;
+      const ox = side >= 2 ? (side === 2 ? -0.4 : 0.4) * (k % 2) : 0, oz = side < 2 ? (side === 0 ? -0.4 : 0.4) * (k % 2) : 0;
+      FX.cloud.push(x + ox, y, z + oz, s, s * 0.8, s); FX.cloudO.push(x + ox, y, z + oz, s, s * 0.8, s);
+    }
+  } else if (!Z.sq && Z.r < 140) {
     const n = 90, base = Math.atan2(camLook.z - Z.c.y, camLook.x - Z.c.x);
     for (let i = 0; i < n; i++) { // puffs concentrated on the part of the edge near the camera
       const a = base + (i / n - 0.5) * Math.min(Math.PI * 2, 70 / Math.max(4, Z.r)) + Math.sin(i * 12.9) * 0.02;
@@ -335,5 +360,6 @@ function render(dt) {
   drawOverlay(dt); updateHud(dt);
 }
 requestAnimationFrame(frame);
+if (Q.get('mode') && ['party', 'solo', 'duo'].includes(Q.get('mode'))) { opts.mode = Q.get('mode'); showMode(); }
 if (Q.has('go')) { if (Q.get('kind') && CHARS[Q.get('kind')]) sel = Q.get('kind'); if (Q.get('n')) opts.n = +Q.get('n'); startMatch(); }
 window.__start = startMatch; window.__info = () => renderer.info.render; window.__state = () => state;

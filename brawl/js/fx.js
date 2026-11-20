@@ -46,13 +46,13 @@ export function makeFX(scene) {
   FX.coneCache = {};
   // zone: shader plane tinting everything outside the circle + cloud puffs on the edge
   const zg = new THREE.PlaneGeometry(400, 400); zg.rotateX(-Math.PI / 2);
-  FX.zoneU = { c: { value: new THREE.Vector2() }, r: { value: 200 }, t: { value: 0 }, nc: { value: new THREE.Vector2() }, nr: { value: -1 } };
+  FX.zoneU = { c: { value: new THREE.Vector2() }, r: { value: 200 }, t: { value: 0 }, nc: { value: new THREE.Vector2() }, nr: { value: -1 }, sq: { value: 0 }, lim: { value: 72.5 } };
   const zm = new THREE.ShaderMaterial({
     uniforms: FX.zoneU, transparent: true, depthWrite: false,
     vertexShader: 'varying vec2 vw; void main(){ vec4 w = modelMatrix*vec4(position,1.); vw = w.xz; gl_Position = projectionMatrix*viewMatrix*w; }',
-    fragmentShader: `uniform vec2 c; uniform float r; uniform float t; uniform vec2 nc; uniform float nr; varying vec2 vw;
-void main(){ if (abs(vw.x) > 72.5 || abs(vw.y) > 72.5) discard; float d = distance(vw, c); float a = 0.;
- if (d > r) { float s = 0.5 + 0.5*sin((vw.x+vw.y)*0.6 + t*2.0); a = 0.5 + 0.1*s; gl_FragColor = vec4(mix(vec3(0.18,0.75,0.2), vec3(0.45,0.95,0.3), s), a); return; }
+    fragmentShader: `uniform vec2 c; uniform float r; uniform float t; uniform vec2 nc; uniform float nr; uniform float sq; uniform float lim; varying vec2 vw;
+void main(){ if (abs(vw.x) > lim || abs(vw.y) > lim) discard; vec2 dd = abs(vw - c); float d = sq > 0.5 ? max(dd.x, dd.y) : distance(vw, c); float a = 0.;
+ if (d > r) { float s = 0.5 + 0.5*sin((vw.x+vw.y)*0.6 + t*2.0); a = 0.5 + 0.1*s; gl_FragColor = sq > 0.5 ? vec4(mix(vec3(0.42,0.22,0.62), vec3(0.62,0.38,0.85), s), a + 0.08) : vec4(mix(vec3(0.18,0.75,0.2), vec3(0.45,0.95,0.3), s), a); return; }
  if (nr > 0.) { float e = abs(distance(vw, nc) - nr); if (e < 0.12 && mod(atan(vw.y-nc.y, vw.x-nc.x)*nr*0.8, 2.0) < 1.0) { gl_FragColor = vec4(1.,1.,1.,0.8); return; } }
  discard; }`,
   });
