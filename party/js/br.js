@@ -1,6 +1,7 @@
 // 绝地求生 (battle royale) mode: free-for-all, no respawn, loot crates, shrinking safe zone, last one standing wins.
 import * as THREE from 'three';
 import { bowGeo } from './bow.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { setupDrop, setupAirdrops, updateAirdrops, airdropGoal, airdropMinimap, dropMinimap, cleanupDrop } from './drop.js';
 
 
@@ -41,16 +42,41 @@ const LOOT = [
 // damage reduction by armor / helmet level (body / head)
 export const GEAR_RED = [0, 0.3, 0.4, 0.55];
 const LOOT_GEO = {};
+// ground loot shaped like the item: parts merged into one geometry per kind (1 draw call each);
+// vertex colour 1 = item colour, darker values = metal / accents
+function part(geo, x, y, z, shade = 1, rx = 0, ry = 0, rz = 0) {
+  geo = geo.toNonIndexed(); geo.rotateX(rx); geo.rotateY(ry); geo.rotateZ(rz); geo.translate(x, y, z);
+  const n = geo.attributes.position.count, c = new Float32Array(n * 3).fill(shade); geo.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  geo.deleteAttribute('uv'); return geo;
+}
+const BX = (w, h, d) => new THREE.BoxGeometry(w, h, d), CY = (r1, r2, h, s = 10) => new THREE.CylinderGeometry(r1, r2, h, s);
 function lootGeo(k) {
   if (LOOT_GEO[k]) return LOOT_GEO[k];
-  let g;
-  if (k === 'helmet') { g = new THREE.SphereGeometry(0.3, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2); }
-  else if (k === 'armor') g = new THREE.BoxGeometry(0.6, 0.62, 0.24);
-  else if (k === 'rifle' || k === 'sniper') g = new THREE.BoxGeometry(1.0, 0.22, 0.3);
-  else if (k === 'bow') g = bowGeo();
-  else if (k === 'scope') { g = new THREE.CylinderGeometry(0.09, 0.11, 0.5, 10); g.rotateZ(Math.PI / 2); }
-  else if (k === 'ammo') g = new THREE.BoxGeometry(0.45, 0.3, 0.35);
-  else g = new THREE.BoxGeometry(0.55, 0.4, 0.4);
+  const P = [], D = 0.28, M = 0.55;
+  if (k === 'rifle') {          // body, stock, barrel, magazine, grip, sight
+    P.push(part(BX(0.55, 0.16, 0.1), 0, 0, 0), part(BX(0.3, 0.14, 0.08), -0.42, -0.03, 0), part(CY(0.03, 0.03, 0.45), 0.5, 0.03, 0, D, 0, 0, Math.PI / 2),
+      part(BX(0.09, 0.24, 0.07), 0.08, -0.18, 0, D, 0, 0, -0.2), part(BX(0.07, 0.16, 0.07), -0.15, -0.14, 0, D, 0, 0, 0.3), part(BX(0.18, 0.05, 0.05), 0.05, 0.11, 0, D));
+  } else if (k === 'sniper') {  // long barrel + scope + bipod-ish stock
+    P.push(part(BX(0.6, 0.15, 0.1), 0, 0, 0), part(BX(0.32, 0.17, 0.08), -0.46, -0.03, 0), part(CY(0.028, 0.028, 0.75), 0.66, 0.03, 0, D, 0, 0, Math.PI / 2),
+      part(CY(0.055, 0.055, 0.36), 0.05, 0.16, 0, D, 0, 0, Math.PI / 2), part(BX(0.07, 0.14, 0.07), -0.12, -0.12, 0, D, 0, 0, 0.3), part(BX(0.08, 0.14, 0.06), 0.12, -0.13, 0, D));
+  } else if (k === 'bow') { LOOT_GEO[k] = bowGeo(); return LOOT_GEO[k]; }
+  else if (k === 'scope') {     // tube with fat lens ends + mount
+    P.push(part(CY(0.075, 0.075, 0.42, 14), 0, 0.1, 0, 1, 0, 0, Math.PI / 2), part(CY(0.11, 0.075, 0.1, 14), 0.24, 0.1, 0, D, 0, 0, Math.PI / 2), part(CY(0.075, 0.1, 0.08, 14), -0.23, 0.1, 0, D, 0, 0, Math.PI / 2),
+      part(BX(0.22, 0.08, 0.1), 0, -0.02, 0, D), part(CY(0.035, 0.035, 0.07), 0, 0.2, 0, M));
+  } else if (k === 'ammo') {    // open box with a row of cartridges
+    P.push(part(BX(0.5, 0.18, 0.32), 0, 0, 0));
+    for (let i = 0; i < 5; i++) { P.push(part(CY(0.03, 0.03, 0.12, 8), -0.18 + i * 0.09, 0.15, 0, 0.9), part(CY(0.005, 0.03, 0.06, 8), -0.18 + i * 0.09, 0.24, 0, 0.6)); }
+  } else if (k === 'med') {     // white case, handle, red cross on top (red cross added as child mesh)
+    P.push(part(BX(0.55, 0.32, 0.4), 0, 0, 0), part(BX(0.22, 0.06, 0.05), 0, 0.22, 0, D), part(BX(0.05, 0.08, 0.05), -0.1, 0.18, 0, D), part(BX(0.05, 0.08, 0.05), 0.1, 0.18, 0, D));
+  } else if (k === 'armor') {   // vest: torso, shoulder straps, plates, collar gap
+    P.push(part(BX(0.62, 0.62, 0.22), 0, 0, 0), part(BX(0.14, 0.14, 0.24), -0.22, 0.38, 0), part(BX(0.14, 0.14, 0.24), 0.22, 0.38, 0),
+      part(BX(0.4, 0.3, 0.05), 0, 0.02, 0.12, 0.75), part(BX(0.12, 0.08, 0.06), -0.12, -0.2, 0.12, D), part(BX(0.12, 0.08, 0.06), 0.12, -0.2, 0.12, D), part(BX(0.64, 0.06, 0.24), 0, -0.26, 0, 0.6));
+  } else if (k === 'helmet') {  // dome + brim + strap + top ridge
+    P.push(part(new THREE.SphereGeometry(0.3, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0, 0, 0), part(CY(0.36, 0.36, 0.035, 18), 0, 0.01, 0, 0.75),
+      part(BX(0.04, 0.2, 0.04), -0.27, -0.08, 0, D), part(BX(0.04, 0.2, 0.04), 0.27, -0.08, 0, D), part(BX(0.06, 0.05, 0.5), 0, 0.28, 0, 0.7));
+  } else P.push(part(BX(0.55, 0.4, 0.4), 0, 0, 0));
+  const g = mergeGeometries(P); g.computeVertexNormals();
+  g.scale(1.25, 1.25, 1.25);
   return (LOOT_GEO[k] = g);
 }
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -91,8 +117,8 @@ export function setupBR(G, scene, h) {
   const lootSpots = [...insideSpots.slice().sort(() => Math.random() - 0.5).slice(0, Math.round(lootN * 0.45)), ...deck.slice().sort(() => Math.random() - 0.5)].slice(0, Math.min(deck.length, lootN));
   for (const s of lootSpots) {
     let r = Math.random() * total, def = LOOT[0]; for (const l of LOOT) { if ((r -= l.w) < 0) { def = l; break; } }
-    const m = new THREE.Mesh(lootGeo(def.k), new THREE.MeshLambertMaterial({ color: def.c, emissive: def.c, emissiveIntensity: 0.45 }));
-    m.position.set(s.x + rnd(-0.6, 0.6), def.k === 'helmet' ? 0.15 : def.k === 'bow' ? 0.62 : 0.35, s.z + rnd(-0.6, 0.6)); scene.add(m);
+    const m = new THREE.Mesh(lootGeo(def.k), new THREE.MeshLambertMaterial({ color: def.c, emissive: def.c, emissiveIntensity: 0.3, vertexColors: def.k !== 'bow' }));
+    m.position.set(s.x + rnd(-0.6, 0.6), def.k === 'helmet' ? 0.15 : def.k === 'bow' ? 0.62 : def.k === 'armor' ? 0.5 : 0.35, s.z + rnd(-0.6, 0.6)); scene.add(m);
     if (def.k === 'med') { const cr = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.42), new THREE.MeshBasicMaterial({ color: 0xff3b4d })); cr.position.y = 0.2; m.add(cr); const cr2 = cr.clone(); cr2.rotation.y = Math.PI / 2; m.add(cr2); }
     G.loot.push({ def, m, taken: false });
   }

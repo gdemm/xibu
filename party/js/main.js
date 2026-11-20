@@ -9,7 +9,7 @@ import { toonRamp } from './critter.js';
 import { lobbyChars } from './lobbychars.js';
 import { playerJump, airStep, updateDrop } from './drop.js';
 import { partyLook, toonify } from './party.js';
-import { spawnVehicles, driveVehicle, poseVehicle, inFootprint, vehicleBox, exitSpot } from './vehicles.js';
+import { spawnVehicles, driveVehicle, flyVehicle, poseVehicle, inFootprint, vehicleBox, exitSpot } from './vehicles.js';
 import { sfx, unlockAudio } from './audio.js';
 import * as HUD from './hud.js';
 import { initArrows, clearArrows, shootArrow, updateArrows } from './bow.js';
@@ -262,7 +262,7 @@ function kill(t, attacker, w, head) {
   t.respawnAt = G.mode === 'br' ? Infinity : G.now + 3; t.deadT = G.now;
   HUD.killFeed(attacker, t, w.name, head);
   if (t.isPlayer) {
-    if (P.inCar) leaveCar();
+    if (P.inCar) leaveCar(true);
     P.firing = false; P.scoped = false; G.reloading = false; P.draw = 0;
     $('deathBy').textContent = attacker.team === 'zone' ? '你倒在了安全区外' : `击败你的是 ${attacker.name}${head ? '（爆头）' : ''}`; $('deathScr').classList.remove('hidden');
   }
@@ -324,10 +324,13 @@ function toggleCar() {
   if (P.inCar) { leaveCar(); return; }
   const v = nearestCar(); if (!v) return;
   P.inCar = v; v.driver = G.player; P.scoped = false; P.firing = false; G.reloading = false; G.player.crouch = false;
-  G.player.yaw = v.yaw; G.player.pitch = -0.18; HUD.centerMsg(v.T.name + ' · 摇杆前后油门刹车，左右转向', 1600);
+  G.player.yaw = v.yaw; G.player.pitch = -0.18; HUD.centerMsg(v.T.name + (v.T.fly ? ' · 按住「升」「降」控制高度，摇杆前进转向' : ' · 摇杆前后油门刹车，左右转向'), 2000);
 }
-function leaveCar() {
-  const v = P.inCar; if (!v) return; P.inCar = null; v.driver = null;
+function leaveCar(force) {
+  const v = P.inCar; if (!v) return;
+  if (force && v.T.fly) { v.alt = 0; v.speed = 0; poseVehicle(v, 0); }
+  if (v.T.fly && (v.alt || 0) > 2.5) { HUD.centerMsg('太高了，先降落再下机', 1200); return; }
+  P.inCar = null; v.driver = null; P.liftUp = P.liftDown = false;
   const fr = (x, z) => G.solidsNear({ x, z }).every(b => !(x + 0.5 > b.min.x && x - 0.5 < b.max.x && z + 0.5 > b.min.z && z - 0.5 < b.max.z && b.max.y > 0.3)) && !inFootprint(v, x, z, 0.5);
   G.player.pos.copy(exitSpot(v, fr)); G.player.vel.set(0, 0, 0);
 }
@@ -337,30 +340,31 @@ function updateCarButton() {
   const show = G.player?.alive && !G.player.air && (P.inCar || nearestCar());
   b.classList.toggle('hidden', !show); if (show) b.textContent = P.inCar ? '下车' : '上车';
   const hint = $('carHint'); if (hint) { hint.classList.toggle('hidden', !show || isTouch); if (show) hint.textContent = (P.inCar ? 'F 下车' : 'F 上车 ' + nearestCar()?.T.name); }
-  document.body.classList.toggle('driving', !!P.inCar);
+  document.body.classList.toggle('driving', !!P.inCar); document.body.classList.toggle('heli', !!P.inCar?.T.fly);
 }
 function updateDriving(dt) {
   const p = G.player, v = P.inCar;
   const thr = Math.max(-1, Math.min(1, -P.joyY + (P.keys.KeyW ? 1 : 0) - (P.keys.KeyS ? 1 : 0)));
   const st = Math.max(-1, Math.min(1, P.joyX + (P.keys.KeyD ? 1 : 0) - (P.keys.KeyA ? 1 : 0)));
   const prevYaw = v.yaw;
-  const hit = driveVehicle(v, dt, Math.abs(thr) > 0.15 ? thr : 0, Math.abs(st) > 0.1 ? st : 0, G.map, G.vehicles);
+  const lift = (P.liftUp || P.keys.Space ? 1 : 0) - (P.liftDown || P.keys.KeyC ? 1 : 0);
+  const hit = v.T.fly ? flyVehicle(v, dt, Math.abs(thr) > 0.15 ? thr : 0, Math.abs(st) > 0.1 ? st : 0, lift, G.map) : driveVehicle(v, dt, Math.abs(thr) > 0.15 ? thr : 0, Math.abs(st) > 0.1 ? st : 0, G.map, G.vehicles);
   if (hit > 12) damage(p, (hit - 12) * 3, p, { name: '撞车' }, false, true);
   p.yaw += v.yaw - prevYaw; // camera follows the turn
-  p.pos.set(v.pos.x, 0, v.pos.z); p.vel.set(0, 0, 0); p.onGround = true; p.moving = Math.abs(v.speed) > 0.5;
+  p.pos.set(v.pos.x, v.alt || 0, v.pos.z); p.vel.set(0, 0, 0); p.onGround = true; p.moving = Math.abs(v.speed) > 0.5;
   // run over
-  if (Math.abs(v.speed) > 4) for (const e of G.entities) {
+  if (!v.T.fly && Math.abs(v.speed) > 4) for (const e of G.entities) {
     if (e === p || !e.alive || G.now < (e.carHitT || 0)) continue;
     if (!inFootprint(v, e.pos.x, e.pos.z, 0.45)) continue;
     e.carHitT = G.now + 0.6; damage(e, Math.abs(v.speed) * 6 * v.T.hitK, p, { name: v.T.name }, false);
     const fx = -Math.sin(v.yaw), fz = -Math.cos(v.yaw); e.pos.x += fx * 1.5; e.pos.z += fz * 1.5; e.vel.y = 4;
   }
   poseVehicle(v, dt);
-  chaseCam(v.pos.x, v.T.seatY, v.pos.z, v.T.cam, 0, 0.6);
+  chaseCam(v.pos.x, (v.alt || 0) + v.T.seatY, v.pos.z, v.T.cam, 0, 0.6);
   poseBody(dt, 0, 0, 0, true);
   $('scope').style.display = 'none'; $('cross').style.display = 'none';
   if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); }
-  const kmh = Math.round(Math.abs(v.speed) * 3.6); const sp = $('speedo'); if (sp) sp.textContent = kmh + ' km/h';
+  const kmh = Math.round(Math.abs(v.speed) * 3.6); const sp = $('speedo'); if (sp) sp.textContent = kmh + ' km/h' + (v.T.fly ? ' · 高度 ' + Math.round(v.alt || 0) + ' m' : '');
 }
 
 // ---------------- plane / parachute (player) ----------------
@@ -673,6 +677,8 @@ function btnDown(btn, el) {
   else if (btn === 'car') toggleCar();
   else if (btn === 'eject') ejectOrOpen();
   else if (btn === 'view') toggleView();
+  else if (btn === 'up') P.liftUp = true;
+  else if (btn === 'down') P.liftDown = true;
 }
 touchLayer.addEventListener('touchstart', (e) => {
   e.preventDefault(); unlockAudio();
@@ -705,7 +711,7 @@ function touchEnd(e) {
   for (const t of e.changedTouches) {
     const s = T.get(t.identifier); if (!s) continue; T.delete(t.identifier);
     if (s.type === 'joy') { P.joyX = P.joyY = 0; if (P.sprint) { P.runLock = true; HUD.centerMsg && HUD.centerMsg('自动奔跑中，碰摇杆取消', 1200); } P.sprint = false; joyBase.classList.remove('run'); joyBase.classList.add('hidden'); }
-    if (s.type === 'btn') { s.el.classList.remove('pressed'); if (s.btn === 'fire' && ![...T.values()].some(v => v.btn === 'fire')) P.firing = false; }
+    if (s.type === 'btn') { if (s.btn === 'up') P.liftUp = false; if (s.btn === 'down') P.liftDown = false; s.el.classList.remove('pressed'); if (s.btn === 'fire' && ![...T.values()].some(v => v.btn === 'fire')) P.firing = false; }
   }
 }
 touchLayer.addEventListener('touchend', touchEnd); touchLayer.addEventListener('touchcancel', touchEnd);

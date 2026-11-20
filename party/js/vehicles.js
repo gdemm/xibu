@@ -7,16 +7,19 @@ export const VTYPES = {
   moto:  { name: '摩托', len: 1.1, wid: 0.4, max: 27, acc: 14, turn: 2.4, cam: 5, seatY: 1.75, hitK: 0.8 },
   bike:  { name: '自行车', len: 0.9, wid: 0.3, max: 10, acc: 5, turn: 2.6, cam: 4.2, seatY: 1.8, hitK: 0.3 },
   bus:   { name: '大巴', len: 5.6, wid: 1.3, max: 15, acc: 5, turn: 1.1, cam: 14, seatY: 4.2, hitK: 1.6 },
-  truck: { name: '卡车', len: 3.6, wid: 1.25, max: 17, acc: 6.5, turn: 1.3, cam: 11, seatY: 3.9, hitK: 1.5 },
+  heli:  { name: '直升机', len: 2.4, wid: 1.1, max: 32, acc: 9, turn: 1.5, cam: 13, seatY: 2.4, hitK: 0, fly: true },
+  truck: { name: '卡车', len: 1.9, wid: 1.25, max: 19, acc: 8, turn: 1.6, cam: 8, seatY: 3.3, hitK: 1.3 },
 };
+// parked at the roadside (road edge + half width + gap), facing along the road
 const SPOTS = [
-  ['jeep', -60, 0, Math.PI / 2], ['jeep', 0, 60, 0], ['jeep', -110, -6, Math.PI / 2],
-  ['moto', 20, 0, Math.PI / 2], ['moto', 0, -62, 0], ['moto', -72, 43, Math.PI / 2],
-  ['bike', -40, 0, Math.PI / 2], ['bike', 0, -90, 0], ['bike', 6, -118, 0], ['bike', 0, 30, 0],
-  ['bus', 0, 112, Math.PI], ['bus', -100, 0, -Math.PI / 2],
-  ['truck', 33, -52, 0], ['truck', 96, 0, -Math.PI / 2], ['truck', 70, 8, Math.PI / 2],
+  ['jeep', -60, 5.6, Math.PI / 2], ['jeep', 5.6, 60, 0], ['jeep', -110, -5.6, Math.PI / 2],
+  ['moto', 20, 5.0, Math.PI / 2], ['moto', -5.0, -62, 0], ['moto', -72, 47.0, Math.PI / 2],
+  ['bike', -40, -4.9, Math.PI / 2], ['bike', 4.9, -90, 0], ['bike', 4.9, -118, 0], ['bike', -4.9, 30, 0],
+  ['bus', 5.9, 112, Math.PI], ['bus', -100, -5.9, -Math.PI / 2],
+  ['heli', -24, 18, 0], ['heli', 60, -30, Math.PI / 2],
+  ['truck', 37.9, -52, 0], ['truck', 96, 5.9, -Math.PI / 2], ['truck', 70, -5.9, Math.PI / 2],
 ];
-const COLORS = { jeep: [0x5b6b3a, 0x3b6fb6, 0xc0392b], moto: [0x111111, 0xc0392b, 0x2e6fb6], bike: [0x2e8b57, 0xd4a017, 0x3b6fb6, 0xe67e22], bus: [0xe1b12c, 0x3b7fc4], truck: [0x8a2f24, 0x2f5f8a, 0x51633a] };
+const COLORS = { jeep: [0x5b6b3a, 0x3b6fb6, 0xc0392b], moto: [0x111111, 0xc0392b, 0x2e6fb6], bike: [0x2e8b57, 0xd4a017, 0x3b6fb6, 0xe67e22], bus: [0xe1b12c, 0x3b7fc4], heli: [0x2f6e8f, 0xd35400], truck: [0x8a2f24, 0x2f5f8a, 0x51633a] };
 
 const MAT = {}; const mat = (c, o) => MAT[c + (o || '')] || (MAT[c + (o || '')] = new THREE.MeshLambertMaterial(o ? { color: c, transparent: true, opacity: o } : { color: c }));
 function builder(g) {
@@ -48,12 +51,24 @@ function vehicleMesh(type, color) {
     box(2.5, 2.4, 11, 0, 1.85, 0, color); box(2.52, 0.75, 10.2, 0, 2.35, 0.2, GLASS, 0.75); box(2.3, 1.0, 0.06, 0, 2.3, -5.52, GLASS, 0.6);
     box(2.54, 0.25, 11.02, 0, 0.85, 0, DARK); box(2.4, 0.15, 10.8, 0, 3.1, 0, 0xeeeeee); box(0.9, 1.6, 0.06, 1.25, 1.5, -3.5, DARK);
     for (const z of [-3.8, 3.4]) for (const x of [-1.15, 1.15]) wheel(0.55, 0.4, x, 0.55, z);
-  } else { // truck
-    box(2.3, 1.8, 2.0, 0, 1.6, -2.4, color); box(2.1, 0.8, 0.06, 0, 2.05, -3.42, GLASS, 0.6); box(2.32, 0.5, 0.9, 0, 1.6, -2.4, GLASS, 0.55);
-    box(2.4, 0.3, 7.2, 0, 0.75, 0, DARK); box(2.4, 0.25, 4.8, 0, 1.0, 1.2, 0x6b5a40);
-    box(0.1, 0.9, 4.8, -1.15, 1.55, 1.2, 0x6b5a40); box(0.1, 0.9, 4.8, 1.15, 1.55, 1.2, 0x6b5a40); box(2.4, 0.9, 0.1, 0, 1.55, 3.55, 0x6b5a40);
-    box(2.2, 1.6, 4.4, 0, 2.6, 1.2, 0x55603a, 0.95);
-    for (const z of [-2.6, 1.0, 2.6]) for (const x of [-1.05, 1.05]) wheel(0.55, 0.4, x, 0.55, z);
+  } else if (type === 'heli') {   // light helicopter: cabin, glass nose, tail boom, skids, main + tail rotor
+    box(1.8, 1.5, 2.6, 0, 1.55, 0, color); box(1.7, 1.1, 0.9, 0, 1.6, -1.65, GLASS, 0.55); box(1.2, 0.9, 1.0, 0, 2.5, 0.2, color);
+    box(0.35, 0.4, 4.2, 0, 1.9, 3.3, color); box(0.08, 1.1, 0.7, 0, 2.4, 5.2, color); box(1.4, 0.06, 0.4, 0, 2.0, 5.0, color);
+    box(0.1, 0.1, 3.6, -0.85, 0.3, 0, METAL); box(0.1, 0.1, 3.6, 0.85, 0.3, 0, METAL);
+    for (const z of [-0.8, 0.8]) for (const x of [-0.75, 0.75]) box(0.08, 0.6, 0.08, x, 0.6, z, METAL);
+    box(0.2, 0.4, 0.2, 0, 3.15, 0.2, DARK);
+    const rotor = new THREE.Group(); rotor.position.set(0, 3.38, 0.2); g.add(rotor);
+    for (const r of [0, Math.PI / 2]) { const bl = new THREE.Mesh(new THREE.BoxGeometry(9, 0.05, 0.28), mat(DARK)); bl.rotation.y = r; rotor.add(bl); }
+    const tail = new THREE.Group(); tail.position.set(0.12, 2.4, 5.25); g.add(tail);
+    const tb = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.4, 0.16), mat(DARK)); tail.add(tb);
+    g.userData.rotor = rotor; g.userData.tail = tail;
+  } else { // truck: tractor unit only (cab + short chassis with fifth-wheel plate, no trailer)
+    box(2.3, 1.8, 2.0, 0, 1.6, -0.75, color); box(2.1, 0.8, 0.06, 0, 2.05, -1.77, GLASS, 0.6); box(2.32, 0.5, 0.9, 0, 1.6, -0.75, GLASS, 0.55);
+    box(2.2, 0.35, 0.25, 0, 0.75, -1.85, DARK); box(1.6, 0.5, 0.08, 0, 1.05, -1.8, METAL);   // bumper + grille
+    box(2.4, 0.3, 3.8, 0, 0.75, 0.0, DARK); box(1.3, 0.12, 1.3, 0, 0.96, 1.1, METAL);       // chassis + fifth wheel
+    box(0.18, 1.6, 0.18, 0.95, 2.4, 0.35, METAL); box(0.5, 0.5, 0.9, -1.25, 0.95, 0.4, METAL); // exhaust stack + fuel tank
+    box(2.3, 0.08, 0.6, 0, 1.25, 1.75, DARK);                                                  // rear mudguard
+    for (const z of [-1.1, 1.3]) for (const x of [-1.05, 1.05]) wheel(0.55, 0.4, x, 0.55, z);
   }
   g.userData.wheels = wheels;
   return g;
@@ -86,6 +101,26 @@ export function driveVehicle(v, dt, throttle, steer, map, others = []) {
   const B = map.bounds; v.pos.x = Math.max(B.minX - 8, Math.min(B.maxX + 8, v.pos.x)); v.pos.z = Math.max(B.minZ - 8, Math.min(B.maxZ + 8, v.pos.z));
   return hit;
 }
+// helicopter: same throttle/steer as cars plus lift (-1..1); collides with buildings only near their height
+export function flyVehicle(v, dt, throttle, steer, lift, map) {
+  const T = v.T; v.alt = v.alt || 0;
+  const rpmOK = (v.rpm || 0) > 0.6;
+  v.vy = rpmOK ? lift * 7 : -4; if (!rpmOK && v.alt <= 0) v.vy = 0;
+  const na = Math.max(0, Math.min(70, v.alt + v.vy * dt));
+  const air = na > 0.05;
+  if (air || throttle > 0) { if (throttle && rpmOK) v.speed += throttle * T.acc * dt; else v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), 4 * dt); }
+  if (!air) v.speed *= Math.max(0, 1 - dt * 3);
+  v.speed = Math.max(-T.max * 0.3, Math.min(T.max, v.speed));
+  v.yaw -= steer * T.turn * (air ? 1 : 0.3) * dt;
+  v.lean += (-steer * Math.min(1, Math.abs(v.speed) / 10) * 0.25 - v.lean) * Math.min(1, dt * 4);
+  const fx = -Math.sin(v.yaw), fz = -Math.cos(v.yaw), nx = v.pos.x + fx * v.speed * dt, nz = v.pos.z + fz * v.speed * dt;
+  const blockedAt = (x, z, y) => { const r = T.wid + 0.3; const list = map.near ? map.near({ x, z }) : map.solids; for (const b of list) { if (b.max.y < y + 0.2 || b.min.y > y + 3.4) continue; if (x + r > b.min.x && x - r < b.max.x && z + T.len > b.min.z && z - T.len < b.max.z) return b; } return null; };
+  let hit = 0;
+  if (blockedAt(nx, nz, na)) { hit = Math.abs(v.speed); v.speed *= -0.25; } else { v.pos.x = nx; v.pos.z = nz; }
+  const below = blockedAt(v.pos.x, v.pos.z, na); v.alt = below ? Math.max(na, below.max.y) : na;
+  const B = map.bounds; v.pos.x = Math.max(B.minX - 8, Math.min(B.maxX + 8, v.pos.x)); v.pos.z = Math.max(B.minZ - 8, Math.min(B.maxZ + 8, v.pos.z));
+  return hit;
+}
 export function collides(v, x, z, map, others) {
   const T = v.T, fx = -Math.sin(v.yaw), fz = -Math.cos(v.yaw), r = T.wid + 0.05;
   const pts = []; const n = Math.max(1, Math.ceil(T.len / (r * 1.4)));
@@ -105,16 +140,17 @@ export function inFootprint(v, px, pz, pad = 0) {
   return Math.abs(along) < v.T.len + pad && Math.abs(side) < v.T.wid + pad;
 }
 export function poseVehicle(v, dt) {
-  v.mesh.position.set(v.pos.x, 0, v.pos.z); v.mesh.rotation.set(0, v.yaw, v.lean, 'YXZ');
+  v.mesh.position.set(v.pos.x, v.alt || 0, v.pos.z); v.mesh.rotation.set(0, v.yaw, v.lean, 'YXZ');
   v.spin += v.speed * dt;
   for (const { w, r } of v.mesh.userData.wheels) w.rotation.x = -v.spin / r;
+  const ro = v.mesh.userData.rotor; if (ro) { v.rpm = Math.max(0, Math.min(1, (v.rpm || 0) + (v.driver ? dt : -dt * 0.4))); ro.rotation.y += v.rpm * 28 * dt; v.mesh.userData.tail.rotation.x += v.rpm * 40 * dt; }
 }
 // axis-aligned box around a vehicle so people can't walk through it
 export function vehicleBox(v) {
   const T = v.T, c = Math.abs(Math.cos(v.yaw)), s = Math.abs(Math.sin(v.yaw));
-  const hx = T.wid * c + T.len * s, hz = T.wid * s + T.len * c, h = { jeep: 1.6, moto: 1.1, bike: 1.0, bus: 3.1, truck: 3.0 }[v.type];
-  if (!v.box) v.box = new THREE.Box3();
-  v.box.min.set(v.pos.x - hx, 0, v.pos.z - hz); v.box.max.set(v.pos.x + hx, h, v.pos.z + hz);
+  const hx = T.wid * c + T.len * s, hz = T.wid * s + T.len * c, h = { jeep: 1.6, moto: 1.1, bike: 1.0, bus: 3.1, truck: 2.6, heli: 2.6 }[v.type];
+  if (!v.box) v.box = new THREE.Box3(); const y0 = v.alt || 0;
+  v.box.min.set(v.pos.x - hx, y0, v.pos.z - hz); v.box.max.set(v.pos.x + hx, y0 + h, v.pos.z + hz);
   return v.box;
 }
 export function exitSpot(v, free) {

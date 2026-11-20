@@ -47,6 +47,7 @@ button{font-family:inherit;cursor:pointer}
 #topbar .r{color:#ff6a5c;font-size:22px;min-width:30px}
 #timer{font-size:15px;color:#fff;padding:0 6px;border-left:1px solid #fff3;border-right:1px solid #fff3}
 #target{font-size:10px;color:#cbd;position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap;margin-top:2px;text-shadow:0 1px 2px #000}
+#bUp,#bDown{display:none;width:64px;height:64px;right:calc(36px + env(safe-area-inset-right));background:rgba(60,180,120,.55);font-weight:700}#bUp{top:calc(50% - 110px)}#bDown{top:calc(50% + 46px)}body.heli #bUp,body.heli #bDown{display:flex}
 #bCar{width:64px;height:64px;right:calc(150px + env(safe-area-inset-right));top:calc(50% - 32px);background:rgba(60,140,230,.55);font-weight:700}
 #bView{width:44px;height:44px;left:calc(22px + env(safe-area-inset-left));bottom:calc(62px + env(safe-area-inset-bottom));font-size:12px}
 #bView.on{background:rgba(255,190,60,.55)}
@@ -208,6 +209,8 @@ body.br #topbar .b,body.br #topbar .r{font-size:15px;min-width:0;white-space:now
   <div class="tb" id="bReload" data-btn="reload">换弹</div>
   <div class="tb" id="bSwitch" data-btn="switch">切枪</div>
   <div class="tb hidden" id="bCar" data-btn="car">上车</div>
+  <div class="tb" id="bUp" data-btn="up">升</div>
+  <div class="tb" id="bDown" data-btn="down">降</div>
   <div class="tb hidden" id="bEject" data-btn="eject">跳伞</div>
   <div class="tb" id="bView" data-btn="view">视角</div>
 </div>
