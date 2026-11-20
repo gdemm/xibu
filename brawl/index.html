@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#2b6cff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>英雄大乱斗</title>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+<canvas id="gl"></canvas>
+<canvas id="ov"></canvas>
+
+<!-- lobby -->
+<div id="lobby">
+  <div class="lbLeft">
+    <h1>英雄大乱斗</h1>
+    <div class="sub">派对吃鸡 · 最后一个站着的赢</div>
+    <div id="selInfo"><div id="selName"></div><div id="selRole"></div><div id="selDesc"></div><div id="selStats"></div></div>
+  </div>
+  <div class="lbRight">
+    <div class="ttl">选择你的英雄</div>
+    <div id="cards"></div>
+    <div class="row"><span>人数</span><div class="seg" id="segN"><button data-n="10">10人</button><button data-n="13">13人</button><button data-n="16" class="on">16人</button></div></div>
+    <div class="row"><span>难度</span><div class="seg" id="segD"><button data-d="0">轻松</button><button data-d="1" class="on">普通</button><button data-d="2">高手</button></div></div>
+    <div class="acts"><button id="btnFullL" class="ghost">⤢ 横屏/全屏</button><button id="btnPlay">开 战 !</button></div>
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <canvas id="mini" width="110" height="110"></canvas>
+  <div id="top"><div id="alive">存活 16</div><div id="zoneT"></div></div>
+  <div id="kfeed"></div>
+  <div id="cmsg"></div>
+  <div id="gear"><span id="gCube">⚡0</span><span id="gArmor" class="lv0">甲0</span><span id="gHelm" class="lv0">盔0</span></div>
+  <div id="stickL"><div class="base"></div><div class="knob"></div></div>
+  <div id="btnAtk" class="abtn"><div class="knob"></div></div>
+  <div id="btnSup" class="abtn"><div class="ring"></div><div class="knob">★</div></div>
+  <button id="btnJump" class="hidden">跳 伞</button>
+  <div id="hint"></div>
+</div>
+<div id="tbtns"><button id="tFull" title="横屏/全屏">⤢</button><button id="tExit" title="退出/暂停">✕</button></div>
+
+<div id="pause" class="hidden"><div class="box"><h2>暂停</h2><button id="pResume">继续游戏</button><button id="pFull" class="ghost">⤢ 横屏/全屏</button><button id="pHome" class="ghost">返回主页</button></div></div>
+<div id="end" class="hidden"><div class="box"><div id="endRank"></div><div id="endSub"></div><div id="endList"></div><div class="acts"><button id="eAgain">再来一局</button><button id="eHome" class="ghost">返回主页</button></div></div></div>
+<div id="rotHint"><div class="ph"></div><div>横屏游玩效果更好</div><button id="btnRot" class="ghost">⤢ 切换横屏</button><button id="btnRotNo" class="ghost">就竖着玩</button></div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
