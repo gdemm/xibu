@@ -374,7 +374,7 @@ function updateAir(dt) {
     if (P.body) P.body.visible = false;
   } else {
     let fx = 0, fz = 0;
-    if (P.keys.KeyW) fz += 1; if (P.keys.KeyS) fz -= 1; if (P.keys.KeyD) fx += 1; if (P.keys.KeyA) fx -= 1;
+    if (P.keys.KeyW || P.keys.ArrowUp) fz += 1; if (P.keys.KeyS || P.keys.ArrowDown) fz -= 1; if (P.keys.KeyD || P.keys.ArrowRight) fx += 1; if (P.keys.KeyA || P.keys.ArrowLeft) fx -= 1;
     fx += P.joyX; fz += -P.joyY; const l = Math.hypot(fx, fz); if (l > 1) { fx /= l; fz /= l; }
     const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
     const res = airStep(G, p, dt, -sy * fz + cy * fx, -cy * fz - sy * fx);

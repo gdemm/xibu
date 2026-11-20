@@ -80,11 +80,10 @@ export function setupBR(G, scene, h) {
     e.place = 0;
     if (!e.isPlayer) { h.resetBot(e); }
   }
-  // player kit: knife + pistol only
-  G.owned = new Set(['pistol', 'knife']);
+  // player kit: knife only (no pistol on landing)
+  G.owned = new Set(['knife']);
   for (const k of Object.keys(h.WEAPONS)) G.ammo[k] = { mag: 0, reserve: 0 };
-  G.ammo.pistol = { mag: 12, reserve: 24 };
-  h.setWeapon('pistol', true);
+  h.setWeapon('knife', true);
   // loot
   G.loot = [];
   const total = LOOT.reduce((s, l) => s + l.w, 0);

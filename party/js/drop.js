@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Builder, M } from './soldier.js';
 import { critterMaterial } from './critter.js';
 
-const ALT = 75, PLANE_SPEED = 26, FALL_V = 22, CHUTE_V = 5.5, FALL_H = 12, CHUTE_H = 7, AUTO_OPEN = 30;
+const ALT = 75, PLANE_SPEED = 26, FALL_V = 22, CHUTE_V = 5.5, FALL_H = 22, CHUTE_H = 14, AUTO_OPEN = 30;
 const rnd = (a, b) => a + Math.random() * (b - a);
 const HALF = 132;
 
