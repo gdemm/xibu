@@ -9,13 +9,14 @@ export function fmtTime(s) { s = Math.max(0, Math.ceil(s)); return String((s / 6
 let lastHud = '';
 export function updateHud(G) {
   const p = G.player, w = G.weapon;
-  const key = [G.scope | 0, p.armor | 0, p.helmet | 0, G.scores.blue, G.scores.red, Math.ceil(G.timeLeft), p.hp | 0, w.id, G.ammo[w.id].mag, G.ammo[w.id].reserve, G.reloading ? 1 : 0].join('|');
+  const key = [G.scope | 0, p.armor | 0, p.helmet | 0, G.bagLv | 0, G.scores.blue, G.scores.red, Math.ceil(G.timeLeft), p.hp | 0, w.id, G.ammo[w.id].mag, G.ammo[w.id].reserve, G.reloading ? 1 : 0].join('|');
   if (G.br) { const b = brHud(G); const k2 = key + b.left + b.right + b.mid; if (k2 === lastHud) return; lastHud = k2; $('sBlue').textContent = b.left; $('sRed').textContent = b.right; $('timer').textContent = ''; $('target').textContent = b.mid; }
   else { if (key === lastHud) return; lastHud = key;
   $('sBlue').textContent = G.scores.blue; $('sRed').textContent = G.scores.red;
   $('timer').textContent = fmtTime(G.timeLeft); }
   $('hpNum').textContent = Math.max(0, p.hp | 0);
   const ga = $('gArm'), gh = $('gHelm'); if (ga) { const a = p.armor | 0, h = p.helmet | 0; ga.className = 'lv' + a; gh.className = 'lv' + h; ga.lastChild.textContent = a ? 'Lv' + a : '-'; gh.lastChild.textContent = h ? 'Lv' + h : '-'; }
+  const gb = $('gBag'); if (gb) { const b = G.bagLv | 0; gb.className = 'lv' + b; gb.lastChild.textContent = b ? 'Lv' + b : '-'; }
   const gs = $('gScope'); if (gs) { const s = G.scope | 0; gs.className = s ? 'lv' + (s >= 8 ? 3 : s >= 4 ? 2 : 1) : 'lv0'; gs.lastChild.textContent = s ? s + 'x' : '-'; }
   $('hpFill').style.width = Math.max(0, p.hp) + '%';
   $('hpFill').style.background = p.hp > 50 ? '#4cd17a' : p.hp > 25 ? '#f2b33d' : '#ff4b3e';

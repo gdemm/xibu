@@ -57,7 +57,7 @@ body.driving #bFire,body.driving #bFire2,body.driving #bScope,body.driving #bJum
 #carHint{position:absolute;left:50%;top:62%;transform:translateX(-50%);color:#fff;font:600 14px system-ui;background:rgba(0,0,0,.45);padding:4px 10px;border-radius:6px}
 #bEject{width:96px;height:96px;right:calc(130px + env(safe-area-inset-right));top:calc(50% - 48px);background:rgba(255,77,109,.75);font-size:22px;border-color:#fff;box-shadow:0 4px 0 rgba(120,20,60,.6)}
 body.air #speedo{display:block}
-body.air #bFire,body.air #bFire2,body.air #bScope,body.air #bJump,body.air #bCrouch,body.air #bReload,body.air #bSwitch,body.air #bCar,body.air #ammoBox,body.air #cross{display:none!important}
+body.air #bFire,body.air #bFire2,body.air #bScope,body.air #bJump,body.air #bCrouch,body.air #bReload,body.air #bSwitch,body.air #bBag,body.air #bCar,body.air #ammoBox,body.air #cross{display:none!important}
 #gear{position:absolute;left:calc(222px + env(safe-area-inset-left));bottom:calc(10px + env(safe-area-inset-bottom));display:flex;gap:6px}
 body:not(.br) #gear{display:none}
 #gear span{display:flex;align-items:center;gap:3px;background:rgba(0,0,0,.4);border-radius:8px;padding:2px 7px 2px 4px;font-size:13px;font-weight:800;border:2px solid transparent}
@@ -117,10 +117,29 @@ body.brIsland #bFire2{top:calc(136px + env(safe-area-inset-top))}
 #bScope{width:52px;height:52px;right:calc(118px + env(safe-area-inset-right));bottom:calc(152px + env(safe-area-inset-bottom))}
 #bReload{width:50px;height:50px;right:calc(200px + env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom))}
 #bSwitch{width:50px;height:50px;right:calc(30px + env(safe-area-inset-right));bottom:calc(180px + env(safe-area-inset-bottom))}
+#bBag{width:50px;height:50px;right:calc(30px + env(safe-area-inset-right));bottom:calc(240px + env(safe-area-inset-bottom));font-size:12px}
+body:not(.br) #bBag{display:none!important}
 #topBtns{position:fixed;z-index:7;top:calc(6px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));display:flex;gap:6px}
 #topBtns button.hidden{display:none}
 #topBtns #tExit{width:auto;padding:0 8px;background:rgba(160,30,30,.55)}
 #topBtns button{width:34px;height:30px;border-radius:7px;border:1px solid rgba(255,255,255,.3);background:rgba(0,0,0,.4);color:#fff;font-size:13px}
+/* ---------- backpack ---------- */
+#bagPanel{position:fixed;inset:0;z-index:26;display:flex;align-items:center;justify-content:center;pointer-events:none}
+#bagPanel .bagCard{pointer-events:auto;position:relative;width:min(460px,86vw);max-height:80vh;overflow:auto;touch-action:pan-y;background:rgba(19,37,50,.88);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px 14px;backdrop-filter:blur(6px);box-shadow:0 10px 30px rgba(0,0,0,.45)}
+#bagPanel h3{font-size:16px;display:flex;justify-content:space-between;margin-bottom:8px;padding-right:34px}
+#bagCount{color:#ffd45c;font-size:13px}
+.bagClose{position:absolute;right:8px;top:8px;width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font-size:15px}
+.bagEquip{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;font-size:12px;color:#cfd8de}
+.bagEquip b{font-size:12px;color:#9fb6c6;font-weight:600;align-self:center}
+.bagEquip span{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.06);border-radius:7px;padding:4px 6px}
+.bagEquip button{min-height:32px;padding:0 8px;border-radius:6px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font-size:12px}
+.bagList{display:flex;flex-direction:column;gap:4px}
+.bagRow{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;padding:3px 6px;background:rgba(255,255,255,.05);border-radius:8px}
+.bagName{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bagBtns{display:flex;gap:6px;flex:none}
+.bagBtns button{min-height:36px;min-width:52px;padding:0 10px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#fff;font-size:13px}
+.bagBtns button:disabled{opacity:.35}
+.bagEmpty{color:#8fa4b2;font-size:13px;text-align:center;padding:14px}
 /* ---------- dialogs ---------- */
 .modal{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center}
 .panel{background:#132532;border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:14px 18px;min-width:340px;max-width:94vw;max-height:94vh;overflow:auto}
@@ -192,7 +211,7 @@ body.br #topbar .b,body.br #topbar .r{font-size:15px;min-width:0;white-space:now
   <div id="bowBar"><i></i></div>
   <div id="dmg"></div>
   <div id="centerMsg"></div>
-  <div id="gear"><span id="gArm" class="lv0"><svg viewBox="0 0 24 24"><path d="M7 3l2 2h6l2-2 4 3-2 5h-1v10H6V11H5L3 6z"/></svg><b>0</b></span><span id="gHelm" class="lv0"><svg viewBox="0 0 24 24"><path d="M3 15a9 9 0 0118 0v2H3zM2 17h20v2H2z"/></svg><b>0</b></span><span id="gScope" class="lv0"><svg viewBox="0 0 24 24"><path d="M1 10h4v4H1zM5 8h13v8H5zM18 7h5v10h-5zM9 4h4v4H9z"/></svg><b>-</b></span></div>
+  <div id="gear"><span id="gArm" class="lv0"><svg viewBox="0 0 24 24"><path d="M7 3l2 2h6l2-2 4 3-2 5h-1v10H6V11H5L3 6z"/></svg><b>0</b></span><span id="gHelm" class="lv0"><svg viewBox="0 0 24 24"><path d="M3 15a9 9 0 0118 0v2H3zM2 17h20v2H2z"/></svg><b>0</b></span><span id="gBag" class="lv0"><svg viewBox="0 0 24 24"><path d="M8 5V3h8v2h3a2 2 0 012 2v13a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h3zm2 0h4V4h-4v1zM6 9v2h12V9H6zm0 4v2h12v-2H6z"/></svg><b>-</b></span><span id="gScope" class="lv0"><svg viewBox="0 0 24 24"><path d="M1 10h4v4H1zM5 8h13v8H5zM18 7h5v10h-5zM9 4h4v4H9z"/></svg><b>-</b></span></div>
   <div id="hpBox"><span class="plus">✚</span><span id="hpNum">100</span><div id="hpBar"><div id="hpFill"></div></div></div>
   <div id="ammoBox"><div id="wName">步枪</div><div id="ammo"><b>30</b><span> / 90</span></div></div>
   <div id="speedo"></div><div id="carHint" class="hidden"></div>
@@ -208,12 +227,19 @@ body.br #topbar .b,body.br #topbar .r{font-size:15px;min-width:0;white-space:now
   <div class="tb" id="bCrouch" data-btn="crouch">蹲</div>
   <div class="tb" id="bReload" data-btn="reload">换弹</div>
   <div class="tb" id="bSwitch" data-btn="switch">切枪</div>
+  <div class="tb" id="bBag" data-btn="bag">背包</div>
   <div class="tb hidden" id="bCar" data-btn="car">上车</div>
   <div class="tb" id="bUp" data-btn="up">升</div>
   <div class="tb" id="bDown" data-btn="down">降</div>
   <div class="tb hidden" id="bEject" data-btn="eject">跳伞</div>
   <div class="tb" id="bView" data-btn="view">视角</div>
 </div>
+<div id="bagPanel" class="hidden"><div class="bagCard">
+  <button id="bagClose" class="bagClose">✕</button>
+  <h3>背包 <span id="bagCount">0/6</span></h3>
+  <div id="bagEquip" class="bagEquip"></div>
+  <div id="bagList" class="bagList"></div>
+</div></div>
 <div id="topBtns" class="hidden"><button id="tExit" class="hidden" title="退出全屏">⤢退出</button><button id="tSb" title="战绩">≡</button><button id="tFull" title="横屏/全屏">⤢</button><button id="tSet" title="设置">⚙</button></div>
 
 <div id="settings" class="modal hidden"><div class="panel">

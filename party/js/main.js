@@ -13,7 +13,7 @@ import { spawnVehicles, driveVehicle, flyVehicle, poseVehicle, inFootprint, vehi
 import { sfx, unlockAudio } from './audio.js';
 import * as HUD from './hud.js';
 import { initArrows, clearArrows, shootArrow, updateArrows } from './bow.js';
-import { setupBR, updateBR, brKilled, brResult, brBoardHTML, brGoal, cleanup as brCleanup, GEAR_RED } from './br.js';
+import { setupBR, updateBR, brKilled, brResult, brBoardHTML, brGoal, cleanup as brCleanup, GEAR_RED, bagCap, gearName, dropBagItem } from './br.js';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -53,6 +53,7 @@ const RED_NAMES = ['老K', '铁牙', '阿狼', '火锅', '刀疤'];
 const G = window.__game = {
   state: 'lobby', entities: [], bots: [], player: null, scores: { blue: 0, red: 0 }, timeLeft: 600, now: 0,
   diff: 'normal', target: 30, map: null, weapon: WEAPONS.rifle, ammo: {}, reloading: false, fps: 0, opts: null,
+  bag: [], bagLv: 0, bagMsgT: 0,
 };
 let builtQuality = null;
 let BRH = null; // battle-royale helpers, filled after functions are defined
@@ -125,7 +126,7 @@ function respawn(e) {
 }
 
 function startMatch(opts) {
-  G.paused = false; $('settings').classList.add('hidden');
+  G.paused = false; closeBag(); $('settings').classList.add('hidden');
   opts = { team: 'blue', size: 5, target: 30, diff: 'normal', ...(opts || {}) };
   G.opts = opts;
   const mapKind = opts.mode === 'br' && opts.brMap !== 'ship' ? 'island' : 'ship';
@@ -176,7 +177,7 @@ G.startMatch = startMatch;
 
 function endMatch() {
   if (G.state !== 'playing') return;
-  G.state = 'ended'; P.firing = false; P.scoped = false;
+  G.state = 'ended'; P.firing = false; P.scoped = false; closeBag();
   if (document.pointerLockElement) document.exitPointerLock();
   if (G.mode === 'br') {
     const r = brResult(G); const t = $('endTitle'); t.textContent = r.title; t.className = r.win ? 'win' : 'lose';
@@ -263,7 +264,7 @@ function kill(t, attacker, w, head) {
   HUD.killFeed(attacker, t, w.name, head);
   if (t.isPlayer) {
     if (P.inCar) leaveCar(true);
-    P.firing = false; P.scoped = false; G.reloading = false; P.draw = 0;
+    P.firing = false; P.scoped = false; G.reloading = false; P.draw = 0; closeBag();
     $('deathBy').textContent = attacker.team === 'zone' ? '你倒在了安全区外' : `击败你的是 ${attacker.name}${head ? '（爆头）' : ''}`; $('deathScr').classList.remove('hidden');
   }
   if (attacker.isPlayer) { HUD.hitMarker('kill'); sfx.kill(); HUD.centerMsg(head ? `爆头！击杀 ${t.name}` : `击杀 ${t.name}`, 1100); }
@@ -646,6 +647,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyQ') cycleWeapon(1);
   if (e.code === 'KeyF') { if (!ejectOrOpen()) toggleCar(); }
   if (e.code === 'KeyV') toggleView();
+  if (e.code === 'KeyB' && !e.repeat) toggleBag();
 });
 addEventListener('keyup', (e) => {
   P.keys[e.code] = false;
@@ -677,6 +679,7 @@ function btnDown(btn, el) {
   else if (btn === 'car') toggleCar();
   else if (btn === 'eject') ejectOrOpen();
   else if (btn === 'view') toggleView();
+  else if (btn === 'bag') toggleBag();
   else if (btn === 'up') P.liftUp = true;
   else if (btn === 'down') P.liftDown = true;
 }
@@ -738,6 +741,64 @@ function showScoreboard(on) {
 }
 $('tSb').addEventListener('click', () => showScoreboard($('scoreboard').classList.contains('hidden')));
 $('scoreboard').addEventListener('click', (e) => { if (e.target.id === 'scoreboard') showScoreboard(false); });
+// backpack panel
+function renderBag() {
+  const p = G.player, cap = bagCap(G);
+  $('bagCount').textContent = G.bag.length + '/' + cap;
+  const eq = (k, label, val, can) => `<span>${label} ${val || '-'}${can && val ? `<button data-bag="unequip" data-slot="${k}">卸下</button>` : ''}</span>`;
+  $('bagEquip').innerHTML = '<b>已装备</b>' + eq('helmet', '头盔', p.helmet ? 'Lv' + p.helmet : '', true) + eq('armor', '护甲', p.armor ? 'Lv' + p.armor : '', true)
+    + eq('bag', '背包', G.bagLv ? 'Lv' + G.bagLv : '', false) + eq('scope', '倍镜', G.scope ? G.scope + 'x' : '', true);
+  let html = '';
+  for (let i = 0; i < G.bag.length; i++) {
+    const it = G.bag[i], nm = it.k === 'med' ? `${it.name} ×${it.n || 1}` : it.name;
+    const act = it.k === 'med' ? `<button data-bag="use" data-i="${i}"${p.hp >= 100 ? ' disabled' : ''}>使用</button>` : `<button data-bag="equip" data-i="${i}">装备</button>`;
+    html += `<div class="bagRow"><span class="bagName">${nm}</span><span class="bagBtns">${act}<button data-bag="drop" data-i="${i}">丢弃</button></span></div>`;
+  }
+  $('bagList').innerHTML = html || '<div class="bagEmpty">背包是空的</div>';
+}
+function openBag() {
+  if (G.mode !== 'br' || G.state !== 'playing' || G.paused || !G.player?.alive || G.player.air) return;
+  renderBag(); $('bagPanel').classList.remove('hidden');
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function closeBag() { $('bagPanel').classList.add('hidden'); }
+function toggleBag() { $('bagPanel').classList.contains('hidden') ? openBag() : closeBag(); }
+function bagAction(act, i, slot) {
+  const p = G.player; if (!p?.alive || !G.br) return;
+  if (act === 'use') {
+    const it = G.bag[i]; if (!it || it.k !== 'med' || p.hp >= 100) return;
+    p.hp = Math.min(100, p.hp + 50);
+    if ((it.n || 1) > 1) it.n--; else G.bag.splice(i, 1);
+    sfx.reload?.(); HUD.centerMsg('使用 医疗包 +50', 900);
+  } else if (act === 'equip') {
+    const it = G.bag[i]; if (!it || it.k === 'med') return;
+    if (it.k === 'scope') { const old = G.scope | 0; G.scope = it.lv; if (old) G.bag[i] = { k: it.k, lv: old, name: gearName(it.k, old) }; else G.bag.splice(i, 1); }
+    else { const old = p[it.k] | 0; p[it.k] = it.lv; if (old) G.bag[i] = { k: it.k, lv: old, name: gearName(it.k, old) }; else G.bag.splice(i, 1); }
+    sfx.reload?.(); HUD.centerMsg('装备 ' + it.name, 900);
+  } else if (act === 'drop') {
+    const it = G.bag[i]; if (!it) return;
+    const one = it.k === 'med' ? { k: it.k, name: it.name, n: 1 } : it;
+    if (it.k === 'med' && (it.n || 1) > 1) it.n--; else G.bag.splice(i, 1);
+    dropBagItem(G, scene, one, p.pos.x, p.pos.z); HUD.centerMsg('丢弃 ' + it.name, 800);
+  } else if (act === 'unequip') {
+    if (slot !== 'helmet' && slot !== 'armor' && slot !== 'scope') return;
+    const lv = slot === 'scope' ? (G.scope | 0) : (p[slot] | 0); if (!lv) return;
+    if (G.bag.length >= bagCap(G)) { HUD.centerMsg('背包已满', 1100); return; }
+    G.bag.push({ k: slot, lv, name: gearName(slot, lv) });
+    if (slot === 'scope') G.scope = 0; else p[slot] = 0;
+    sfx.reload?.(); HUD.centerMsg('卸下 ' + gearName(slot, lv), 900);
+  } else return;
+  renderBag();
+}
+$('bagPanel').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.id === 'bagClose') { closeBag(); return; }
+  if (b.dataset.bag) bagAction(b.dataset.bag, +b.dataset.i, b.dataset.slot);
+});
+document.addEventListener('pointerdown', (e) => {
+  if ($('bagPanel').classList.contains('hidden') || e.target.closest?.('[data-btn="bag"]')) return;
+  if (!e.target.closest?.('.bagCard')) closeBag();
+}, true);
 // settings dialog
 function syncSettingsUI() {
   document.querySelectorAll('#settings .seg').forEach(seg => seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', String(S[seg.dataset.s]) === b.dataset.v)));
@@ -774,7 +835,7 @@ $('btnExitFull').addEventListener('click', () => { exitFull(); $('btnExitFull').
 $('btnSettings').addEventListener('click', openSettings); $('tSet').addEventListener('click', openSettings);
 $('setClose').addEventListener('click', () => { G.paused = false; $('settings').classList.add('hidden'); });
 function toLobby() {
-  P.inCar = null; G.paused = false;
+  P.inCar = null; G.paused = false; closeBag();
   G.state = 'lobby'; $('settings').classList.add('hidden'); $('endScr').classList.add('hidden');
   $('hud').classList.add('hidden'); $('touch').classList.add('hidden'); $('topBtns').classList.add('hidden'); $('lobby').classList.remove('hidden');
 }

@@ -38,7 +38,13 @@ const LOOT = [
   { k: 'helmet', lv: 1, name: '一级头', c: 0xcfd6dc, w: 3 },
   { k: 'helmet', lv: 2, name: '二级头', c: 0x3a86ff, w: 2 },
   { k: 'helmet', lv: 3, name: '三级头', c: 0xa64dff, w: 0.6 },
+  { k: 'bag', lv: 1, name: '一级包', c: 0xcfd6dc, w: 3 },
+  { k: 'bag', lv: 2, name: '二级包', c: 0x3a86ff, w: 2 },
+  { k: 'bag', lv: 3, name: '三级包', c: 0xa64dff, w: 0.6 },
 ];
+export const BAG_CAP = [6, 10, 14, 18];
+export const bagCap = (G) => BAG_CAP[Math.max(0, Math.min(3, G.bagLv | 0))];
+export function gearName(k, lv) { const d = LOOT.find(x => x.k === k && (x.lv || 0) === (lv || 0)); return d ? d.name : k; }
 // damage reduction by armor / helmet level (body / head)
 export const GEAR_RED = [0, 0.3, 0.4, 0.55];
 const LOOT_GEO = {};
@@ -74,12 +80,27 @@ function lootGeo(k) {
   } else if (k === 'helmet') {  // dome + brim + strap + top ridge
     P.push(part(new THREE.SphereGeometry(0.3, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0, 0, 0), part(CY(0.36, 0.36, 0.035, 18), 0, 0.01, 0, 0.75),
       part(BX(0.04, 0.2, 0.04), -0.27, -0.08, 0, D), part(BX(0.04, 0.2, 0.04), 0.27, -0.08, 0, D), part(BX(0.06, 0.05, 0.5), 0, 0.28, 0, 0.7));
+  } else if (k === 'bag') {     // pack body, top lid, two shoulder straps, buckle
+    P.push(part(BX(0.5, 0.6, 0.28), 0, 0, 0), part(BX(0.44, 0.16, 0.3), 0, 0.32, 0, 0.8),
+      part(BX(0.08, 0.5, 0.06), -0.18, -0.02, 0.18, D), part(BX(0.08, 0.5, 0.06), 0.18, -0.02, 0.18, D),
+      part(BX(0.3, 0.08, 0.06), 0, 0.08, 0.18, D), part(BX(0.12, 0.1, 0.04), 0, 0.08, 0.21, M));
   } else P.push(part(BX(0.55, 0.4, 0.4), 0, 0, 0));
   const g = mergeGeometries(P); g.computeVertexNormals();
   g.scale(1.25, 1.25, 1.25);
   return (LOOT_GEO[k] = g);
 }
 const rnd = (a, b) => a + Math.random() * (b - a);
+export function spawnLoot(G, scene, def, x, z, delay = 0) {
+  const m = new THREE.Mesh(lootGeo(def.k), new THREE.MeshLambertMaterial({ color: def.c, emissive: def.c, emissiveIntensity: 0.3, vertexColors: def.k !== 'bow' }));
+  const y = def.k === 'helmet' ? 0.15 : def.k === 'bow' ? 0.62 : def.k === 'armor' || def.k === 'bag' ? 0.5 : 0.35;
+  m.position.set(x, y, z); scene.add(m);
+  if (def.k === 'med') { const cr = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.42), new THREE.MeshBasicMaterial({ color: 0xff3b4d })); cr.position.y = 0.2; m.add(cr); const cr2 = cr.clone(); cr2.rotation.y = Math.PI / 2; m.add(cr2); }
+  const l = { def, m, taken: false, noPick: delay ? G.now + delay : 0 }; G.loot.push(l); return l;
+}
+export function dropBagItem(G, scene, it, x, z) {
+  const def = LOOT.find(d => d.k === it.k && (d.lv || 0) === (it.lv || 0)) || { k: it.k, lv: it.lv, name: it.name, c: 0xcfd6dc, w: 1 };
+  return spawnLoot(G, scene, def, x, z, 1.5);
+}
 const ZONE = { name: '安全区', team: 'zone', skin: 'red', kills: 0, isPlayer: false, pos: new THREE.Vector3() };
 const ZW = { name: '毒圈' };
 
@@ -88,6 +109,7 @@ export function setupBR(G, scene, h) {
   const n = G.opts.brSize || 16;
   cleanup(G, scene);
   const p = h.makeEntity('你', 'p0', true); p.skin = 'blue'; p.armor = 0; p.helmet = 0; G.player = p;
+  G.bag = []; G.bagLv = 0; G.bagMsgT = 0;
   const bots = [];
   const names = NAMES.slice().sort(() => Math.random() - 0.5);
   for (let i = 0; i < n - 1; i++) { const b = h.makeBot(names[i % names.length], 'b' + i, 'party'); b.skin = 'red'; b.armed = false; b.armor = 0; b.helmet = 0; bots.push(b); }
@@ -117,10 +139,7 @@ export function setupBR(G, scene, h) {
   const lootSpots = [...insideSpots.slice().sort(() => Math.random() - 0.5).slice(0, Math.round(lootN * 0.45)), ...deck.slice().sort(() => Math.random() - 0.5)].slice(0, Math.min(deck.length, lootN));
   for (const s of lootSpots) {
     let r = Math.random() * total, def = LOOT[0]; for (const l of LOOT) { if ((r -= l.w) < 0) { def = l; break; } }
-    const m = new THREE.Mesh(lootGeo(def.k), new THREE.MeshLambertMaterial({ color: def.c, emissive: def.c, emissiveIntensity: 0.3, vertexColors: def.k !== 'bow' }));
-    m.position.set(s.x + rnd(-0.6, 0.6), def.k === 'helmet' ? 0.15 : def.k === 'bow' ? 0.62 : def.k === 'armor' ? 0.5 : 0.35, s.z + rnd(-0.6, 0.6)); scene.add(m);
-    if (def.k === 'med') { const cr = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.42), new THREE.MeshBasicMaterial({ color: 0xff3b4d })); cr.position.y = 0.2; m.add(cr); const cr2 = cr.clone(); cr2.rotation.y = Math.PI / 2; m.add(cr2); }
-    G.loot.push({ def, m, taken: false });
+    spawnLoot(G, scene, def, s.x + rnd(-0.6, 0.6), s.z + rnd(-0.6, 0.6));
   }
   // zone
   const zg = new THREE.CylinderGeometry(1, 1, 24, 64, 1, true);
@@ -154,7 +173,7 @@ export function brGoal(bot, G) {
   const ad = airdropGoal(bot, G); if (ad && (!bot.armed || bot.gun !== 'sniper')) return ad;
   if (!bot.armed) {
     let best = null, bd = G.map.kind === 'island' ? 45 : 30;
-    for (const l of G.loot) { if (l.taken || l.def.k === 'med' || l.def.k === 'ammo' || l.def.k === 'scope' || ((l.def.k === 'armor' || l.def.k === 'helmet') && (bot[l.def.k] || 0) >= l.def.lv)) continue; const d = l.m.position.distanceTo(bot.pos); if (d < bd) { bd = d; best = l; } }
+    for (const l of G.loot) { if (l.taken || l.def.k === 'med' || l.def.k === 'ammo' || l.def.k === 'scope' || l.def.k === 'bag' || ((l.def.k === 'armor' || l.def.k === 'helmet') && (bot[l.def.k] || 0) >= l.def.lv)) continue; const d = l.m.position.distanceTo(bot.pos); if (d < bd) { bd = d; best = l; } }
     if (best) return best.m.position.clone().setY(0);
   }
   const z = B.next || { c: B.c, r: B.r };
@@ -189,12 +208,13 @@ export function updateBR(G, dt, h) {
   h.$('dmg').classList.toggle('zone', outside);
   // loot pickup
   for (const l of G.loot) {
-    if (l.taken) continue;
+    if (l.taken || (l.noPick && G.now < l.noPick)) continue;
     l.m.rotation.y += dt * 1.2;
     for (const e of G.entities) {
       if (!e.alive || e.air) continue;
-      if ((l.def.k === 'armor' || l.def.k === 'helmet') && (e[l.def.k] || 0) >= l.def.lv) continue;
-      if (l.def.k === 'scope' && (!e.isPlayer || (G.scope | 0) >= l.def.lv)) continue;   // scopes: player only, upgrades only
+      if (l.def.k === 'bag' && (!e.isPlayer || (G.bagLv | 0) >= l.def.lv)) continue;   // bags: player only, upgrades only
+      if ((l.def.k === 'armor' || l.def.k === 'helmet') && !e.isPlayer && (e[l.def.k] || 0) >= l.def.lv) continue;
+      if (l.def.k === 'scope' && !e.isPlayer) continue;   // scopes: player only
       const dx = e.pos.x - l.m.position.x, dz = e.pos.z - l.m.position.z;
       if (dx * dx + dz * dz > 1.4 || Math.abs(e.pos.y - 0) > 1.5) continue;
       if (!e.isPlayer && (l.def.k === 'ammo' || (l.def.k === 'med' && e.hp > 70))) continue;
@@ -203,24 +223,50 @@ export function updateBR(G, dt, h) {
   }
 }
 
+function bagAdd(G, it) {
+  if (it.k === 'med') { const s = G.bag.find(x => x.k === 'med' && (x.n || 1) < 5); if (s) { s.n = (s.n || 1) + (it.n || 1); return true; } }
+  if (G.bag.length >= bagCap(G)) return false;
+  G.bag.push(it); return true;
+}
+function bagFull(G, h) {
+  if (G.now < (G.bagMsgT || 0)) return;
+  G.bagMsgT = G.now + 1.5; h.HUD.centerMsg('背包已满', 1100);
+}
+
 function take(G, e, l, h) {
-  const k = l.def.k; l.taken = true; l.m.visible = false;
-  if (k === 'scope') { G.scope = l.def.lv; h.sfx.reload?.(); h.HUD.centerMsg('装备 ' + l.def.name + ' · 步枪/弓箭/狙击开镜生效', 1300); return; }
-  if (k === 'armor' || k === 'helmet') { e[k] = l.def.lv; if (e.isPlayer) { h.sfx.reload?.(); h.HUD.centerMsg('装备 ' + l.def.name, 900); } return; }
+  const k = l.def.k, def = l.def;
+  const got = () => { l.taken = true; l.m.visible = false; };
+  if (k === 'bag') { got(); G.bagLv = def.lv; h.sfx.reload?.(); h.HUD.centerMsg('装备 ' + def.name + ' · 容量 ' + bagCap(G) + ' 格', 1200); return; }
+  if (k === 'scope') {
+    if (!(G.scope | 0)) { got(); G.scope = def.lv; h.sfx.reload?.(); h.HUD.centerMsg('装备 ' + def.name + ' · 步枪/弓箭/狙击开镜生效', 1300); return; }
+    if (!bagAdd(G, { k, lv: def.lv, name: def.name })) { bagFull(G, h); return; }
+    got(); h.sfx.reload?.(); h.HUD.centerMsg('拾取 ' + def.name + ' · 已放入背包', 900); return;
+  }
+  if (k === 'armor' || k === 'helmet') {
+    if (!e.isPlayer) { got(); e[k] = def.lv; return; }
+    if (!(e[k] | 0)) { got(); e[k] = def.lv; h.sfx.reload?.(); h.HUD.centerMsg('装备 ' + def.name, 900); return; }
+    if (!bagAdd(G, { k, lv: def.lv, name: def.name })) { bagFull(G, h); return; }
+    got(); h.sfx.reload?.(); h.HUD.centerMsg('拾取 ' + def.name + ' · 已放入背包', 900); return;
+  }
   if (!e.isPlayer) {
+    got();
     if (k === 'med') e.hp = Math.min(100, e.hp + 50);
     else { e.armed = true; e.gun = k; }
     return;
   }
   const W = h.WEAPONS;
-  if (k === 'med') { if (e.hp >= 100) { l.taken = false; l.m.visible = true; return; } e.hp = Math.min(100, e.hp + 50); }
-  else if (k === 'ammo') { for (const id of G.owned) if (!W[id].melee) G.ammo[id].reserve += W[id].pick || W[id].mag * 2; }
+  if (k === 'med') {
+    if (!bagAdd(G, { k, name: def.name, n: 1 })) { bagFull(G, h); return; }
+    got(); h.sfx.reload?.(); h.HUD.centerMsg('拾取 ' + def.name + ' · 已放入背包', 900); return;
+  }
+  got();
+  if (k === 'ammo') { for (const id of G.owned) if (!W[id].melee) G.ammo[id].reserve += W[id].pick || W[id].mag * 2; }
   else {
     const first = !G.owned.has(k); G.owned.add(k);
     G.ammo[k].reserve += first ? W[k].reserve / 2 : W[k].mag * 2;
     if (first) { G.ammo[k].mag = W[k].mag; h.setWeapon(k); }
   }
-  h.sfx.reload?.(); h.HUD.centerMsg('拾取 ' + l.def.name + (k === 'med' ? ' +50' : ''), 900);
+  h.sfx.reload?.(); h.HUD.centerMsg('拾取 ' + def.name, 900);
 }
 
 export function brKilled(G, t, h) {
@@ -260,7 +306,7 @@ export function brMinimap(G, ctx, mx, mz, sx, sz) {
 export function cleanup(G, scene) {
   cleanupDrop(G, scene);
   for (const l of G.loot || []) { scene.remove(l.m); l.m.material.dispose(); }
-  G.loot = [];
+  G.loot = []; G.bag = []; G.bagLv = 0; G.bagMsgT = 0;
   if (G.br?.mesh) scene.remove(G.br.mesh);
   G.br = null;
 }
