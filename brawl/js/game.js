@@ -69,7 +69,7 @@ export function createGame(scene, FX, H) {
     nextPhase(); G.zone.t += 3;
     G.countT = 3; G.state = 'count'; G.aliveCount = n; G.boxTick = 0;
     // random field event (25% none, otherwise one of three)
-    const er = Math.random(); G.event = er < 0.25 ? 'none' : er < 0.5 ? 'meteor' : er < 0.75 ? 'drink' : 'mushroom';
+    const pool = opts.meteor === false ? ['none', 'drink', 'mushroom'] : ['none', 'meteor', 'drink', 'mushroom']; G.event = pool[(Math.random() * pool.length) | 0];
     G.eventNext = G.event === 'meteor' ? 20 : G.event === 'mushroom' ? 15 : Infinity;
     G.meteors.length = 0; G.mushrooms.length = 0;
     if (G.event === 'drink') for (let i = 0; i < 6; i++) { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * PH * 0.85; spawnItem('drink', 0, Math.cos(a) * d, Math.sin(a) * d); }
