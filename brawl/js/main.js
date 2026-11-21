@@ -78,13 +78,13 @@ function showSel() {
   if (lobMesh) lob.remove(lobMesh); lobMesh = makeBrawler(sel); lobMesh.scale.setScalar(1.15); lob.add(lobMesh);
 }
 for (const b of $('segN').children) b.onclick = () => { opts.n = +b.dataset.n; for (const x of $('segN').children) x.classList.toggle('on', x === b); };
-const MODE_SUB = { party: '派对吃鸡 · 最后一个站着的赢', solo: '经典单人 · 10人抢能量块 · 随机事件', duo: '经典双人 · 5队抢能量块 · 随机事件' };
+const MODE_SUB = { party: '派对吃鸡 · 最后一个站着的赢', solo: '经典单人 · 10人抢能量块', duo: '经典双人 · 5队抢能量块' };
 function showMode() { for (const x of $('segM').children) x.classList.toggle('on', x.dataset.m === opts.mode); $('rowN').classList.toggle('hidden', opts.mode !== 'party'); $('rowMet').classList.toggle('hidden', opts.mode === 'party'); document.querySelector('.lbLeft .sub').textContent = MODE_SUB[opts.mode]; }
 for (const b of $('segM').children) b.onclick = () => { opts.mode = b.dataset.m; localStorage.setItem('mdl_mode', opts.mode); showMode(); };
 showMode(); updateTrophyTotal();
-opts.meteor = localStorage.getItem('brawlMeteor') !== '0';
-function showMet() { for (const x of $('segMet').children) x.classList.toggle('on', (x.dataset.v === '1') === opts.meteor); }
-for (const b of $('segMet').children) b.onclick = () => { opts.meteor = b.dataset.v === '1'; localStorage.setItem('brawlMeteor', opts.meteor ? '1' : '0'); showMet(); };
+opts.events = localStorage.getItem('brawlEvents') !== '0';
+function showMet() { for (const x of $('segMet').children) x.classList.toggle('on', (x.dataset.v === '1') === opts.events); }
+for (const b of $('segMet').children) b.onclick = () => { opts.events = b.dataset.v === '1'; localStorage.setItem('brawlEvents', opts.events ? '1' : '0'); showMet(); };
 showMet();
 for (const b of $('segD').children) b.onclick = () => { opts.diff = +b.dataset.d; for (const x of $('segD').children) x.classList.toggle('on', x === b); };
 buildCards(); showSel();
@@ -105,7 +105,7 @@ const input = { mx: 0, mz: 0, auto: Q.has('auto'), jumped: false, aiming: false,
 const camPos = new THREE.Vector3(0, 40, 30), camLook = new THREE.Vector3();
 
 function startMatch() {
-  G.cleanup(); G.setup({ kind: sel, n: opts.n, diff: opts.diff, mode: opts.mode, meteor: opts.meteor, fastZone: Q.has('fastzone'), god: Q.has('god') }); state = 'game'; paused = false; input.jumped = false;
+  G.cleanup(); G.setup({ kind: sel, n: opts.n, diff: opts.diff, mode: opts.mode, events: opts.events, fastZone: Q.has('fastzone'), god: Q.has('god') }); state = 'game'; paused = false; input.jumped = false;
   $('lobby').classList.add('hidden'); $('hud').classList.remove('hidden'); $('end').classList.add('hidden'); $('pause').classList.add('hidden');
   $('gArmor').style.display = $('gHelm').style.display = G.classic ? 'none' : '';
   if (G.classic) { document.body.classList.remove('air'); $('btnJump').classList.add('hidden'); camPos.set(G.player.pos.x, 30, G.player.pos.z + 16); camLook.copy(G.player.pos); return; }

@@ -69,11 +69,11 @@ export function createGame(scene, FX, H) {
     nextPhase(); G.zone.t += 3;
     G.countT = 3; G.state = 'count'; G.aliveCount = n; G.boxTick = 0;
     // random field event (25% none, otherwise one of three)
-    const pool = opts.meteor === false ? ['none', 'drink', 'mushroom'] : ['none', 'meteor', 'drink', 'mushroom']; G.event = pool[(Math.random() * pool.length) | 0];
+    const pool = opts.events === false ? ['none'] : ['none', 'meteor', 'drink', 'mushroom']; G.event = pool[(Math.random() * pool.length) | 0];
     G.eventNext = G.event === 'meteor' ? 20 : G.event === 'mushroom' ? 15 : Infinity;
     G.meteors.length = 0; G.mushrooms.length = 0;
     if (G.event === 'drink') for (let i = 0; i < 6; i++) { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * PH * 0.85; spawnItem('drink', 0, Math.cos(a) * d, Math.sin(a) * d); }
-    H.msg('本局事件：' + EVENT_NAMES[G.event], 3000);
+    if (opts.events !== false) H.msg('本局事件：' + EVENT_NAMES[G.event], 3000);
   }
 
   function makeEnt(kind, name, isPlayer, owner) {
@@ -270,7 +270,7 @@ export function createGame(scene, FX, H) {
   function updateClassic(dt) {
     if (G.state === 'count') {
       const before = Math.ceil(G.countT); G.countT -= dt; const now = Math.ceil(G.countT);
-      const evLabel = EVENT_NAMES[G.event] ? EVENT_NAMES[G.event] + ' · ' : '';
+      const evLabel = G.opts.events !== false && EVENT_NAMES[G.event] ? EVENT_NAMES[G.event] + ' · ' : '';
       if (G.countT <= 0) { G.state = 'play'; H.msg('开战！', 1000); } else if (now !== before || G.now <= dt) H.msg(evLabel + String(now), 800);
       return;
     }
