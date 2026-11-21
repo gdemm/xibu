@@ -4,7 +4,7 @@ import { buildMap, moveEntity } from './map.js';
 import { buildIsland } from './island.js';
 import { WEAPONS, ORDER, buildViewmodels, MUZZLE } from './weapons.js';
 import { createBotMesh, updateBot, eyeOf } from './bots.js';
-import { animateDeath, resetSoldier, animateSoldier, soldierTris, createSoldier, soldierHit } from './critter.js';
+import { animateDeath, resetSoldier, animateSoldier, soldierTris, createSoldier, soldierHit, setSoldierGear } from './critter.js';
 import { toonRamp } from './critter.js';
 import { lobbyChars } from './lobbychars.js';
 import { playerJump, airStep, updateDrop } from './drop.js';
@@ -13,7 +13,7 @@ import { spawnVehicles, driveVehicle, flyVehicle, poseVehicle, inFootprint, vehi
 import { sfx, unlockAudio } from './audio.js';
 import * as HUD from './hud.js';
 import { initArrows, clearArrows, shootArrow, updateArrows } from './bow.js';
-import { setupBR, updateBR, brKilled, brResult, brBoardHTML, brGoal, cleanup as brCleanup, GEAR_RED, bagCap, gearName, dropBagItem } from './br.js';
+import { setupBR, updateBR, brKilled, brResult, brBoardHTML, brGoal, cleanup as brCleanup, GEAR_RED, bagCap, gearName, dropBagItem, brNearby, brPickLoot, LV_COLOR } from './br.js';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -150,7 +150,7 @@ function respawn(e) {
 }
 
 function startMatch(opts) {
-  G.paused = false; closeBag(); $('settings').classList.add('hidden');
+  G.paused = false; closeBag(); $('settings').classList.add('hidden'); $('nearList').classList.add('hidden'); nearKey = '';
   opts = { team: 'blue', size: 5, target: 30, diff: 'normal', ...(opts || {}) };
   G.opts = opts;
   const mapKind = opts.mode === 'br' && opts.brMap !== 'ship' ? 'island' : 'ship';
@@ -200,6 +200,7 @@ function startMatch(opts) {
 G.startMatch = startMatch;
 
 function endMatch() {
+  $('nearList').classList.add('hidden'); nearKey = '';
   if (G.state !== 'playing') return;
   G.state = 'ended'; P.firing = false; P.scoped = false; closeBag();
   if (document.pointerLockElement) document.exitPointerLock();
@@ -361,6 +362,26 @@ function leaveCar(force) {
   G.player.pos.copy(exitSpot(v, fr)); G.player.vel.set(0, 0, 0);
 }
 function toggleView() { S.tp = S.tp ? 0 : 1; saveS(); const b = $('bView'); if (b) b.classList.toggle('on', !!S.tp); HUD.centerMsg(S.tp ? '第三人称' : '第一人称', 800); }
+// nearby loot list (right-middle): every item within 2.5 m, nearest first; tap a row (or E for the top row) to pick it up
+let nearKey = '', nearT = 0;
+const hexC = (c) => '#' + c.toString(16).padStart(6, '0');
+function updateNearList(dt) {
+  const el = $('nearList'); if (!el) return;
+  nearT -= dt || 0; if (nearT > 0) return; nearT = 0.12;
+  const list = G.mode === 'br' && G.state === 'playing' && !P.inCar && G.player?.alive && !G.player.air ? brNearby(G) : [];
+  const key = list.map(l => l.id).join(',');
+  if (key === nearKey) return; nearKey = key;
+  el.classList.toggle('hidden', !list.length);
+  el.innerHTML = list.map(l => { const d = l.def, gear = d.k === 'armor' || d.k === 'helmet' || d.k === 'bag';
+    return `<div class="nl${l.manual ? ' man' : ''}" data-id="${l.id}"><i style="background:${hexC(gear ? LV_COLOR[d.lv] : d.c)}"></i><span>${d.name}</span>${gear ? `<b>Lv${d.lv}</b>` : d.k === 'scope' ? `<b>${d.lv}x</b>` : ''}</div>`; }).join('');
+}
+function pickNear(id) {
+  if (G.mode !== 'br' || G.state !== 'playing') return;
+  if (id == null) { const l = brNearby(G)[0]; if (!l) return; id = l.id; }
+  brPickLoot(G, id, BRH); nearKey = ''; nearT = 0; updateNearList(0);
+  if (!$('bagPanel').classList.contains('hidden')) renderBag();
+}
+$('nearList').addEventListener('click', (e) => { const r = e.target.closest('.nl'); if (r) { e.preventDefault(); pickNear(+r.dataset.id); } });
 function updateCarButton() {
   const b = $('bCar'); if (!b) return;
   const show = G.player?.alive && !G.player.air && (P.inCar || nearestCar());
@@ -674,6 +695,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') { if (!ejectOrOpen()) toggleCar(); }
   if (e.code === 'KeyV') toggleView();
   if (e.code === 'KeyB' && !e.repeat) toggleBag();
+  if (e.code === 'KeyE' && !e.repeat) pickNear();
 });
 addEventListener('keyup', (e) => {
   P.keys[e.code] = false;
@@ -1015,7 +1037,7 @@ function loop(ts) {
     else updateBR(G, dt, BRH);
     if (G.drop) updateDrop(G, dt, scene, DROPH);
     updatePlayer(dt);
-    updateCarButton(); updateAirButton();
+    updateCarButton(); updateAirButton(); updateNearList(dt);
     for (const b of G.bots) updateBot(b, dt, G);
     for (const e of G.entities) { if (!e._pp) { e._pp = e.pos.clone(); e.hv = new THREE.Vector3(); } _hvT.subVectors(e.pos, e._pp).divideScalar(Math.max(dt, 1e-3)); _hvT.y = 0; if (_hvT.length() > 10) _hvT.set(0, 0, 0); e.hv.lerp(_hvT, 0.25); e._pp.copy(e.pos); }
   }
@@ -1032,6 +1054,11 @@ function loop(ts) {
   if (G.state === 'playing') {
     HUD.updateHud(G);
     mmT -= dt; if (mmT <= 0) { mmT = 0.1; HUD.drawMinimap(G, mmCtx, mm.width, mm.height); }
+  }
+  // BR: worn helmet / vest / backpack show on the bodies (no-op unless a level changed: pickup, swap, 卸下, new match)
+  if (G.mode === 'br' && G.player) {
+    if (P.body) setSoldierGear(P.body, G.player.armor | 0, G.player.helmet | 0, G.bagLv | 0);
+    for (const b of G.bots) setSoldierGear(b.mesh, b.armor | 0, b.helmet | 0, 0);
   }
   if (G.sky) G.sky.position.copy(camera.position);
   renderer.clear();

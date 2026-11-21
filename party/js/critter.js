@@ -124,6 +124,13 @@ function measure(n, sc) {
   { const ib = ua.matrixWorld.clone().invert(), J = sk.geometry.attributes.skinIndex, W = sk.geometry.attributes.skinWeight, id = bi('upperarml'); let r = 0, y0 = 1e9, y1 = -1e9;
     for (let k = 0; k < J.count; k++) if (J.getX(k) === id && W.getX(k) > 0.5) { sk.getVertexPosition(k, _v).applyMatrix4(sk.matrixWorld).applyMatrix4(ib); r = Math.max(r, Math.hypot(_v.x, _v.z)); y0 = Math.min(y0, _v.y); y1 = Math.max(y1, _v.y); }
     S.armR = r; S.armY = [y0, y1]; }
+  // rest-pose surface points of the torso and head (all skinned parts), for fitting the BR gear shells
+  { const tor = [], hd = []; sc.traverse(o => { if (!o.isSkinnedMesh) return;
+      const names = o.skeleton.bones.map(b => b.name), J = o.geometry.attributes.skinIndex, W = o.geometry.attributes.skinWeight;
+      for (let k = 0; k < J.count; k++) { if (W.getX(k) < 0.5) continue; const bn = names[J.getX(k)];
+        const arr = bn === 'head' ? hd : (bn === 'chest' || bn === 'spine') ? tor : null; if (!arr) continue;
+        o.getVertexPosition(k, _v).applyMatrix4(o.matrixWorld); arr.push(_v.x, _v.y, _v.z); } });
+    S.torsoPts = tor; S.headPts = hd; }
   if (FACE.has(n)) {
     S.eyes = [-1, 1].map(s => [hit(head, s * 0.195 - 0.022, 0.378), hit(head, s * 0.195 + 0.026, 0.333)]);
     if (n !== 'barbarian') S.cheeks = [-1, 1].map(s => hit(head, s * 0.29, 0.245));
@@ -137,8 +144,8 @@ function starGeo(R, r, t) {        // 5-point star lying in XZ, thickness t alon
   const g = new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false }); g.translate(0, 0, -t / 2); g.rotateX(-Math.PI / 2); return g;
 }
 const _qn = new THREE.Quaternion(), _zA = new THREE.Vector3(0, 0, 1);
-function extrasGeo(n, color) {
-  const key = n + ':' + color; if (EXTRA[key]) return EXTRA[key];
+function extrasGeo(n, color, noBadge = false) {
+  const key = n + ':' + color + (noBadge ? ':nb' : ''); if (EXTRA[key]) return EXTRA[key];
   const S = T.chars[n].spots; if (!S) return null;
   const B = new Builder(), bone = (b) => ({ bone: S.bone(b) }); B.boneMats = S.boneMats;
   // a flattened blob sitting on the surface along its normal (half sunk in, so it never floats off curved faces)
@@ -163,7 +170,7 @@ function extrasGeo(n, color) {
     B.add(new THREE.CylinderGeometry(r + 0.004, r + 0.004, 0.022, 14, 1, true), new THREE.Matrix4().multiplyMatrices(S.armM, M(0, yb, 0)), 0xffffff, bone('upperarml'));
   }
   // round party emblem on the back (what the third-person camera sees most): white rim, coloured disc, white star
-  if (S.backPin) {
+  if (S.backPin && !noBadge) {
     const h = S.backPin, up = new THREE.Vector3(0, 1, 0); _qn.setFromUnitVectors(up, h.n);
     const at = (geo, off, col) => B.add(geo, new THREE.Matrix4().compose(h.p.clone().addScaledVector(h.n, off), _qn, new THREE.Vector3(1, 1, 1)), col, bone('chest'));
     at(new THREE.CylinderGeometry(0.15, 0.15, 0.05, 18), 0.0, 0xffffff); at(new THREE.CylinderGeometry(0.125, 0.125, 0.05, 18), 0.012, color);
@@ -171,6 +178,158 @@ function extrasGeo(n, color) {
   }
   const g = B.build(true); g.userData.tris = B.tris;
   return (EXTRA[key] = g);
+}
+// ---------- BR gear (helmet / vest / backpack): skin-tight shells fitted to each character's rest-pose surface ----------
+// One SkinnedMesh per character (all worn pieces merged, cached per char + levels) + its outline: +2 draw calls when geared.
+const GEAR_ACC = [0, 0xe8eef2, 0x4d9bff, 0xb46bff];        // level accents = HUD colours (white / blue / purple)
+const GEARGEO = {};
+// widest distance from the vertical axis (x = 0, z = cz) of the surface points near height y, around direction th
+// (th = 0 is the character's front, +Z; th = +PI/2 is +X)
+function radAt(pts, y, th, dy, dth, cz) {
+  let r = -1;
+  for (let i = 0; i < pts.length; i += 3) {
+    if (Math.abs(pts[i + 1] - y) > dy) continue;
+    const x = pts[i], z = pts[i + 2] - cz;
+    let d = Math.abs(Math.atan2(x, z) - th); if (d > Math.PI) d = Math.PI * 2 - d; if (d > dth) continue;
+    const rr = Math.hypot(x, z); if (rr > r) r = rr;
+  }
+  return r;
+}
+// shell: nR rings (height o.y(t, th), t = 0..1) x nA angle steps over th0..th1, radius = surface (dilated, clamped) + pad + o.add(t, th)
+function shell(pts, o) {
+  const nR = o.nR, nA = o.nA, th0 = o.th0 ?? -Math.PI, th1 = o.th1 ?? Math.PI, cz = o.cz || 0, rMin = o.rMin ?? 0.08, rMax = o.rMax ?? 0.7;
+  const full = th1 - th0 > Math.PI * 2 - 1e-4, nAv = full ? nA : nA + 1, dth = Math.max(0.2, (th1 - th0) / nA * 0.9);
+  const thJ = (j) => th0 + (th1 - th0) * j / nA, yIJ = (i, j) => o.y(nR > 1 ? i / (nR - 1) : 0, thJ(j));
+  const R = [];
+  for (let i = 0; i < nR; i++) { const row = []; for (let j = 0; j < nAv; j++) row.push(radAt(pts, yIJ(i, j), thJ(j), o.dy || 0.06, dth, cz)); R.push(row); }
+  for (const row of R) { let m = -1; for (const r of row) m = Math.max(m, r); for (let j = 0; j < nAv; j++) if (row[j] < 0) row[j] = m; }
+  for (let i = 0; i < nR; i++) if (R[i][0] < 0) { const k = R.findIndex(r => r[0] > 0); R[i] = k >= 0 ? R[k].slice() : R[i].map(() => rMin); }
+  // optional dome envelope: ring i may be no wider than ring 0 x o.env(t) (horns / hat brims poke through instead of boxing the shell)
+  if (o.env) for (let i = 1; i < nR; i++) { const k = o.env(i / (nR - 1)); for (let j = 0; j < nAv; j++) R[i][j] = Math.min(R[i][j], Math.min(rMax, R[0][j]) * k); }
+  const at = (i, j) => { if (!R[i]) return -1; if (full) j = (j + nAv) % nAv; return R[i][j] ?? -1; };
+  const pos = [], idx = [];
+  for (let i = 0; i < nR; i++) for (let j = 0; j < nAv; j++) {
+    let r = R[i][j];
+    for (const [a, b, k] of [[i, j - 1, 1], [i, j + 1, 1], [i - 1, j, 0.96], [i + 1, j, 0.96]]) r = Math.max(r, at(a, b) * k);   // never dip into the body between samples
+    if (o.env && i) r = Math.min(r, Math.min(rMax, R[0][j]) * o.env(i / (nR - 1)));
+    r = Math.min(rMax, Math.max(rMin, r)) + o.pad + (o.add ? o.add(nR > 1 ? i / (nR - 1) : 0, thJ(j)) : 0);
+    const th = thJ(j); pos.push(Math.sin(th) * r, yIJ(i, j), cz + Math.cos(th) * r);
+  }
+  for (let i = 0; i < nR - 1; i++) for (let j = 0; j < nA; j++) {
+    const a = i * nAv + j, b = i * nAv + (full ? (j + 1) % nAv : j + 1), c = a + nAv, d = b + nAv;
+    idx.push(a, b, c, b, d, c);
+  }
+  if (o.cap != null) {
+    const t = pos.length / 3; pos.push(0, o.cap, cz); const base = (nR - 1) * nAv;
+    for (let j = 0; j < nA; j++) idx.push(base + j, base + (full ? (j + 1) % nAv : j + 1), t);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+const facing = (x, y, z, th, rx = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, th, 0, 'YXZ')), new THREE.Vector3(1, 1, 1));
+// a thin box between two points (straps)
+function strapM(a, b, w, t) { const d = new THREE.Vector3().subVectors(b, a), len = d.length(); const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); return { m: new THREE.Matrix4().compose(a.clone().add(b).multiplyScalar(0.5), q, new THREE.Vector3(w, len, t)) }; }
+function gearGeo(n, a, h, bg, color) {
+  const key = [n, a, h, bg, color].join(':'); if (GEARGEO[key]) return GEARGEO[key];
+  const C = T.chars[n], S = C.spots; if (!S || !S.torsoPts) return null;
+  const B = new Builder(); B.boneMats = S.boneMats;
+  const bone = (b) => ({ bone: S.bone(b) }), I = new THREE.Matrix4();
+  const tp = S.torsoPts, hp = S.headPts;
+  const vestPad = [0, 0.04, 0.05, 0.06][a];
+  // ---- vest: lower half follows the spine, upper half the chest (overlapping a little so bending never opens a gap)
+  if (a) {
+    const body = [0, 0xe8eef2, 0x5b6673, 0x3d3552][a], acc = GEAR_ACC[a], Y0 = 0.72, Y1 = 1.24, YS = 0.97;
+    const lerpY = (p, q) => (t) => p + (q - p) * t;
+    B.add(shell(tp, { nR: 4, nA: 18, y: lerpY(Y0, YS + 0.03), pad: vestPad }), I, body, bone('spine'));
+    B.add(shell(tp, { nR: 4, nA: 18, y: lerpY(YS - 0.03, Y1), pad: vestPad, rMin: 0.2 }), I, body, bone('chest'));
+    // hem + collar trims in the level colour
+    B.add(shell(tp, { nR: 2, nA: 18, y: lerpY(Y0 - 0.01, Y0 + 0.05), pad: vestPad + 0.012 }), I, a === 1 ? 0xaab6c0 : acc, bone('spine'));
+    B.add(shell(tp, { nR: 2, nA: 18, y: lerpY(Y1 - 0.05, Y1 + 0.01), pad: vestPad + 0.012, rMin: 0.2 }), I, a === 1 ? 0xaab6c0 : acc, bone('chest'));
+    const surf = (y, th) => radAt(tp, y, th, 0.12, 0.35, 0) + vestPad;
+    if (a === 1) {          // soft vest: two front pouches
+      for (const s of [-1, 1]) { const th = s * 0.42, r = surf(0.86, th) + 0.03; B.add(new THREE.BoxGeometry(0.15, 0.13, 0.07), facing(Math.sin(th) * r, 0.86, Math.cos(th) * r, th), 0xc9d2d9, bone('spine')); }
+    } else {                // plate carrier: front + back plates (lv3: bigger, + shoulder pads)
+      const pw = a === 2 ? 0.4 : 0.46, ph = a === 2 ? 0.3 : 0.36, py = 1.02;
+      for (const th of [0, Math.PI]) {
+        const r = surf(py, th) + 0.03;
+        B.add(new THREE.BoxGeometry(pw, ph, 0.06), facing(Math.sin(th) * r, py, Math.cos(th) * r, th), acc, bone('chest'));
+        B.add(new THREE.BoxGeometry(pw * 0.7, 0.04, 0.03), facing(Math.sin(th) * (r + 0.035), py + ph * 0.25, Math.cos(th) * (r + 0.035), th), 0xffffff, bone('chest'));
+      }
+      if (a === 3) for (const s of [-1, 1]) {
+        const th = s * Math.PI / 2, r = surf(1.16, th) + 0.02;
+        B.add(new THREE.SphereGeometry(0.17, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), M(s * r, 1.2, 0, 0, 0, -s * 0.5, 1, 0.55, 1.15), acc, bone(s > 0 ? 'upperarml' : 'upperarmr'));
+        B.add(new THREE.TorusGeometry(0.165, 0.022, 5, 14), M(s * r, 1.2, 0, Math.PI / 2, s * 0.5, 0, 1, 1.15, 1), 0x2b2540, bone(s > 0 ? 'upperarml' : 'upperarmr'));
+      }
+    }
+  }
+  // ---- backpack on the back (behind the vest), carrying the party emblem; straps over the shoulders
+  if (bg) {
+    const acc = GEAR_ACC[bg], canvas = [0, 0x8a7652, 0x6f6448, 0x4e4a3c][bg];
+    const [w, ph, d] = [null, [0.44, 0.44, 0.2], [0.52, 0.54, 0.25], [0.6, 0.64, 0.3]][bg];
+    let rb = 0; for (let y = 0.8; y <= 1.2; y += 0.05) rb = Math.max(rb, radAt(tp, y, Math.PI, 0.05, 0.5, 0));
+    rb += 0.06;                                           // clears the thickest vest
+    const top = 1.2, cy = top - ph / 2, cz = -rb - d / 2, back = cz - d / 2;
+    B.add(new THREE.BoxGeometry(w, ph, d), M(0, cy, cz), canvas, bone('chest'));
+    B.add(new THREE.BoxGeometry(w + 0.03, 0.14, d + 0.03), M(0, top - 0.06, cz - 0.005), acc, bone('chest'));                // lid
+    B.add(new THREE.BoxGeometry(w * 0.72, ph * 0.42, 0.07), M(0, cy - ph * 0.14, back - 0.03), mixC(canvas, 0x000000, 0.18), bone('chest'));   // front pocket
+    if (bg >= 2) for (const s of [-1, 1]) B.add(new THREE.BoxGeometry(0.07, ph * 0.5, d * 0.7), M(s * (w / 2 + 0.03), cy - ph * 0.12, cz), acc, bone('chest'));   // side pockets
+    if (bg === 3) B.add(new THREE.CylinderGeometry(0.1, 0.1, w + 0.08, 12), M(0, top + 0.08, cz + 0.02, 0, 0, Math.PI / 2), acc, bone('chest'));   // bedroll
+    // emblem on the pocket (the back badge moves here while a bag is worn)
+    const ez = back - 0.07, ey = cy + ph * 0.12, rx = -Math.PI / 2;
+    B.add(new THREE.CylinderGeometry(0.12, 0.12, 0.03, 18), M(0, ey, ez, rx), 0xffffff, bone('chest'));
+    B.add(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 18), M(0, ey, ez - 0.008, rx), color, bone('chest'));
+    B.add(starGeo(0.068, 0.029, 0.025), M(0, ey, ez - 0.025, rx), 0xffffff, bone('chest'));
+    // straps: from the lid over the shoulder tops
+    const sh = radAt(tp, 1.22, 0, 0.06, 0.5, 0);
+    for (const s of [-1, 1]) {
+      const p0 = new THREE.Vector3(s * w * 0.28, top - 0.04, -rb + 0.02), p1 = new THREE.Vector3(s * w * 0.3, 1.29, -0.05), p2 = new THREE.Vector3(s * w * 0.3, 1.15, Math.max(0.12, sh));
+      B.add(new THREE.BoxGeometry(1, 1, 1), strapM(p0, p1, 0.075, 0.03).m, acc, bone('chest'));
+      B.add(new THREE.BoxGeometry(1, 1, 1), strapM(p1, p2, 0.075, 0.03).m, acc, bone('chest'));
+    }
+  }
+  // ---- helmet: shell over the top of the head (from just above the eyes), neck guard grows with level
+  if (h) {
+    const acc = GEAR_ACC[h], shellC = [0, 0xe8eef2, 0x3f7fd6, 0x6b45b0][h], rimC = [0, 0xa9b4bd, 0x27313d, 0x2b2540][h];
+    const pad = [0, 0.055, 0.07, 0.085][h], drop = [0, 0.08, 0.16, 0.26][h];
+    const headTopAbs = C.headTop + 1.241;
+    let zmin = 1e9, zmax = -1e9; for (let i = 0; i < hp.length; i += 3) if (hp[i + 1] > 1.75 && hp[i + 1] < 1.95 && Math.abs(hp[i]) < 0.3) { zmin = Math.min(zmin, hp[i + 2]); zmax = Math.max(zmax, hp[i + 2]); }
+    const cz = zmin < zmax ? (zmin + zmax) / 2 : 0, yb = 1.7, yTop = Math.min(headTopAbs, yb + 0.72);
+    const y0 = (th) => yb - drop * Math.max(0, -Math.cos(th));
+    const hs = { nA: 20, cz, rMax: 0.74, dy: 0.05 };
+    B.add(shell(hp, { ...hs, nR: 7, y: (t, th) => y0(th) + (yTop - 0.02 - y0(th)) * Math.pow(t, 0.85), pad, env: (t) => 1.12 * Math.pow(Math.max(0.01, 1 - Math.pow(t, 2.6)), 0.4), cap: yTop + pad * 0.9 }), I, shellC, bone('head'));
+    B.add(shell(hp, { ...hs, nR: 2, y: (t, th) => y0(th) - 0.012 + 0.07 * t, pad: pad + 0.022 }), I, h === 1 ? rimC : acc, bone('head'));   // rim
+    const crestR = radAt(hp, yTop - 0.15, 0, 0.08, 0.5, cz) + pad;
+    if (h === 1) {          // padded cap: soft peak in front + seams
+      B.add(shell(hp, { ...hs, nR: 2, nA: 10, th0: -0.95, th1: 0.95, y: (t) => yb + 0.03 - 0.035 * t, pad: pad + 0.01, add: (t) => 0.14 * t }), I, 0xcfd8df, bone('head'));
+      B.add(new THREE.SphereGeometry(1, 10, 6), M(0, yTop + pad * 0.6, cz, 0, 0, 0, 0.045, 0.045, 0.045), rimC, bone('head'));
+    } else {                // crest ridge front-to-back (lv3 taller, level colour)
+      B.add(new THREE.SphereGeometry(1, 12, 6), M(0, yTop + pad - 0.03, cz, 0, 0, 0, 0.04, h === 2 ? 0.07 : 0.13, Math.max(0.2, crestR * 0.75)), h === 2 ? 0x27313d : acc, bone('head'));
+    }
+    if (h === 3) {          // visor band across the brow + side discs
+      B.add(shell(hp, { ...hs, nR: 2, nA: 12, th0: -1.15, th1: 1.15, y: (t) => yb + 0.02 + 0.13 * t, pad: pad + 0.03, add: (t) => 0.03 * (1 - t) }), I, 0x2a2340, bone('head'));
+      B.add(shell(hp, { ...hs, nR: 2, nA: 12, th0: -1.15, th1: 1.15, y: (t) => yb + 0.15 + 0.035 * t, pad: pad + 0.035 }), I, acc, bone('head'));
+      for (const s of [-1, 1]) { const r = radAt(hp, yb + 0.05, s * Math.PI / 2, 0.08, 0.4, cz) + pad + 0.02; B.add(new THREE.CylinderGeometry(0.09, 0.09, 0.04, 14), M(s * r, yb + 0.04, cz, 0, 0, Math.PI / 2), acc, bone('head')); }
+    }
+  }
+  const g = B.build(true); g.userData.tris = B.tris;
+  return (GEARGEO[key] = g);
+}
+let GEAR_MAT = null;
+const gearMat = () => GEAR_MAT || (GEAR_MAT = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonRamp(), side: THREE.DoubleSide }));
+// BR loot shown on the body: armor / helmet / bag level 0..3. Cheap to call every frame (no-op unless a level changed).
+export function setSoldierGear(g, armor = 0, helmet = 0, bag = 0) {
+  const u = g.userData; if (!u || !u.mixer) return;
+  const key = armor + '|' + helmet + '|' + bag; if (u.gearKey === key) return; u.gearKey = key;
+  const geo = armor || helmet || bag ? gearGeo(u.char, armor, helmet, bag, u.exColor) : null;
+  if (geo && !u.gearMesh) {
+    const sk = u.meshes[0];
+    u.gearMesh = new THREE.SkinnedMesh(geo, gearMat()); u.gearMesh.bind(sk.skeleton, sk.bindMatrix); u.gearMesh.boundingSphere = sk.boundingSphere;
+    u.gearOl = new THREE.SkinnedMesh(geo, T.outline); u.gearOl.bind(sk.skeleton, sk.bindMatrix); u.gearOl.boundingSphere = sk.boundingSphere;
+    sk.parent.add(u.gearMesh, u.gearOl);
+  }
+  if (u.gearMesh) { if (geo) { u.gearMesh.geometry = geo; u.gearOl.geometry = geo; } u.gearMesh.visible = !!geo; u.gearOl.visible = !!geo && !u.lo; }
+  if (u.hatMesh) u.hatMesh.visible = !helmet;                        // party hat off while a helmet is worn
+  if (u.extras) { const eg = extrasGeo(u.char, u.exColor, !!bag); if (eg) u.extras.geometry = eg; }   // emblem moves onto the backpack
 }
 async function load() {
   const L = new GLTFLoader();
@@ -309,7 +468,7 @@ export function createSoldier(skin = 'party', variant) {
   }
   for (const m of rigid) { const ol = new THREE.Mesh(m.geometry, T.outlineRigid); m.add(ol); outlines.push(ol); }
   // detail add-ons (eye shine, blush, soles, armband, back emblem) share the body's skeleton
-  const exGeo = extrasGeo(char, team ? TEAM_HAT[skin] : hatColor);
+  const exColor = team ? TEAM_HAT[skin] : hatColor, exGeo = extrasGeo(char, exColor);
   let extras = null;
   if (exGeo && meshes[0]) { extras = new THREE.SkinnedMesh(exGeo, critterMaterial()); extras.bind(meshes[0].skeleton, meshes[0].bindMatrix); extras.boundingSphere = meshes[0].boundingSphere; meshes[0].parent.add(extras); }
   const bones = {}; model.traverse(o => { if (o.isBone) bones[o.name] = o; });
@@ -347,7 +506,7 @@ export function createSoldier(skin = 'party', variant) {
   A.idle.time = Math.random() * T.clips.idle.duration;
 
   g.userData = {
-    skin, char, hat, hatColor, gun: gunId, root, model, bones, rest, mixer, A, meshes, outlines, extras, gunMesh: gun, bow, hatMesh, muzzle, blob, puffs,
+    skin, char, hat, hatColor, exColor, gearKey: '0|0|0', gearMesh: null, gearOl: null, gun: gunId, root, model, bones, rest, mixer, A, meshes, outlines, extras, gunMesh: gun, bow, hatMesh, muzzle, blob, puffs,
     mesh: meshes[0], phase: Math.random() * 6, moveK: 0, crouchK: 0, aimK: 0, fullK: 0, full: null, kick: 0, t: Math.random() * 10, pitch: 0, lo: false, acc: 0, relK: 0,
     tris: C.tris,
     // motion state (see animateSoldier): measured ground velocity, gait phase, run blend, hip twist for strafing, smoothed yaw / lean,
@@ -364,6 +523,7 @@ export function setSoldierLOD(g, lo) {
   const u = g.userData; if (!u.outlines || u.lo === lo) return;
   u.lo = lo; for (const o of u.outlines) o.visible = !lo;
   if (u.extras) u.extras.visible = !lo;
+  if (u.gearOl) u.gearOl.visible = !lo && u.gearMesh.visible;
 }
 
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _e = new THREE.Euler(), _yA = new THREE.Vector3(0, 1, 0);

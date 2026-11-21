@@ -90,16 +90,49 @@ function lootGeo(k) {
   return (LOOT_GEO[k] = g);
 }
 const rnd = (a, b) => a + Math.random() * (b - a);
+let LOOT_ID = 0;
 export function spawnLoot(G, scene, def, x, z, delay = 0) {
   const m = new THREE.Mesh(lootGeo(def.k), new THREE.MeshLambertMaterial({ color: def.c, emissive: def.c, emissiveIntensity: 0.3, vertexColors: def.k !== 'bow' }));
   const y = def.k === 'helmet' ? 0.15 : def.k === 'bow' ? 0.62 : def.k === 'armor' || def.k === 'bag' ? 0.5 : 0.35;
   m.position.set(x, y, z); scene.add(m);
   if (def.k === 'med') { const cr = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.42), new THREE.MeshBasicMaterial({ color: 0xff3b4d })); cr.position.y = 0.2; m.add(cr); const cr2 = cr.clone(); cr2.rotation.y = Math.PI / 2; m.add(cr2); }
-  const l = { def, m, taken: false, noPick: delay ? G.now + delay : 0 }; G.loot.push(l); return l;
+  const l = { id: ++LOOT_ID, def, m, taken: false, noPick: delay ? G.now + delay : 0 }; G.loot.push(l); return l;
 }
 export function dropBagItem(G, scene, it, x, z) {
   const def = LOOT.find(d => d.k === it.k && (d.lv || 0) === (it.lv || 0)) || { k: it.k, lv: it.lv, name: it.name, c: 0xcfd6dc, w: 1 };
-  return spawnLoot(G, scene, def, x, z, 1.5);
+  const l = spawnLoot(G, scene, def, x, z, 1.5); l.manual = true;   // dropped by the player: never auto-picked by the player (nearby list only)
+  return l;
+}
+const PICK_R2 = 1.4, NEAR_R2 = 2.5 * 2.5;
+export const LV_COLOR = [0xcfd6dc, 0xe8eef2, 0x4d9bff, 0xb46bff];
+const WEAP = new Set(['rifle', 'sniper', 'bow']);
+const SLOT = { armor: 1, helmet: 1, bag: 1, scope: 1 };
+const worn = (G, p, k) => k === 'bag' ? G.bagLv | 0 : k === 'scope' ? G.scope | 0 : p[k] | 0;
+const medRoom = (G) => G.bag.some(x => x.k === 'med' && (x.n || 1) < 5) || G.bag.length < bagCap(G);
+// would the player auto-pick this WORLD item when walking over it? true | false | 'full' (wanted, but the backpack has no room)
+function autoWant(G, p, l, h) {
+  if (l.manual) return false;
+  const k = l.def.k;
+  if (SLOT[k]) return l.def.lv > worn(G, p, k);                      // gear / scope: only an upgrade (the old one is swapped out)
+  if (WEAP.has(k)) return !G.owned.has(k);                           // a gun only into an empty slot
+  if (k === 'ammo') return [...G.owned].some(id => !h.WEAPONS[id].melee);
+  if (k === 'med') return medRoom(G) ? true : 'full';
+  return false;
+}
+// loot within 2.5 m of the living, grounded player, nearest first (the nearby-items list; manual-only items included)
+export function brNearby(G) {
+  const p = G.player, out = []; if (!G.br || !p || !p.alive || p.air) return out;
+  for (const l of G.loot) {
+    if (l.taken || (l.noPick && G.now < l.noPick)) continue;
+    const dx = p.pos.x - l.m.position.x, dz = p.pos.z - l.m.position.z, d = dx * dx + dz * dz;
+    if (d <= NEAR_R2 && Math.abs(p.pos.y) <= 1.8) out.push({ l, d });
+  }
+  return out.sort((a, b) => a.d - b.d).map(o => o.l);
+}
+// tap in the nearby list: explicit pickup (lower gear goes into the backpack instead of being refused)
+export function brPickLoot(G, id, h) {
+  const l = brNearby(G).find(x => x.id === id); if (!l) return false;
+  take(G, G.player, l, h, true); return l.taken;
 }
 const ZONE = { name: '安全区', team: 'zone', skin: 'red', kills: 0, isPlayer: false, pos: new THREE.Vector3() };
 const ZW = { name: '毒圈' };
@@ -212,12 +245,17 @@ export function updateBR(G, dt, h) {
     l.m.rotation.y += dt * 1.2;
     for (const e of G.entities) {
       if (!e.alive || e.air) continue;
-      if (l.def.k === 'bag' && (!e.isPlayer || (G.bagLv | 0) >= l.def.lv)) continue;   // bags: player only, upgrades only
-      if ((l.def.k === 'armor' || l.def.k === 'helmet') && !e.isPlayer && (e[l.def.k] || 0) >= l.def.lv) continue;
-      if (l.def.k === 'scope' && !e.isPlayer) continue;   // scopes: player only
       const dx = e.pos.x - l.m.position.x, dz = e.pos.z - l.m.position.z;
-      if (dx * dx + dz * dz > 1.4 || Math.abs(e.pos.y - 0) > 1.5) continue;
-      if (!e.isPlayer && (l.def.k === 'ammo' || (l.def.k === 'med' && e.hp > 70))) continue;
+      if (dx * dx + dz * dz > PICK_R2 || Math.abs(e.pos.y - 0) > 1.5) continue;
+      if (e.isPlayer) {                                     // auto-pickup rules (everything else waits in the nearby list)
+        const w = autoWant(G, e, l, h);
+        if (w === 'full') { if (!l.fullMsg) { l.fullMsg = true; bagFull(G, h); } continue; }
+        if (!w) continue;
+        take(G, e, l, h); break;
+      }
+      if (l.def.k === 'bag' || l.def.k === 'scope') continue;                                       // bags / scopes: player only
+      if ((l.def.k === 'armor' || l.def.k === 'helmet') && (e[l.def.k] || 0) >= l.def.lv) continue;   // bots skip gear no better than worn
+      if (l.def.k === 'ammo' || (l.def.k === 'med' && e.hp > 70)) continue;
       take(G, e, l, h); break;
     }
   }
@@ -233,20 +271,23 @@ function bagFull(G, h) {
   G.bagMsgT = G.now + 1.5; h.HUD.centerMsg('背包已满', 1100);
 }
 
-function take(G, e, l, h) {
+function take(G, e, l, h, manual = false) {
   const k = l.def.k, def = l.def;
   const got = () => { l.taken = true; l.m.visible = false; };
-  if (k === 'bag') { got(); G.bagLv = def.lv; h.sfx.reload?.(); h.HUD.centerMsg('装备 ' + def.name + ' · 容量 ' + bagCap(G) + ' 格', 1200); return; }
-  if (k === 'scope') {
-    if (!(G.scope | 0)) { got(); G.scope = def.lv; h.sfx.reload?.(); h.HUD.centerMsg('装备 ' + def.name + ' · 步枪/弓箭/狙击开镜生效', 1300); return; }
-    if (!bagAdd(G, { k, lv: def.lv, name: def.name })) { bagFull(G, h); return; }
-    got(); h.sfx.reload?.(); h.HUD.centerMsg('拾取 ' + def.name + ' · 已放入背包', 900); return;
-  }
-  if (k === 'armor' || k === 'helmet') {
-    if (!e.isPlayer) { got(); e[k] = def.lv; return; }
-    if (!(e[k] | 0)) { got(); e[k] = def.lv; h.sfx.reload?.(); h.HUD.centerMsg('装备 ' + def.name, 900); return; }
-    if (!bagAdd(G, { k, lv: def.lv, name: def.name })) { bagFull(G, h); return; }
-    got(); h.sfx.reload?.(); h.HUD.centerMsg('拾取 ' + def.name + ' · 已放入背包', 900); return;
+  if (!e.isPlayer && (k === 'armor' || k === 'helmet')) { got(); e[k] = def.lv; return; }
+  if (e.isPlayer && SLOT[k]) {
+    const old = worn(G, e, k);
+    if (old && def.lv <= old && k !== 'bag') {             // not an upgrade (only reachable by tapping it): into the backpack
+      if (!bagAdd(G, { k, lv: def.lv, name: def.name })) { bagFull(G, h); return; }
+      got(); h.sfx.reload?.(); h.HUD.centerMsg('拾取 ' + def.name + ' · 已放入背包', 900); return;
+    }
+    if (k === 'bag' && G.bag.length > BAG_CAP[def.lv]) { h.HUD.centerMsg('背包物品太多，换不下 ' + def.name, 1200); return; }
+    got();
+    if (k === 'bag') G.bagLv = def.lv; else if (k === 'scope') G.scope = def.lv; else e[k] = def.lv;
+    if (old) dropBagItem(G, h.scene, { k, lv: old, name: gearName(k, old) }, e.pos.x, e.pos.z);   // swapped-out piece: on the ground, manual-only
+    h.sfx.reload?.();
+    h.HUD.centerMsg('装备 ' + def.name + (k === 'bag' ? ' · 容量 ' + bagCap(G) + ' 格' : k === 'scope' && !old ? ' · 步枪/弓箭/狙击开镜生效' : ''), 1100);
+    return;
   }
   if (!e.isPlayer) {
     got();
