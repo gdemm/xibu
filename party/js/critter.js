@@ -80,6 +80,20 @@ function stance(root, clip, last, idle) {
   return new THREE.AnimationClip(clip.name, last ? 1 : clip.duration, tracks);
 }
 const _v = new THREE.Vector3();
+// gait of a looping locomotion clip: ground speed (m/s at timeScale 1, from how fast a planted foot slides back) and the
+// normalised time the left foot is furthest forward (so walk and sprint can share one phase and never cross-step)
+function gait(root, clip) {
+  const mx = new THREE.AnimationMixer(root), a = mx.clipAction(clip), foot = root.getObjectByName('footl'), N = 64, ys = [], zs = [];
+  a.play();
+  for (let i = 0; i < N; i++) { a.time = clip.duration * i / N; mx.update(0); root.updateMatrixWorld(true); foot.getWorldPosition(_v); ys.push(_v.y); zs.push(_v.z); }
+  mx.stopAllAction(); mx.uncacheRoot(root);
+  const yMin = Math.min(...ys), yCut = yMin + 0.35 * (Math.max(...ys) - yMin), dts = clip.duration / N, sp = [];
+  for (let i = 0; i < N; i++) { const j = (i + 1) % N; if (ys[i] < yCut && ys[j] < yCut) sp.push(Math.abs(zs[j] - zs[i]) / dts); }
+  sp.sort((x, y) => x - y);
+  const v = (sp.length ? sp[sp.length >> 1] : 1) * SCALE;
+  let fwd = 0; for (let i = 1; i < N; i++) if (zs[i] > zs[fwd]) fwd = i;
+  return { v: Math.max(0.5, v), dur: clip.duration, fwd: fwd / N };
+}
 // ---------- detail pass: small original add-ons skinned to the shared rig (eye shine, blush, shoe soles, team armband, back emblem) ----------
 // Everything for one character is ONE extra SkinnedMesh (rigid-skinned, vertex colours) -> +1 draw call per character, ~400 tris.
 const FACE = new Set(['rogue', 'knight', 'barbarian', 'mage', 'rogue-hood']);      // painted-face heroes (skeletons have glowing eyes)
@@ -203,6 +217,7 @@ async function load() {
   const mi = new THREE.AnimationMixer(tmp); mc.stopAllAction(); mi.clipAction(T.clips.idle).play(); mi.update(0); tmp.updateMatrixWorld(true);
   const fi = new THREE.Vector3(); tmp.getObjectByName('footl').getWorldPosition(fi);
   const ht = T.clips.crouch.tracks.find(t => t.name === 'hips.position'); if (ht) ht.values[1] -= fy.y - fi.y;
+  T.loco = { walk: gait(tmp, T.clips.walk), sprint: gait(tmp, T.clips.sprint) };
   T.outline = makeOutlineMat(true); T.outlineRigid = makeOutlineMat(false);
   T.ok = true;
 }
@@ -282,7 +297,7 @@ export function createSoldier(skin = 'party', variant) {
   const C = T.chars[char];
 
   const g = new THREE.Group();
-  const root = new THREE.Group(); g.add(root);
+  const root = new THREE.Group(); root.rotation.order = 'YXZ'; g.add(root);
   const model = SkeletonUtils.clone(C.scene); model.scale.setScalar(SCALE); model.rotation.y = Math.PI; root.add(model);
   const meshes = [], rigid = [], outlines = [];
   model.traverse(o => { if (o.isSkinnedMesh) meshes.push(o); else if (o.isMesh) rigid.push(o); });
@@ -298,6 +313,7 @@ export function createSoldier(skin = 'party', variant) {
   let extras = null;
   if (exGeo && meshes[0]) { extras = new THREE.SkinnedMesh(exGeo, critterMaterial()); extras.bind(meshes[0].skeleton, meshes[0].bindMatrix); extras.boundingSphere = meshes[0].boundingSphere; meshes[0].parent.add(extras); }
   const bones = {}; model.traverse(o => { if (o.isBone) bones[o.name] = o; });
+  const rest = { upperlegl: bones.upperlegl.quaternion.clone(), upperlegr: bones.upperlegr.quaternion.clone() };
   // toy blaster in the right hand slot, barrel straight ahead in the holding pose
   const gunT = T.blasters[gunId];
   const gun = gunT.scene.clone(); const gs = GUN_LEN / SCALE / (gunT.box.max.z - gunT.box.min.z);
@@ -327,16 +343,21 @@ export function createSoldier(skin = 'party', variant) {
   const A = {};
   for (const k of [...LOWER, ...UPPER, ...FULL]) { const a = mixer.clipAction(T.clips[k]); a.play(); a.setEffectiveWeight(0); A[k] = a; }
   A.die.setLoop(THREE.LoopOnce); A.die.clampWhenFinished = true;
-  A.reload.timeScale = 0;
+  A.reload.timeScale = 0; A.walk.timeScale = 0; A.sprint.timeScale = 0;
   A.idle.time = Math.random() * T.clips.idle.duration;
 
   g.userData = {
-    skin, char, hat, hatColor, gun: gunId, root, model, bones, mixer, A, meshes, outlines, extras, gunMesh: gun, bow, hatMesh, muzzle, blob, puffs,
+    skin, char, hat, hatColor, gun: gunId, root, model, bones, rest, mixer, A, meshes, outlines, extras, gunMesh: gun, bow, hatMesh, muzzle, blob, puffs,
     mesh: meshes[0], phase: Math.random() * 6, moveK: 0, crouchK: 0, aimK: 0, fullK: 0, full: null, kick: 0, t: Math.random() * 10, pitch: 0, lo: false, acc: 0, relK: 0,
     tris: C.tris,
+    // motion state (see animateSoldier): measured ground velocity, gait phase, run blend, hip twist for strafing, smoothed yaw / lean,
+    // in-air tuck and landing squash, per-clip full-body weights, hit flinch
+    last: null, vx: 0, vz: 0, gait: Math.random(), stride: 1, runK: 0, twist: 0, back: false, visYaw: null, yawRate: 0, lean: 0, fwdLean: 0,
+    airK: 0, wasAir: false, minVy: 0, land: 0, landT: 1, diveK: 0, fullW: { fall: 0, drive: 0, cheer: 0 }, flinch: 0, flinchS: 1,
   };
   return g;
 }
+export function gaitInfo() { return T.loco; }
 export function soldierTris() { return T.ok ? T.chars[CHARS[0]].tris : BEAN.soldierTris(); }
 // far / low quality: no outline, animation ticks at ~15 Hz
 export function setSoldierLOD(g, lo) {
@@ -345,36 +366,92 @@ export function setSoldierLOD(g, lo) {
   if (u.extras) u.extras.visible = !lo;
 }
 
-const _q = new THREE.Quaternion(), _e = new THREE.Euler();
-function setW(u, wIdle, wWalk, wSprint, wCrouch, wHold, wRel, full) {
-  const A = u.A, nf = 1 - u.fullK;
+const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _e = new THREE.Euler(), _yA = new THREE.Vector3(0, 1, 0);
+const FULLFADE = ['fall', 'drive', 'cheer'];
+const ease = (cur, tgt, rate, dt) => cur + (tgt - cur) * (1 - Math.exp(-rate * dt));     // frame-rate independent approach
+const wrapA = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+function setW(u, wIdle, wWalk, wSprint, wCrouch, wHold, wRel, nf) {
+  const A = u.A;
   A.idle.setEffectiveWeight(wIdle * nf); A.walk.setEffectiveWeight(wWalk * nf); A.sprint.setEffectiveWeight(wSprint * nf); A.crouch.setEffectiveWeight(wCrouch * nf);
   A.hold.setEffectiveWeight(wHold * nf); A.reload.setEffectiveWeight(wRel * nf);
-  for (const k of FULL) A[k].setEffectiveWeight(k === full ? u.fullK : 0);
+  for (const k of FULLFADE) A[k].setEffectiveWeight(u.fullW[k]);
 }
-// o: { moveX, moveZ, speed, yaw, crouch, aim, pitch, reload (-1 | 0..1), air: 'fall'|'chute'|null, seat, cheer }
+// o: { moveX, moveZ, speed, yaw, crouch, aim, pitch, reload (-1 | 0..1), air: 'fall'|'chute'|null, seat, cheer, ground, vy }
+// Locomotion is driven by how the body REALLY moves (position delta), so feet never slide against walls or at odd speeds.
 export function animateSoldier(g, dt, o) {
   const u = g.userData;
   if (!u.mixer) return BEAN.animateSoldier(g, dt, o);
+  if (u.dying) return;
   u.t += dt;
-  const ml = Math.hypot(o.moveX, o.moveZ), moving = ml > 0.1;
-  u.moveK += ((moving ? 1 : 0) - u.moveK) * Math.min(1, dt * 8);
-  u.crouchK += ((o.crouch && !o.seat ? 1 : 0) - u.crouchK) * Math.min(1, dt * 10);
-  u.aimK += ((o.aim ? 1 : 0) - u.aimK) * Math.min(1, dt * (o.aim ? 12 : 4));
-  u.kick = Math.max(0, u.kick - dt * 10);
-  u.pitch += ((o.aim ? o.pitch : 0) - u.pitch) * Math.min(1, dt * 10);
+  const L = T.loco;
+  // --- measured ground velocity (world), smoothed; teleports / seats / sky-diving read as standing still
+  const P = g.position;
+  if (!u.last) u.last = P.clone();
+  if (dt > 0) {
+    let vx = (P.x - u.last.x) / dt, vz = (P.z - u.last.z) / dt;
+    if (dt > 0.25 || vx * vx + vz * vz > 225 || o.seat || o.air) vx = vz = 0;
+    u.vx = ease(u.vx, vx, 14, dt); u.vz = ease(u.vz, vz, 14, dt);
+  }
+  u.last.copy(P);
+  const gs = Math.hypot(u.vx, u.vz);
+  // --- smoothed body yaw: the root lags the logical yaw a touch (no instant snaps); big jumps (respawn) snap
+  const yaw = g.rotation.y;
+  if (u.visYaw == null) u.visYaw = yaw;
+  const dy = wrapA(yaw - u.visYaw);
+  if (Math.abs(dy) > 2.2) u.visYaw = yaw;
+  else { const pv = u.visYaw; u.visYaw = wrapA(u.visYaw + dy * (1 - Math.exp(-18 * dt))); if (dt > 0) u.yawRate = ease(u.yawRate, wrapA(u.visYaw - pv) / dt, 10, dt); }
+  const yawOff = clamp(wrapA(u.visYaw - yaw), -0.6, 0.6);
+  // --- move direction in model space (+Z forward, +X = character's left); backpedal plays the gait in reverse
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const lmx = -(u.vx * cy - u.vz * sy), lmz = -(u.vx * sy + u.vz * cy);
+  const moving = gs > 0.35 && !o.seat && !o.air;
+  const turning = !moving && !o.seat && !o.air && Math.abs(u.yawRate) > 1.4;          // pivot on the spot: small shuffle steps
+  let twistT = 0;
+  if (gs > 0.6 && moving) {
+    const a = Math.atan2(lmx, lmz);
+    u.back = Math.abs(a) > (u.back ? 1.65 : 1.95);
+    twistT = clamp(u.back ? wrapA(a - Math.PI) : a, -1.15, 1.15);
+  }
+  u.twist = ease(u.twist, twistT, 10, dt);
+  // --- air / landing (normal jumps and drops off ledges; the sky-dive is o.air)
+  const inAir = o.ground === false && !o.air && !o.seat;
+  if (inAir) u.minVy = Math.min(u.minVy, o.vy || 0);
+  else if (u.wasAir) { const imp = clamp((-u.minVy - 2) / 8, 0, 1); if (imp > 0.05) { u.land = Math.max(u.land * (1 - u.landT), imp); u.landT = 0; } u.minVy = 0; }
+  u.wasAir = inAir;
+  u.airK = ease(u.airK, inAir ? 1 : 0, 12, dt);
+  u.landT = Math.min(1, u.landT + dt / 0.32);
+  const sq = u.land * Math.sin(Math.PI * u.landT);                                   // 0 -> peak -> 0 over ~0.32 s
+  // --- blends
+  u.moveK = ease(u.moveK, moving ? 1 : turning ? 0.5 : 0, 10, dt);
+  const runAt = (L.walk.v + L.sprint.v) * 0.5;
+  u.runK = ease(u.runK, gs > runAt * (u.runK > 0.5 ? 0.8 : 1) ? 1 : 0, 8, dt);
+  u.crouchK = ease(u.crouchK, o.crouch && !o.seat ? 1 : 0, 12, dt);
+  u.aimK = ease(u.aimK, o.aim ? 1 : 0, o.aim ? 12 : 5, dt);
+  u.kick = Math.max(0, u.kick - dt * 9);
+  u.flinch = Math.max(0, u.flinch - dt * 5);
+  u.pitch = ease(u.pitch, o.aim ? o.pitch : 0, 12, dt);
   const reloading = o.reload >= 0;
-  u.relK += ((reloading ? 1 : 0) - u.relK) * Math.min(1, dt * 10);
+  u.relK = ease(u.relK, reloading ? 1 : 0, 12, dt);
   if (reloading) u.A.reload.time = clamp(o.reload, 0, 0.999) * T.clips.reload.duration;
   const full = o.seat ? 'drive' : o.air ? 'fall' : o.cheer ? 'cheer' : null;
-  if (full !== u.full) { u.full = full; u.fullK = 0; }
-  u.fullK = full ? Math.min(1, u.fullK + dt * 6) : 0;
-  const mk = u.moveK, ck = u.crouchK;
-  const run = (o.speed || 0) * ml > 3.2;
-  const wCrouch = ck * (1 - 0.45 * mk), wLoco = mk * (1 - wCrouch), wIdle = Math.max(0, 1 - wCrouch - wLoco);
-  setW(u, wIdle, run ? 0 : wLoco, run ? wLoco : 0, wCrouch, 1 - u.relK, u.relK, full);
-  u.A.walk.timeScale = clamp((o.speed || 2) * ml / 2.4, 0.6, 1.6);
-  u.A.sprint.timeScale = clamp((o.speed || 5) * ml / 5.0, 0.7, 1.4);
+  u.full = full;
+  let fsum = 0;
+  for (const k of FULLFADE) { let w = ease(u.fullW[k], k === full ? 1 : 0, 9, dt); if (w < 0.01) w = 0; if (w > 0.99) w = 1; u.fullW[k] = w; fsum += w; }
+  if (fsum > 1) { for (const k of FULLFADE) u.fullW[k] /= fsum; fsum = 1; }
+  u.fullK = fsum;
+  const nf = 1 - fsum, mk = u.moveK, ck = u.crouchK;
+  const wCrouch = clamp(ck * (1 - 0.45 * mk) + 0.4 * u.airK + 0.6 * sq, 0, 1);
+  const wLoco = mk * (1 - u.airK) * (1 - wCrouch), wIdle = Math.max(0, 1 - wCrouch - wLoco);
+  setW(u, wIdle, wLoco * (1 - u.runK), wLoco * u.runK, wCrouch, 1 - u.relK, u.relK, nf);
+  // --- one shared gait phase for walk + sprint, advanced at the rate that matches the ground speed (no foot sliding)
+  // (the chunky KayKit gait covers ~2 m/s at 1x while the game runs at 6-9 m/s: cadence goes up to 2.3x, the rest is hidden by
+  // the stride stretch below)
+  u.stride = 1 + 0.3 * u.runK * clamp((gs - 2) / 4, 0, 1) * (1 - u.airK);
+  const tsW = clamp((moving ? gs : 0.9) / L.walk.v, 0.5, 2.0), tsS = clamp(gs / (L.sprint.v * u.stride), 0.6, 2.3);
+  const cps = lerp(tsW / L.walk.dur, tsS / L.sprint.dur, u.runK) * (1 - u.airK) * (mk > 0.02 ? 1 : 0);
+  u.gait = (u.gait + (u.back ? -1 : 1) * cps * dt + 1) % 1;
+  u.A.walk.time = ((u.gait + L.walk.fwd) % 1) * L.walk.dur;
+  u.A.sprint.time = ((u.gait + L.sprint.fwd) % 1) * L.sprint.dur;
   const showW = !o.air && !o.seat && full !== 'cheer';
   u.gunMesh.visible = showW && !o.bow; u.bow.visible = showW && !!o.bow;
   if (o.bow) u.bow.userData.setNocked(o.nocked !== false);
@@ -382,15 +459,27 @@ export function animateSoldier(g, dt, o) {
   u.acc += dt;
   if (u.lo && u.acc < 1 / 15) return;
   u.mixer.update(u.acc); u.acc = 0;
-  // body tilt: dive when free-falling, gentle sway under the canopy
-  u.root.rotation.set(o.air === 'fall' ? -1.1 : 0, 0, o.air === 'chute' ? Math.sin(u.t * 2) * 0.08 : 0);
-  u.root.position.set(0, 0, o.air === 'fall' ? 0.6 : 0);
-  if (full) return;
-  // upper body: lowered <-> aimed pitch and recoil kick, layered on the holding pose (chest carries arms + blaster)
-  // game pitch: + = up; the model faces +Z so a rotation of -p about X raises the chest
-  const p = lerp(-0.12, u.pitch, u.aimK) * (1 - u.relK) + u.kick * 0.12;
-  _q.setFromEuler(_e.set(-p * 0.75, 0, 0)); offsetBone(u, 'chest', _q);
-  _q.setFromEuler(_e.set(p * 0.35, 0, 0)); offsetBone(u, 'head', _q);   // head stays a bit more level
+  // --- whole-body: yaw lag, lean into turns, a little forward lean when running, sky-dive tilt, landing squash
+  u.diveK = ease(u.diveK, o.air === 'fall' ? 1 : 0, 8, dt);
+  u.lean = ease(u.lean, moving ? clamp(u.yawRate * 0.05 * Math.min(1, gs / 4), -0.14, 0.14) : 0, 8, dt);
+  u.fwdLean = ease(u.fwdLean, moving ? (u.back ? 0.04 : -0.07) * u.runK * Math.min(1, gs / (2 * L.sprint.v)) : 0, 6, dt);   // backpedal leans back
+  const fl = u.flinch * u.flinch;
+  u.root.rotation.set(-1.1 * u.diveK + u.fwdLean * nf + fl * 0.06, yawOff * (1 - u.diveK), u.lean * nf + (o.air === 'chute' ? Math.sin(u.t * 2) * 0.08 : 0) + fl * 0.05 * u.flinchS);
+  u.root.position.set(0, 0, 0.6 * u.diveK);
+  u.root.scale.set(1 + 0.07 * sq, 1 - 0.13 * sq, 1 + 0.07 * sq);
+  if (nf < 0.02) return;
+  // --- stride stretch: swing the thighs further than the clip at high speed (longer steps, less foot slide)
+  const sk = 1 + (u.stride - 1) * nf;
+  stretchBone(u, 'upperlegl', sk); stretchBone(u, 'upperlegr', sk);
+  // --- layered offsets (one combined rotation per bone per frame)
+  // hips turn toward the move direction, spine + chest turn back so the blaster keeps pointing where the character aims
+  const tw = u.twist * nf;
+  _q.setFromAxisAngle(_yA, tw); offsetBone(u, 'hips', _q);
+  _q.setFromAxisAngle(_yA, -0.55 * tw); offsetBone(u, 'spine', _q);
+  // chest: lowered <-> aimed pitch, recoil kick, hit flinch (game pitch + = up; a rotation of -p about X raises the chest)
+  const p = (lerp(-0.12, u.pitch, u.aimK) * (1 - u.relK) + u.kick * 0.16 + fl * 0.3) * nf;
+  _q.setFromAxisAngle(_yA, -0.45 * tw); _q2.setFromEuler(_e.set(-p * 0.75, 0, 0)); _q.multiply(_q2); offsetBone(u, 'chest', _q);
+  _q.setFromEuler(_e.set(p * 0.35 - fl * 0.15, 0, fl * 0.12 * u.flinchS)); offsetBone(u, 'head', _q);   // head stays a bit more level
   if (o.bow && u.bow.visible) bowPose(g, u, o.draw || 0);
   else if (u.bowArm) { u.bowArm = false; _q.identity(); offsetBone(u, 'upperarml', _q); offsetBone(u, 'upperarmr', _q); offsetBone(u, 'lowerarmr', _q); }
 }
@@ -420,6 +509,13 @@ function bowPose(g, u, k) {
   u.bones.handslotr.getWorldPosition(_hp); u.bow.worldToLocal(_hp);
   u.bow.userData.setDrawTo(k, _hp);
 }
+// extrapolate a bone's animated rotation away from its rest pose by k (k > 1 exaggerates the swing), same base-pose memory
+function stretchBone(u, n, k) {
+  const b = u.bones[n], o = u.off || (u.off = {});
+  const r = o[n] || (o[n] = { base: new THREE.Quaternion(), post: new THREE.Quaternion(1, 1, 1, 1), rest: u.rest[n] });
+  if (!b.quaternion.equals(r.post)) r.base.copy(b.quaternion);
+  b.quaternion.copy(r.rest).slerp(r.base, k); r.post.copy(b.quaternion);
+}
 // the mixer skips re-writing a bone whose animated value did not change, so layer offsets on a remembered base pose
 function offsetBone(u, n, q) {
   const b = u.bones[n], o = u.off || (u.off = {}), r = o[n] || (o[n] = { base: new THREE.Quaternion(), post: new THREE.Quaternion(1, 1, 1, 1) });
@@ -427,18 +523,25 @@ function offsetBone(u, n, q) {
   b.quaternion.copy(r.base).premultiply(q); r.post.copy(b.quaternion);
 }
 export function soldierFired(g) { g.userData.kick = 1; }
+// taking a hit: a quick snap back of the chest + head tilt (cheap, decays in ~0.2 s)
+export function soldierHit(g) { const u = g.userData; if (!u || !u.mixer || u.dying) return; u.flinch = 1; u.flinchS = Math.random() < 0.5 ? -1 : 1; }
 
 // death: topple over (die clip), then pop into a puff of cloud
 export function animateDeath(g, t) {
   const u = g.userData;
   if (!u.mixer) return BEAN.animateDeath(g, t);
   if (!u.dying) {
-    u.dying = true; u.fullK = 1; u.full = 'die';
-    setW(u, 0, 0, 0, 0, 0, 0, 'die'); u.A.die.reset().play(); u.A.die.setEffectiveWeight(1);
-    u.muzzle.visible = false;
+    u.dying = true; u.full = 'die';
+    // remember the live pose's weights and fade them out over ~0.2 s instead of snapping into the fall
+    u.deathFrom = Object.keys(u.A).filter(k => k !== 'die').map(k => [u.A[k], u.A[k].getEffectiveWeight()]);
+    u.A.die.reset().play(); u.A.die.setEffectiveWeight(0);
+    u.muzzle.visible = false; u.kick = 0; u.flinch = 0;
   }
+  const xk = clamp(t / 0.2, 0, 1);
+  for (const [a, w] of u.deathFrom) a.setEffectiveWeight(w * (1 - xk));
+  u.A.die.setEffectiveWeight(Math.max(0.001, xk)); u.fullK = 1;
   u.A.die.time = Math.min(t * 1.1, T.clips.die.duration - 0.001); u.mixer.update(0);
-  u.root.rotation.set(0, 0, 0); u.root.position.set(0, 0, 0);
+  u.root.rotation.set(0, 0, 0); u.root.position.set(0, 0, 0); if (t < 1.1) u.root.scale.setScalar(1);
   const pk = clamp((t - 1.1) / 0.5, 0, 1);
   if (pk > 0) {
     const s = pk < 0.25 ? 1 + pk * 0.8 : Math.max(0.001, 1.2 * (1 - (pk - 0.25) / 0.75));
@@ -454,6 +557,8 @@ export function resetSoldier(g) {
   if (!u.mixer) return BEAN.resetSoldier(g);
   if (!u.dying) return;
   u.dying = false; u.full = null; u.fullK = 0; u.A.die.setEffectiveWeight(0);
+  for (const k of FULLFADE) u.fullW[k] = 0;
+  u.last = null; u.vx = u.vz = 0; u.visYaw = null; u.yawRate = 0; u.twist = 0; u.lean = 0; u.fwdLean = 0; u.airK = 0; u.wasAir = false; u.minVy = 0; u.land = 0; u.landT = 1; u.diveK = 0; u.moveK = 0; u.runK = 0;
   u.blob.visible = true; u.puffs.visible = false;
   u.root.rotation.set(0, 0, 0); u.root.position.set(0, 0, 0); u.root.scale.setScalar(1);
 }

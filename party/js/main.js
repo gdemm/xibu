@@ -4,7 +4,7 @@ import { buildMap, moveEntity } from './map.js';
 import { buildIsland } from './island.js';
 import { WEAPONS, ORDER, buildViewmodels, MUZZLE } from './weapons.js';
 import { createBotMesh, updateBot, eyeOf } from './bots.js';
-import { animateDeath, resetSoldier, animateSoldier, soldierTris, createSoldier } from './critter.js';
+import { animateDeath, resetSoldier, animateSoldier, soldierTris, createSoldier, soldierHit } from './critter.js';
 import { toonRamp } from './critter.js';
 import { lobbyChars } from './lobbychars.js';
 import { playerJump, airStep, updateDrop } from './drop.js';
@@ -277,6 +277,7 @@ G.shootArrow = (shooter, origin, dir, k, dmgScale) => {
 function damage(t, amount, attacker, w, head, zone) {
   if (!t.alive || G.state !== 'playing' || (!zone && G.now < t.protectUntil)) return;
   t.hp -= amount; t.lastHurt = G.now; t.lastAttacker = attacker;
+  if (!zone && amount > 0) { const m = t.isPlayer ? P.body : t.mesh; if (m && m.visible) soldierHit(m); }
   if (t.isPlayer) { $('dmg').style.opacity = 1; setTimeout(() => $('dmg').style.opacity = 0, 140); sfx.hurt(); }
   if (attacker.isPlayer && t.hp > 0 && !zone) { HUD.hitMarker(head ? 'head' : 'hit'); head ? sfx.head() : sfx.hit(); }
   if (!t.isPlayer && attacker !== t && t.alive && !zone) { t.lastSeen.copy(attacker.pos); }
@@ -327,7 +328,7 @@ function poseBody(dt, mx, mz, speed, seated) {
   if (!b.visible) return;
   b.position.copy(G.player.pos); b.rotation.set(0, G.player.yaw, 0);
   if (seated) { const v = P.inCar; b.rotation.set(0, v.yaw, v.lean, 'YXZ'); b.position.y += { jeep: 0.55, moto: 0.45, bike: 0.5 }[v.type] || 0.5; if (v.type === 'jeep') { b.position.x += Math.cos(v.yaw) * -0.45; b.position.z += -Math.sin(v.yaw) * -0.45; } }
-  animateSoldier(b, dt, { moveX: seated ? 0 : mx, moveZ: seated ? 0 : mz, speed, yaw: b.rotation.y, crouch: !!seated || G.player.crouch, aim: !seated, seat: !!seated, bow: !!G.weapon.bow, draw: P.draw, nocked: G.ammo.bow?.mag > 0, pitch: G.player.pitch * 0.6, reload: G.reloading ? 1 - Math.max(0, G.reloadEnd - G.now) / G.weapon.reload : -1 });
+  animateSoldier(b, dt, { moveX: seated ? 0 : mx, moveZ: seated ? 0 : mz, speed, yaw: b.rotation.y, crouch: !!seated || G.player.crouch, aim: !seated, seat: !!seated, bow: !!G.weapon.bow, draw: P.draw, nocked: G.ammo.bow?.mag > 0, pitch: G.player.pitch * 0.6, ground: seated ? true : G.player.onGround, vy: G.player.vel.y, reload: G.reloading ? 1 - Math.max(0, G.reloadEnd - G.now) / G.weapon.reload : -1 });
 }
 const _cd = new THREE.Vector3(), _cp = new THREE.Vector3();
 function chaseCam(x, y, z, dist, side, up) {
