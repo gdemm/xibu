@@ -60,6 +60,7 @@ body.air #speedo{display:block}
 body.air #bFire,body.air #bFire2,body.air #bScope,body.air #bJump,body.air #bCrouch,body.air #bReload,body.air #bSwitch,body.air #bBag,body.air #bCar,body.air #ammoBox,body.air #cross{display:none!important}
 #gear{position:absolute;left:calc(222px + env(safe-area-inset-left));bottom:calc(10px + env(safe-area-inset-bottom));display:flex;gap:6px}
 body:not(.br) #gear{display:none}
+body.br #ammoBox{bottom:calc(52px + env(safe-area-inset-bottom))}
 #gear span{display:flex;align-items:center;gap:3px;background:rgba(0,0,0,.4);border-radius:8px;padding:2px 7px 2px 4px;font-size:13px;font-weight:800;border:2px solid transparent}
 #gear svg{width:20px;height:20px;fill:#777}
 #gear .lv1 svg{fill:#e8eef2}#gear .lv1{border-color:#e8eef2}

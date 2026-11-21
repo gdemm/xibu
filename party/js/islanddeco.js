@@ -242,12 +242,12 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
 
   mark('lamps');
   // ---------- road paint: dashed centre line, edge lines, zebra crossings ----------
-  const P = (x, z, w, d, col) => paint.add(PLANE, mat4(x, 0.085, z, 0, 0, 0, w, 1, d), col);
+  const P = (x, z, w, d, col) => paint.add(PLANE, mat4(x, 0.1, z, 0, 0, 0, w, 1, d), col);
   for (const [x0, z0, x1, z1] of ROADS) {
     const horiz = x1 - x0 > z1 - z0, c = horiz ? (z0 + z1) / 2 : (x0 + x1) / 2, a0 = horiz ? x0 : z0, a1 = horiz ? x1 : z1, half = horiz ? (z1 - z0) / 2 : (x1 - x0) / 2;
     const self = [x0, z0, x1, z1].join(), cross = (p) => ROADS.some(r => r.join() !== self && (horiz ? p > r[0] - 1.5 && p < r[2] + 1.5 && c > r[1] - 4.5 && c < r[3] + 4.5 : p > r[1] - 1.5 && p < r[3] + 1.5 && c > r[0] - 4.5 && c < r[2] + 4.5));
-    for (let p = a0 + 2; p < a1 - 3; p += 6) { if (cross(p) || cross(p + 3)) continue; horiz ? P(p + 1.5, c, 3, 0.2, 0xffd84a) : P(c, p + 1.5, 0.2, 3, 0xffd84a); }
-    for (const s of [-1, 1]) for (let p = a0 + 0.5; p < a1 - 0.5; p += 4) { if (cross(p) || cross(p + 4)) continue; const o = c + s * (half - 0.35); horiz ? P(p + 2, o, 4, 0.14, 0xf4f4f0) : P(o, p + 2, 0.14, 4, 0xf4f4f0); }
+    for (let p = a0 + 2; p < a1 - 3; p += 6) { if (cross(p) || cross(p + 3)) continue; horiz ? P(p + 1.5, c, 3, 0.28, 0xffd84a) : P(c, p + 1.5, 0.28, 3, 0xffd84a); }
+    for (const s of [-1, 1]) for (let p = a0 + 0.5; p < a1 - 0.5; p += 4) { if (cross(p) || cross(p + 4)) continue; const o = c + s * (half - 0.4); horiz ? P(p + 2, o, 4.02, 0.3, 0xf4f4f0) : P(o, p + 2, 0.3, 4.02, 0xf4f4f0); }
   }
   for (const s of [-1, 1]) for (let k = -3; k <= 3; k++) { P(s * 6.2, k * 1.05, 2.4, 0.55, 0xf4f4f0); P(k * 1.05, s * 6.2, 0.55, 2.4, 0xf4f4f0); }
 
