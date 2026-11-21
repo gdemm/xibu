@@ -195,10 +195,10 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
       // door frames (sit on the wall either side of the gap, never narrow it) + a little step / mat outside
       for (const g of gaps) {
         const dc = metal ? 0xffc23a : 0x8a5a3a;
-        for (const s of [-1, 1]) put(ax, fixed, g + s * (door / 2 + 0.09), 1.35, 0.18, 2.7, t + 0.12, 0, dc);
-        put(ax, fixed, g, 2.72, door + 0.36, 0.2, t + 0.12, 0, dc);
+        for (const s of [-1, 1]) put(ax, fixed, g + s * (door / 2 + 0.07), 1.33, 0.2, 2.66, t + 0.12, 0, dc);   // overhangs the gap 3 cm so no face sits on the wall's end face
+        put(ax, fixed, g, 2.71, door + 0.4, 0.26, t + 0.17, 0, dc);   // deeper than the jambs: no coplanar faces
         put(ax, fixed, g, 0.012, door * 0.8, 0.025, 0.9, sg * (t / 2 + 0.5), metal ? 0x4a4f57 : 0xc0563f);
-        if (metal) for (let k = -2; k <= 2; k++) put(ax, fixed, g + k * door * 0.2, 2.72, door * 0.1, 0.21, t + 0.14, 0, 0x222222);   // hazard stripes
+        if (metal) for (let k = -2; k <= 2; k++) put(ax, fixed, g + k * door * 0.2, 2.71, door * 0.1, 0.27, t + 0.22, 0, 0x222222);   // hazard stripes
       }
       // plinth along the wall, split at the doors (outside face only)
       const cuts = [a0 - 0.3, ...gaps.slice().sort((a, c) => a - c).flatMap(g => [g - door / 2 - 0.18, g + door / 2 + 0.18]), a1 + 0.3];
