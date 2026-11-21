@@ -51,7 +51,7 @@ async function exitLandscape() {
   try { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.webkitFullscreenElement) await document.webkitExitFullscreen?.(); } catch (e) {}
   resize();
 }
-$('btnFullL').onclick = goLandscape; $('tFull').onclick = goLandscape; $('pFull').onclick = goLandscape; $('btnRot').onclick = goLandscape;
+$('tFull').onclick = goLandscape; $('pFull').onclick = goLandscape; $('btnRot').onclick = goLandscape;
 $('btnRotNo').onclick = () => document.body.classList.add('noRot');
 
 // ---------- portraits for the select cards ----------
@@ -151,7 +151,7 @@ let aimState = null; // {isSup, dx, dz, k}
 
 // ---------- touch ----------
 const stick = { id: null, ox: 0, oy: 0 }, abtn = { id: null, cx: 0, cy: 0, x: 0, y: 0, t0: 0, sup: false };
-const R_STICK = 55, R_AIM = 60;
+const R_STICK = 55, R_AIM = 85;
 function btnCenter(el) { const r = el.getBoundingClientRect(); const c = loc(r.left + r.width / 2, r.top + r.height / 2); return c; }
 function onStart(ev) {
   if (state !== 'game' || paused) return;
@@ -176,8 +176,22 @@ function onMove(ev) {
 function updateAimFromBtn() {
   let dx = abtn.x - abtn.cx, dy = abtn.y - abtn.cy; const L = Math.hypot(dx, dy);
   const knob = (abtn.sup ? $('btnSup') : $('btnAtk')).querySelector('.knob'); const kl = Math.min(L, 40); knob.style.transform = L > 1 ? `translate(${dx / L * kl}px,${dy / L * kl}px)` : '';
-  if (L < 14) { aimState = null; return; }
-  aimState = { isSup: abtn.sup, dx: dx / L, dz: dy / L, k: Math.min(1, L / R_AIM) };
+  if (L < 16) { aimState = null; return; }
+  const w = screenDirToWorld(dx / L, dy / L);
+  const st = { isSup: abtn.sup, dx: w.x, dz: w.z, k: Math.min(1, L / R_AIM), t: performance.now() };
+  // keep the last steady aim: a quick flick while lifting the finger shouldn't swing the shot
+  if (aimState && aimState.isSup === st.isSup) aimPrev = aimState;
+  aimState = st;
+}
+let aimPrev = null;
+const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _gp = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), _hit = new THREE.Vector3(), _sp = new THREE.Vector3();
+// screen-space drag direction -> world ground direction through the tilted perspective camera
+function screenDirToWorld(ux, uy) {
+  const p = G.player; _sp.set(p.pos.x, 0, p.pos.z).project(camera);
+  const sx = (_sp.x + 1) / 2 * W + ux * 140, sy = (1 - _sp.y) / 2 * Hh + uy * 140;
+  _ndc.set(sx / W * 2 - 1, -(sy / Hh * 2 - 1)); _ray.setFromCamera(_ndc, camera); _gp.constant = 0;
+  if (!_ray.ray.intersectPlane(_gp, _hit)) return { x: ux, z: uy };
+  const dx = _hit.x - p.pos.x, dz = _hit.z - p.pos.z, L = Math.hypot(dx, dz) || 1; return { x: dx / L, z: dz / L };
 }
 function onEnd(ev) {
   for (const t of ev.changedTouches) {
@@ -185,10 +199,11 @@ function onEnd(ev) {
     if (t.identifier === abtn.id) {
       const knob = (abtn.sup ? $('btnSup') : $('btnAtk')).querySelector('.knob'); knob.style.transform = '';
       if (state === 'game' && !paused) {
+        if (aimState && aimPrev && performance.now() - aimState.t < 60 && Math.hypot(aimState.dx - aimPrev.dx, aimState.dz - aimPrev.dz) > 0.25) aimState = aimPrev;
         if (aimState) { const sh = aimShape(aimState.isSup); fire(aimState.isSup, aimState.dx, aimState.dz, sh.lob ? Math.max(1.5, aimState.k * sh.len) : sh.len); }
         else { const a = autoTarget(abtn.sup); fire(abtn.sup, a.dx, a.dz, a.dist); }
       }
-      abtn.id = null; aimState = null;
+      abtn.id = null; aimState = null; aimPrev = null;
     }
   }
 }
@@ -267,7 +282,7 @@ function updateHud(dt) {
   const p = G.player; $('alive').textContent = G.duo ? `剩余 ${G.teamsLeft()} 队` : '存活 ' + G.alive().length;
   const Z = G.zone; $('zoneT').textContent = G.state === 'count' ? '准备开战…' : Z.stage === 'final' ? '最终决战！' : Z.sq ? (Z.stage === 'wait' ? `毒雾将在 ${fmt(Z.t)} 后逼近` : `毒雾逼近中 ${fmt(Z.t)}`) : Z.stage === 'wait' ? `毒雾将在 ${fmt(Z.t)} 后扩散` : `毒雾扩散中 ${fmt(Z.t)}`;
   $('gCube').textContent = '⚡' + p.cubes; $('gArmor').textContent = '甲' + p.armor; $('gArmor').className = 'lv' + p.armor; $('gHelm').textContent = '盔' + p.helmet; $('gHelm').className = 'lv' + p.helmet;
-  const sb = $('btnSup'); sb.classList.toggle('ready', p.superC >= 1); sb.style.setProperty('--p', Math.round(p.superC * 100) + '%');
+  const sb = $('btnSup'); sb.classList.toggle('ready', p.superC >= 1); sb.style.setProperty('--p', Math.round(p.superC * 100) + '%'); const sp = sb.querySelector('.pct'); if (sp) sp.textContent = p.superC >= 1 ? '大招!' : Math.floor(p.superC * 100) + '%';
   const air = !!p.air && p.alive; document.body.classList.toggle('air', air); $('btnJump').classList.toggle('hidden', !(p.air === 'plane' || p.air === 'fall'));
   $('hint').textContent = !p.alive && p.respawnT ? `${Math.max(0, Math.ceil(p.respawnT - G.now))} 秒后在队友身边复活` : p.air === 'plane' ? (G.plane.k > G.plane.k0 ? '点「跳伞」跳下飞机' : '飞机即将到达小岛…') : p.air === 'fall' ? '摇杆控制方向，可提前开伞' : p.air === 'chute' ? '滑翔中，选好落点' : (p.alive && G.outside(p) ? '⚠ 你在毒雾里！快跑回安全区' : '');
   drawMini();
@@ -363,3 +378,4 @@ requestAnimationFrame(frame);
 if (Q.get('mode') && ['party', 'solo', 'duo'].includes(Q.get('mode'))) { opts.mode = Q.get('mode'); showMode(); }
 if (Q.has('go')) { if (Q.get('kind') && CHARS[Q.get('kind')]) sel = Q.get('kind'); if (Q.get('n')) opts.n = +Q.get('n'); startMatch(); }
 window.__start = startMatch; window.__info = () => renderer.info.render; window.__state = () => state;
+window.__sdw = screenDirToWorld;

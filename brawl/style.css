@@ -55,11 +55,15 @@ button{font-family:inherit;cursor:pointer}
 .abtn{position:absolute;border-radius:50%;pointer-events:auto;border:3px solid #1a1022}
 #btnAtk{right:calc(26px + env(safe-area-inset-right));bottom:calc(26px + env(safe-area-inset-bottom));width:120px;height:120px;background:rgba(255,80,80,.25)}
 #btnAtk .knob{position:absolute;left:30px;top:30px;width:54px;height:54px;border-radius:50%;background:#ff5a5a;border:3px solid #1a1022;box-shadow:0 3px 0 #1a1022}
-#btnSup{right:calc(160px + env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom));width:76px;height:76px;background:rgba(80,80,80,.35);filter:grayscale(1);opacity:.7}
-#btnSup .knob{position:absolute;left:14px;top:14px;width:42px;height:42px;border-radius:50%;background:#ffd23f;border:3px solid #1a1022;color:#1a1022;font-weight:900;font-size:22px;line-height:36px;text-align:center}
-#btnSup.ready{filter:none;opacity:1;background:rgba(255,210,63,.35);animation:pulse 1s infinite}
-#btnSup .ring{position:absolute;inset:-6px;border-radius:50%;background:conic-gradient(#ffd23f var(--p,0%),transparent 0)}
-#btnSup .ring{-webkit-mask:radial-gradient(circle,transparent 58%,#000 60%);mask:radial-gradient(circle,transparent 58%,#000 60%)}
+#btnSup{right:calc(160px + env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom));width:86px;height:86px;background:rgba(30,20,40,.45)}
+#btnSup .knob{position:absolute;left:19px;top:19px;width:42px;height:42px;filter:grayscale(.85) brightness(.8);border-radius:50%;background:#ffd23f;border:3px solid #1a1022;color:#1a1022;font-weight:900;font-size:22px;line-height:36px;text-align:center}
+#btnSup.ready .knob{filter:none;transform:scale(1.12)}
+#btnSup .track{position:absolute;inset:-8px;border-radius:50%;background:rgba(0,0,0,.45);-webkit-mask:radial-gradient(circle,transparent 56%,#000 58%);mask:radial-gradient(circle,transparent 56%,#000 58%)}
+#btnSup .pct{position:absolute;left:50%;top:-30px;transform:translateX(-50%);font-size:15px;font-weight:900;color:#ffd23f;-webkit-text-stroke:1.5px #1a1022;paint-order:stroke fill;white-space:nowrap}
+#btnSup.ready .pct{font-size:18px;color:#fff3a0}
+#btnSup.ready{background:rgba(255,210,63,.35);animation:pulse 1s infinite}
+#btnSup .ring{position:absolute;inset:-8px;border-radius:50%;background:conic-gradient(#ffd23f var(--p,0%),transparent 0)}
+#btnSup .ring{-webkit-mask:radial-gradient(circle,transparent 58%,#000 60%);mask:radial-gradient(circle,transparent 56%,#000 58%);filter:drop-shadow(0 0 4px #ffd23f)}
 @keyframes pulse{50%{box-shadow:0 0 0 8px rgba(255,210,63,.35)}}
 #btnJump{position:absolute;right:calc(40px + env(safe-area-inset-right));bottom:calc(40px + env(safe-area-inset-bottom));pointer-events:auto;width:120px;height:120px;border-radius:50%;border:4px solid #1a1022;background:linear-gradient(#7fdcff,#2b6cff);color:#fff;font-size:24px;font-weight:900;-webkit-text-stroke:1.5px #1a1022;paint-order:stroke fill;box-shadow:0 5px 0 #1a1022}
 body.air #btnAtk,body.air #btnSup{display:none}
