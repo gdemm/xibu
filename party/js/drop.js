@@ -236,10 +236,10 @@ function openAirdrop(G, d, e, h) {
   if (!e.isPlayer) { e.armed = true; e.gun = bow && Math.random() < 0.5 ? 'bow' : 'sniper'; e.hp = Math.min(100, e.hp + 50); return; }
   const extra = [];
   if (scope > (G.scope | 0)) { G.scope = scope; extra.push(scope + '倍镜'); }
-  if (bow) { G.owned.add('bow'); G.ammo.bow.reserve += 20; if (!G.ammo.bow.mag) G.ammo.bow.mag = 1; extra.push('弓箭+20支箭'); }
+  if (bow) { G.owned.add('bow'); G.ammo.bow.reserve = Math.max(0, G.ammo.bow.reserve + 20); if (!G.ammo.bow.mag) G.ammo.bow.mag = 1; extra.push('弓箭+20支箭'); }
   const W = h.WEAPONS, first = !G.owned.has('sniper'); G.owned.add('sniper');
-  G.ammo.sniper.reserve += W.sniper.reserve; if (first) G.ammo.sniper.mag = W.sniper.mag;
-  if (G.owned.has('rifle')) G.ammo.rifle.reserve += W.rifle.mag * 3;
+  G.ammo.sniper.reserve = Math.max(0, G.ammo.sniper.reserve + W.sniper.reserve); if (first) G.ammo.sniper.mag = W.sniper.mag;
+  if (G.owned.has('rifle')) G.ammo.rifle.reserve = Math.max(0, G.ammo.rifle.reserve + W.rifle.mag * 3);
   e.hp = Math.min(100, e.hp + 50); h.setWeapon('sniper');
   h.HUD.centerMsg('空投到手！狙击枪 · 三级甲 · 三级头 · 医疗包' + extra.map(x => ' · ' + x).join(''), 2600); h.sfx.kill?.();
 }

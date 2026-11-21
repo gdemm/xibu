@@ -18,6 +18,24 @@ import { setupBR, updateBR, brKilled, brResult, brBoardHTML, brGoal, cleanup as 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
+// ---------------- forced landscape fallback + HUD layout ----------------
+let forceLandOn = false;
+const forceLandPortrait = () => forceLandOn && innerHeight > innerWidth;
+const viewSize = () => forceLandPortrait() ? [innerHeight, innerWidth] : [innerWidth, innerHeight];
+const gameXY = (cx, cy) => forceLandPortrait() ? { x: cy, y: innerWidth - cx } : { x: cx, y: cy };
+const isUI = (t) => !!(t?.closest?.('#lobby,#settings,#topBtns,#rotateHint') || t?.closest?.('button'));
+function setForceLand(on) {
+  forceLandOn = !!on;
+  document.body.classList.toggle('forceLand', forceLandOn);
+  try { forceLandOn ? localStorage.setItem('party_forceLand', '1') : localStorage.removeItem('party_forceLand'); } catch (e) {}
+  onResize(); syncFullBtns();
+  HUD.centerMsg(forceLandOn ? '已切换横屏' : '已恢复竖屏', 1200);
+}
+try { forceLandOn = localStorage.getItem('party_forceLand') === '1'; if (forceLandOn) document.body.classList.add('forceLand'); } catch (e) {}
+let HUDL = {};
+try { HUDL = JSON.parse(localStorage.getItem('party_hud_layout') || '{}') || {}; } catch (e) {}
+let hudEdit = false;
+
 // ---------------- settings ----------------
 const DEF = { quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, showFps: 0, tp: 1 };
 let S = { ...DEF };
@@ -31,10 +49,16 @@ renderer.autoClear = false;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 function applyPixelRatio() {
   const cap = isTouch ? { low: 1, mid: 1.25, high: 1.5 }[S.quality] : { low: 1, mid: 1.5, high: 2 }[S.quality];
+  const [W, H] = viewSize();
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap));
-  renderer.setSize(innerWidth, innerHeight, false);
+  renderer.setSize(W, H, false);
 }
 const scene = new THREE.Scene();
+let baseFov = 75;
+function updateBaseFov() {
+  const [W, H] = viewSize(), aspect = W / H;
+  baseFov = Math.min(75, 2 * Math.atan(Math.tan(50 * Math.PI / 180) / aspect) * 180 / Math.PI);
+}
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 520);
 camera.rotation.order = 'YXZ';
 const vmScene = new THREE.Scene();
@@ -44,7 +68,7 @@ const vmSun = new THREE.DirectionalLight(0xffffff, 1.2); vmSun.position.set(1, 2
 const vmRoot = new THREE.Group(); vmScene.add(vmRoot);
 const VM = buildViewmodels();
 for (const k of ORDER) vmRoot.add(VM.models[k]);
-function onResize() { applyPixelRatio(); camera.aspect = vmCamera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); vmCamera.updateProjectionMatrix(); }
+function onResize() { applyPixelRatio(); const [W, H] = viewSize(); camera.aspect = vmCamera.aspect = W / H; updateBaseFov(); camera.updateProjectionMatrix(); vmCamera.updateProjectionMatrix(); applyHudLayout(); }
 addEventListener('resize', onResize); onResize();
 
 // ---------------- game state ----------------
@@ -364,7 +388,7 @@ function updateDriving(dt) {
   chaseCam(v.pos.x, (v.alt || 0) + v.T.seatY, v.pos.z, v.T.cam, 0, 0.6);
   poseBody(dt, 0, 0, 0, true);
   $('scope').style.display = 'none'; $('cross').style.display = 'none';
-  if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); }
+  if (camera.fov !== baseFov) { camera.fov = baseFov; camera.updateProjectionMatrix(); }
   const kmh = Math.round(Math.abs(v.speed) * 3.6); const sp = $('speedo'); if (sp) sp.textContent = kmh + ' km/h' + (v.T.fly ? ' · 高度 ' + Math.round(v.alt || 0) + ' m' : '');
 }
 
@@ -372,7 +396,7 @@ function updateDriving(dt) {
 function updateAir(dt) {
   const p = G.player; P.scoped = false; P.firing = false;
   $('scope').style.display = 'none'; $('cross').style.display = 'none';
-  if (camera.fov !== 75) { camera.fov = 75; camera.updateProjectionMatrix(); }
+  if (camera.fov !== baseFov) { camera.fov = baseFov; camera.updateProjectionMatrix(); }
   if (p.air === 'plane') {
     const D = G.drop; _q.set(Math.min(0.2, p.pitch), p.yaw, 0); _cd.set(0, 0, 1).applyEuler(_q);
     camera.position.copy(D.pos).addScaledVector(_cd, 26).y += 6; camera.rotation.set(Math.min(0.2, p.pitch) - 0.12, p.yaw, 0);
@@ -417,6 +441,7 @@ function setWeapon(id, silent) {
 function cycleWeapon(dir = 1) { let i = ORDER.indexOf(G.weapon.id); for (let n = 0; n < ORDER.length; n++) { i = (i + dir + ORDER.length) % ORDER.length; if (!G.owned || G.owned.has(ORDER[i])) return setWeapon(ORDER[i]); } }
 function startReload() {
   const w = G.weapon, a = G.ammo[w.id];
+  if (a.reserve < 0) a.reserve = 0;
   if (w.melee || G.reloading || a.mag >= w.mag || a.reserve <= 0 || !G.player.alive) return;
   G.reloading = true; G.reloadEnd = G.now + w.reload; P.scoped = false; sfx.reload();
 }
@@ -424,10 +449,10 @@ function toggleScope() { if (!G.player?.alive) return; if (G.weapon.scope || G.w
 // scope overlay (black circle): sniper always; rifle / bow with a 4x or 8x scope picked up
 const scopeOverlay = () => P.scoped && (G.weapon.scope || (G.scope | 0) >= 4);
 function scopeFov() {
-  const w = G.weapon, sc = G.scope | 0;
-  if (!P.scoped) return w.bow && P.draw > 0 ? 75 - 7 * P.draw : 75;
-  if (w.scope) return sc >= 8 ? 75 / 8 : 20;
-  return sc ? 75 / sc : (w.bow ? 60 : 52);
+  const w = G.weapon, sc = G.scope | 0, k = baseFov / 75;
+  if (!P.scoped) return (w.bow && P.draw > 0 ? 75 - 7 * P.draw : 75) * k;
+  if (w.scope) return (sc >= 8 ? 75 / 8 : 20) * k;
+  return (sc ? 75 / sc : (w.bow ? 60 : 52)) * k;
 }
 // 弓箭: hold fire to draw, release to loose
 function bowTick(dt) {
@@ -541,8 +566,8 @@ function updatePlayer(dt) {
   if (Math.abs(camera.fov - wantFov) > 0.1) { camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 18); camera.updateProjectionMatrix(); }
   // reload
   if (G.reloading && G.now >= G.reloadEnd) {
-    const a = G.ammo[G.weapon.id], need = G.weapon.mag - a.mag, take = Math.min(need, a.reserve);
-    a.mag += take; a.reserve -= take; G.reloading = false;
+    const a = G.ammo[G.weapon.id], need = G.weapon.mag - a.mag, take = Math.max(0, Math.min(need, a.reserve));
+    a.mag += take; a.reserve = Math.max(0, a.reserve - take); G.reloading = false;
   }
   // shoot
   if (!P.firing) P.fireLatch = false;
@@ -669,6 +694,7 @@ addEventListener('wheel', (e) => { if (G.state === 'playing' && !isTouch) cycleW
 const touchLayer = $('touch'), joyBase = $('joyBase'), joyKnob = $('joyKnob');
 const T = new Map();
 function btnDown(btn, el) {
+  if (hudEdit) return;
   el?.classList.add('pressed');
   if (btn === 'fire') P.firing = true;
   else if (btn === 'jump') P.jumpQ = true;
@@ -684,33 +710,42 @@ function btnDown(btn, el) {
   else if (btn === 'down') P.liftDown = true;
 }
 touchLayer.addEventListener('touchstart', (e) => {
+  if (hudEdit || isUI(e.target)) return;
   e.preventDefault(); unlockAudio();
   if (G.state !== 'playing') return;
+  const [W, H] = viewSize();
   for (const t of e.changedTouches) {
+    const p = gameXY(t.clientX, t.clientY);
     const el = t.target.closest && t.target.closest('[data-btn]');
-    if (el) { const btn = el.dataset.btn; T.set(t.identifier, { type: 'btn', btn, el, x: t.clientX, y: t.clientY }); btnDown(btn, el); continue; }
-    if (t.clientX < innerWidth * 0.4) {
-      T.set(t.identifier, { type: 'joy', ox: t.clientX, oy: t.clientY }); P.runLock = false; P.sprint = false; joyBase.classList.remove('run', 'lock');
-      joyBase.style.left = t.clientX + 'px'; joyBase.style.top = t.clientY + 'px'; joyBase.classList.remove('hidden'); joyKnob.style.transform = '';
-    } else T.set(t.identifier, { type: 'look', x: t.clientX, y: t.clientY });
+    if (el) { const btn = el.dataset.btn; T.set(t.identifier, { type: 'btn', btn, el, x: p.x, y: p.y }); btnDown(btn, el); continue; }
+    if (p.x < W * 0.4) {
+      let ox = p.x, oy = p.y; const L = HUDL.joyBase;
+      if (L) { ox = L.x / 100 * W; oy = L.y / 100 * H; }
+      else { joyBase.style.left = p.x + 'px'; joyBase.style.top = p.y + 'px'; }
+      T.set(t.identifier, { type: 'joy', ox, oy }); P.runLock = false; P.sprint = false; joyBase.classList.remove('run', 'lock');
+      joyBase.classList.remove('hidden'); joyKnob.style.transform = '';
+    } else T.set(t.identifier, { type: 'look', x: p.x, y: p.y });
   }
 }, { passive: false });
 touchLayer.addEventListener('touchmove', (e) => {
+  if (hudEdit || isUI(e.target)) return;
   e.preventDefault();
   for (const t of e.changedTouches) {
     const s = T.get(t.identifier); if (!s) continue;
+    const p = gameXY(t.clientX, t.clientY);
     if (s.type === 'joy') {
-      let dx = t.clientX - s.ox, dy = t.clientY - s.oy; const d = Math.hypot(dx, dy), R = 50;
+      let dx = p.x - s.ox, dy = p.y - s.oy; const d = Math.hypot(dx, dy), R = 50;
       // long pull upward past the ring = run mode; release there = keep running
       P.sprint = dy < -R * 1.7 && Math.abs(dx) < -dy * 0.6; joyBase.classList.toggle('run', P.sprint);
       if (d > R) { dx = dx / d * R; dy = dy / d * R; }
       P.joyX = dx / R; P.joyY = dy / R; joyKnob.style.transform = `translate(${dx}px,${dy}px)`;
     } else if (s.type === 'look' || (s.type === 'btn' && s.btn === 'fire')) {
-      P.lookX += t.clientX - s.x; P.lookY += t.clientY - s.y; s.x = t.clientX; s.y = t.clientY;
+      P.lookX += p.x - s.x; P.lookY += p.y - s.y; s.x = p.x; s.y = p.y;
     }
   }
 }, { passive: false });
 function touchEnd(e) {
+  if (hudEdit) return;
   for (const t of e.changedTouches) {
     const s = T.get(t.identifier); if (!s) continue; T.delete(t.identifier);
     if (s.type === 'joy') { P.joyX = P.joyY = 0; if (P.sprint) { P.runLock = true; HUD.centerMsg && HUD.centerMsg('自动奔跑中，碰摇杆取消', 1200); } P.sprint = false; joyBase.classList.remove('run'); joyBase.classList.add('hidden'); }
@@ -729,11 +764,23 @@ document.querySelectorAll('#lobby .seg').forEach(seg => seg.addEventListener('cl
   if (seg.dataset.k === 'mode') document.getElementById('lobby').classList.toggle('brMode', v === 'br');
 }));
 $('btnStart').addEventListener('click', () => { unlockAudio(); startMatch({ ...lobbyOpts }); });
+let lastFullTap = 0;
 async function goFull() {
-  try { if (!document.fullscreenElement) await (document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }) || document.documentElement.webkitRequestFullscreen?.()); } catch (e) {}
-  try { await screen.orientation?.lock?.('landscape'); } catch (e) { if (innerHeight > innerWidth) HUD.centerMsg('请手动将手机横过来', 1800); }
+  if (forceLandOn) { setForceLand(false); return; }
+  let ok = false;
+  try {
+    if (!isFull()) {
+      const rf = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+      if (rf) { await Promise.race([rf.call(document.documentElement, { navigationUI: 'hide' }), new Promise((_, rj) => setTimeout(rj, 900))]); ok = isFull(); }
+    } else ok = true;
+  } catch (e) {}
+  let locked = false;
+  try { if (screen.orientation?.lock) { await Promise.race([screen.orientation.lock('landscape'), new Promise((_, rj) => setTimeout(rj, 900))]); locked = true; } } catch (e) {}
+  if (!locked && innerWidth > innerHeight) locked = true;
+  if (!ok || (!locked && isTouch)) setForceLand(true);
 }
-$('btnFull').addEventListener('click', goFull); $('btnFull2').addEventListener('click', goFull); $('tFull').addEventListener('click', goFull);
+function fullTap() { const n = performance.now(); if (n - lastFullTap < 400) return; lastFullTap = n; goFull(); }
+for (const id of ['btnFull', 'btnFull2', 'tFull', 'lFull']) { const b = $(id); if (b) { b.addEventListener('pointerup', fullTap); b.addEventListener('click', fullTap); } }
 function showScoreboard(on) {
   $('sbPanel').innerHTML = (G.mode === 'br' ? brBoardHTML(G, '战绩') : HUD.scoreboardHTML(G, '战绩')) + '<button class="close" id="sbClose">关闭</button>';
   $('scoreboard').classList.toggle('hidden', !on);
@@ -799,6 +846,108 @@ document.addEventListener('pointerdown', (e) => {
   if ($('bagPanel').classList.contains('hidden') || e.target.closest?.('[data-btn="bag"]')) return;
   if (!e.target.closest?.('.bagCard')) closeBag();
 }, true);
+// ---------------- HUD custom layout ----------------
+let hudSel = null, hudDrag = null, hudReturnSettings = false;
+function hudControls() { return [...document.querySelectorAll('#touch .tb, #touch #joyBase')].filter(e => !['bCar', 'bUp', 'bDown', 'bEject'].includes(e.id)); }
+function normControl(el) {
+  const cs = getComputedStyle(el), l = parseFloat(cs.left), t = parseFloat(cs.top);
+  el.style.left = (isFinite(l) ? l : 0) + 'px'; el.style.top = (isFinite(t) ? t : 0) + 'px';
+  el.style.right = ''; el.style.bottom = '';
+}
+function normalizeAll() {
+  const [W, H] = viewSize();
+  for (const el of hudControls()) {
+    if (el.id === 'joyBase' && !HUDL.joyBase && !el.style.left) { el.style.left = (W * 0.18) + 'px'; el.style.top = (H * 0.72) + 'px'; }
+    normControl(el);
+  }
+}
+function applyHudLayout() {
+  const [W, H] = viewSize();
+  for (const el of hudControls()) {
+    const L = HUDL[el.id]; if (!L) continue;
+    el.style.left = (L.x / 100 * W) + 'px'; el.style.top = (L.y / 100 * H) + 'px';
+    el.style.right = ''; el.style.bottom = '';
+    el.style.transform = 'scale(' + L.scale + ')';
+    el.style.opacity = L.opacity;
+  }
+}
+function updateHudEditSel() {
+  for (const el of hudControls()) el.classList.toggle('sel', el === hudSel);
+  const on = !!hudSel; $('hudScale').disabled = $('hudOpacity').disabled = !on;
+  let sc = 1, op = hudSel?.id === 'joyBase' ? 0.55 : 1;
+  if (on) {
+    const m = hudSel.style.transform.match(/scale\(([\d.]+)\)/); sc = m ? +m[1] : 1;
+    op = hudSel.style.opacity ? +hudSel.style.opacity : +getComputedStyle(hudSel).opacity;
+  }
+  $('hudScale').value = Math.round(sc * 100); $('hudOpacity').value = Math.round(op * 100);
+  $('hudScaleV').textContent = $('hudScale').value + '%'; $('hudOpacityV').textContent = $('hudOpacity').value + '%';
+}
+function enterHudEdit() {
+  if (hudEdit) return;
+  hudEdit = true; hudSel = null; hudDrag = null;
+  hudReturnSettings = !$('settings').classList.contains('hidden');
+  $('settings').classList.add('hidden');
+  document.body.classList.add('hudEdit');
+  $('touch').classList.remove('hidden');
+  normalizeAll();
+  $('hudEditBar').classList.remove('hidden');
+  updateHudEditSel();
+}
+function exitHudEdit(saved) {
+  hudEdit = false; hudDrag = null; hudSel = null;
+  document.body.classList.remove('hudEdit');
+  $('hudEditBar').classList.add('hidden');
+  for (const el of hudControls()) el.classList.remove('sel', 'pressed');
+  if (saved) applyHudLayout();
+  else {
+    for (const el of hudControls()) { el.style.left = el.style.top = el.style.right = el.style.bottom = el.style.transform = el.style.opacity = ''; }
+    applyHudLayout();
+  }
+  if (G.state !== 'playing') $('touch').classList.add('hidden');
+  else $('touch').classList.toggle('hidden', !isTouch);
+  if (hudReturnSettings) { $('settings').classList.remove('hidden'); hudReturnSettings = false; }
+}
+function resetHudLayout() {
+  HUDL = {}; try { localStorage.removeItem('party_hud_layout'); } catch (e) {}
+  for (const el of hudControls()) { el.style.left = el.style.top = el.style.right = el.style.bottom = el.style.transform = el.style.opacity = ''; }
+  hudSel = null; normalizeAll(); updateHudEditSel();
+}
+function saveHudLayout() {
+  const [W, H] = viewSize(), out = {};
+  for (const el of hudControls()) {
+    const l = parseFloat(el.style.left), t = parseFloat(el.style.top); if (!isFinite(l) || !isFinite(t)) continue;
+    const m = el.style.transform.match(/scale\(([\d.]+)\)/); const sc = m ? +m[1] : 1;
+    const op = el.style.opacity ? +el.style.opacity : (el.id === 'joyBase' ? 0.55 : 1);
+    out[el.id] = { x: +(l / W * 100).toFixed(2), y: +(t / H * 100).toFixed(2), scale: sc, opacity: op };
+  }
+  HUDL = out; try { localStorage.setItem('party_hud_layout', JSON.stringify(out)); } catch (e) {}
+  exitHudEdit(true);
+}
+touchLayer.addEventListener('pointerdown', (e) => {
+  if (!hudEdit) return;
+  e.preventDefault();
+  const el = e.target.closest?.('.tb, #joyBase');
+  if (!el) { hudSel = null; updateHudEditSel(); return; }
+  hudSel = el; updateHudEditSel();
+  const p = gameXY(e.clientX, e.clientY);
+  hudDrag = { el, joy: el.id === 'joyBase', sx: p.x, sy: p.y, l: parseFloat(el.style.left) || 0, t: parseFloat(el.style.top) || 0 };
+  el.setPointerCapture?.(e.pointerId);
+}, { passive: false });
+touchLayer.addEventListener('pointermove', (e) => {
+  if (!hudEdit || !hudDrag) return;
+  e.preventDefault();
+  const p = gameXY(e.clientX, e.clientY), d = hudDrag;
+  if (d.joy) { d.el.style.left = p.x + 'px'; d.el.style.top = p.y + 'px'; }
+  else { d.el.style.left = (d.l + p.x - d.sx) + 'px'; d.el.style.top = (d.t + p.y - d.sy) + 'px'; }
+}, { passive: false });
+const endHudDrag = (e) => { if (!hudEdit || !hudDrag) return; hudDrag.el.releasePointerCapture?.(e.pointerId); hudDrag = null; };
+touchLayer.addEventListener('pointerup', endHudDrag); touchLayer.addEventListener('pointercancel', endHudDrag);
+$('btnHudEdit').addEventListener('click', enterHudEdit);
+$('hudScale').addEventListener('input', () => { if (!hudSel) return; const v = +$('hudScale').value; hudSel.style.transform = `scale(${v / 100})`; $('hudScaleV').textContent = v + '%'; });
+$('hudOpacity').addEventListener('input', () => { if (!hudSel) return; const v = +$('hudOpacity').value; hudSel.style.opacity = v / 100; $('hudOpacityV').textContent = v + '%'; });
+$('hudReset').addEventListener('click', resetHudLayout);
+$('hudCancel').addEventListener('click', () => exitHudEdit(false));
+$('hudSave').addEventListener('click', saveHudLayout);
 // settings dialog
 function syncSettingsUI() {
   document.querySelectorAll('#settings .seg').forEach(seg => seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', String(S[seg.dataset.s]) === b.dataset.v)));
@@ -822,7 +971,7 @@ async function exitFull() {
   try { screen.orientation?.unlock?.(); } catch (e) {}
   try { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.webkitFullscreenElement) await document.webkitExitFullscreen?.(); } catch (e) {}
 }
-function syncFullBtns() { const f = isFull(); $('tExit').classList.toggle('hidden', !f); $('tFull').classList.toggle('hidden', f); $('btnExitFull').classList.toggle('hidden', !f); }
+function syncFullBtns() { const f = isFull(); $('tExit').classList.toggle('hidden', !f); $('tFull').classList.toggle('hidden', f && !forceLandOn); $('btnExitFull').classList.toggle('hidden', !f); }
 let wasFull = false;
 function onFullChange() {
   const f = isFull(); syncFullBtns();
@@ -831,6 +980,7 @@ function onFullChange() {
 }
 document.addEventListener('fullscreenchange', onFullChange); document.addEventListener('webkitfullscreenchange', onFullChange);
 $('tExit').addEventListener('click', () => { exitFull(); openSettings(); });
+$('lExit').addEventListener('click', async () => { await exitFull(); if (forceLandOn) setForceLand(false); else HUD.centerMsg('已恢复竖屏', 1000); syncFullBtns(); });
 $('btnExitFull').addEventListener('click', () => { exitFull(); $('btnExitFull').classList.add('hidden'); });
 $('btnSettings').addEventListener('click', openSettings); $('tSet').addEventListener('click', openSettings);
 $('setClose').addEventListener('click', () => { G.paused = false; $('settings').classList.add('hidden'); });
@@ -890,3 +1040,4 @@ function loop(ts) {
   if (G.player?.alive && !scopeOverlay() && !thirdPerson() && G.state === 'playing') { renderer.clearDepth(); renderer.render(vmScene, vmCamera); }
 }
 requestAnimationFrame(loop);
+syncFullBtns();

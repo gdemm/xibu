@@ -22,7 +22,7 @@ export function updateHud(G) {
   $('hpFill').style.background = p.hp > 50 ? '#4cd17a' : p.hp > 25 ? '#f2b33d' : '#ff4b3e';
   $('wName').textContent = w.name + (G.reloading ? (w.bow ? ' · 搭箭中' : ' · 换弹中') : '');
   const a = G.ammo[w.id];
-  $('ammo').innerHTML = w.melee ? '∞' : `<b>${a.mag}</b><span> / ${a.reserve}</span>`;
+  $('ammo').innerHTML = w.melee ? '∞' : `<b>${a.mag}</b><span> / ${Math.max(0, a.reserve)}</span>`;
   $('ammo').classList.toggle('low', !w.melee && a.mag <= Math.ceil(w.mag * 0.25));
 }
 

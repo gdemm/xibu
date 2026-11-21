@@ -97,7 +97,7 @@ body.brIsland #bFire2{top:calc(136px + env(safe-area-inset-top))}
 #scope:before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:#000}
 #scope:after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:#000}
 #dmg{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 45%,rgba(220,0,0,.65));opacity:0;transition:opacity .25s}
-#centerMsg{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);font-size:22px;font-weight:900;text-shadow:0 2px 6px #000;opacity:0;transition:opacity .2s;white-space:nowrap}
+#centerMsg{position:fixed;z-index:25;pointer-events:none;left:50%;top:30%;transform:translate(-50%,-50%);font-size:22px;font-weight:900;text-shadow:0 2px 6px #000;opacity:0;transition:opacity .2s;white-space:nowrap}
 #centerMsg.show{opacity:1}
 #deathScr{position:absolute;inset:0;background:rgba(80,0,0,.35);display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:16px}
 #deathScr b{font-size:30px;margin-bottom:6px}
@@ -170,12 +170,35 @@ body.br #topbar .b,body.br #topbar .r{font-size:15px;min-width:0;white-space:now
 @keyframes rot{0%,20%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
 @media (orientation:portrait) and (pointer:coarse){#rotateHint{display:flex}}
 @media (max-height:380px){.brand h1{font-size:38px}.opts{gap:6px;padding:10px 14px}.seg button{padding:5px 4px}}
+#btnFull:active,#btnFull2:active,#tFull:active{transform:scale(.94)}
+#btnFull,#btnFull2,#tFull{transition:transform .08s}
+@media (orientation:portrait){
+ body.forceLand{width:100vh;height:100vw;transform:rotate(90deg) translateY(-100%);transform-origin:top left}
+ body.forceLand #rotateHint{display:none!important}
+}
+body.hudEdit #touch{display:block!important;z-index:41;background:rgba(0,0,0,.55)}
+body.hudEdit #touch .tb{display:flex!important;pointer-events:auto}
+body.hudEdit #touch #bCar,body.hudEdit #touch #bUp,body.hudEdit #touch #bDown,body.hudEdit #touch #bEject{display:none!important}
+body.hudEdit #joyBase{display:block!important;pointer-events:auto!important}
+body.hudEdit #touch .sel{outline:3px dashed #ffd45c;outline-offset:3px}
+#hudEditBar{position:fixed;left:50%;bottom:calc(10px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:46;display:flex;flex-direction:column;gap:6px;background:rgba(19,37,50,.94);border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:8px 12px;min-width:min(360px,92vw)}
+#hudEditBar .heRow{display:flex;align-items:center;gap:8px;font-size:13px}
+#hudEditBar .heRow label{width:48px;color:#9fb6c6;flex:none}
+#hudEditBar .heRow input{flex:1}
+#hudEditBar .heRow span{width:44px;text-align:right;font-weight:700}
+#hudEditBar .heBtns{display:flex;gap:8px}
+#hudEditBar .heBtns button{flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1);color:#fff;font-weight:700}
+#hudEditBar #hudSave{background:#ffb347;color:#222;border:none}
+#lobbyTop{position:absolute;z-index:30;right:calc(10px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));display:flex;gap:8px}
+#lobbyTop button{width:44px;height:44px;border-radius:11px;border:2px solid #1a1022;background:#ffffffd8;color:#1a1022;font-size:20px;font-weight:900;display:flex;align-items:center;justify-content:center;padding:0}
+#lobbyTop button:active{transform:scale(.92)}
+#lExit{background:#ff5a5a!important;color:#fff!important;font-size:24px!important}
 </style>
 </head>
 <body>
 <canvas id="gl"></canvas>
 
-<div id="lobby" class="brMode">
+<div id="lobby" class="brMode"><div id="lobbyTop"><button id="lFull" title="横屏/全屏">⤢</button><button id="lExit" title="退出横屏/全屏">✕</button></div>
   <div class="bgSea"></div><div class="bgShip"></div>
   <div class="lobbyCard">
     <div class="brand">
@@ -210,13 +233,13 @@ body.br #topbar .b,body.br #topbar .r{font-size:15px;min-width:0;white-space:now
   <div id="hitmark"></div>
   <div id="bowBar"><i></i></div>
   <div id="dmg"></div>
-  <div id="centerMsg"></div>
   <div id="gear"><span id="gArm" class="lv0"><svg viewBox="0 0 24 24"><path d="M7 3l2 2h6l2-2 4 3-2 5h-1v10H6V11H5L3 6z"/></svg><b>0</b></span><span id="gHelm" class="lv0"><svg viewBox="0 0 24 24"><path d="M3 15a9 9 0 0118 0v2H3zM2 17h20v2H2z"/></svg><b>0</b></span><span id="gBag" class="lv0"><svg viewBox="0 0 24 24"><path d="M8 5V3h8v2h3a2 2 0 012 2v13a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h3zm2 0h4V4h-4v1zM6 9v2h12V9H6zm0 4v2h12v-2H6z"/></svg><b>-</b></span><span id="gScope" class="lv0"><svg viewBox="0 0 24 24"><path d="M1 10h4v4H1zM5 8h13v8H5zM18 7h5v10h-5zM9 4h4v4H9z"/></svg><b>-</b></span></div>
   <div id="hpBox"><span class="plus">✚</span><span id="hpNum">100</span><div id="hpBar"><div id="hpFill"></div></div></div>
   <div id="ammoBox"><div id="wName">步枪</div><div id="ammo"><b>30</b><span> / 90</span></div></div>
   <div id="speedo"></div><div id="carHint" class="hidden"></div>
   <div id="deathScr" class="hidden"><b>你被击败了</b><span id="deathBy"></span><span id="respawnIn"></span></div>
 </div>
+<div id="centerMsg"></div>
 
 <div id="touch" class="hidden">
   <div id="joyBase" class="hidden"><div id="joyKnob"></div></div>
@@ -249,6 +272,7 @@ body.br #topbar .b,body.br #topbar .r{font-size:15px;min-width:0;white-space:now
   <div class="row"><label>灵敏度</label><input type="range" id="sens" min="0.3" max="2.5" step="0.1"><span id="sensV" style="width:32px;text-align:right">1.0</span></div>
   <div class="row"><label>显示帧率</label><div class="seg" data-s="showFps"><button data-v="0">关</button><button data-v="1">开</button></div></div>
   <div class="tip" id="setTip">画质更改在下一局完全生效（分辨率立即生效）。</div>
+  <button class="ghost" id="btnHudEdit" style="width:100%;margin-bottom:8px">自定义按键</button>
   <button class="close" id="setClose">确定</button>
   <button class="close hidden" id="btnExitFull" style="background:#c0563a;color:#fff">退出全屏</button>
   <button class="close hidden" id="btnQuit" style="background:#46535d;color:#fff">返回主页</button>
@@ -259,6 +283,11 @@ body.br #topbar .b,body.br #topbar .r{font-size:15px;min-width:0;white-space:now
   <div class="endBtns"><button id="btnAgain" style="background:#ffb347">再来一局</button><button id="btnLobby" style="background:#46535d;color:#fff">返回大厅</button></div></div></div>
 <div id="fpsMeter" class="hidden" style="position:fixed;z-index:8;left:8px;top:62px;font:11px monospace;color:#9f9;text-shadow:0 1px 1px #000"></div>
 <div id="rotateHint"><div class="ph"></div><div>请将手机横屏游玩</div><button class="ghost" id="btnFull2" style="flex:none;padding:10px 24px">横屏/全屏</button></div>
+<div id="hudEditBar" class="hidden">
+  <div class="heRow"><label>大小</label><input type="range" id="hudScale" min="60" max="160" step="1" value="100"><span id="hudScaleV">100%</span></div>
+  <div class="heRow"><label>透明度</label><input type="range" id="hudOpacity" min="30" max="100" step="1" value="100"><span id="hudOpacityV">100%</span></div>
+  <div class="heBtns"><button id="hudReset">重置</button><button id="hudCancel">取消</button><button id="hudSave">保存</button></div>
+</div>
 
 <script type="module" src="./js/main.js"></script>
 </body>

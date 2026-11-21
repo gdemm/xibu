@@ -260,10 +260,10 @@ function take(G, e, l, h) {
     got(); h.sfx.reload?.(); h.HUD.centerMsg('拾取 ' + def.name + ' · 已放入背包', 900); return;
   }
   got();
-  if (k === 'ammo') { for (const id of G.owned) if (!W[id].melee) G.ammo[id].reserve += W[id].pick || W[id].mag * 2; }
+  if (k === 'ammo') { for (const id of G.owned) if (!W[id].melee) G.ammo[id].reserve = Math.max(0, G.ammo[id].reserve + (W[id].pick || W[id].mag * 2)); }
   else {
     const first = !G.owned.has(k); G.owned.add(k);
-    G.ammo[k].reserve += first ? W[k].reserve / 2 : W[k].mag * 2;
+    G.ammo[k].reserve = Math.max(0, G.ammo[k].reserve + (first ? W[k].reserve / 2 : W[k].mag * 2));
     if (first) { G.ammo[k].mag = W[k].mag; h.setWeapon(k); }
   }
   h.sfx.reload?.(); h.HUD.centerMsg('拾取 ' + def.name, 900);
