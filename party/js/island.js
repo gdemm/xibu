@@ -1,6 +1,7 @@
 // 港口岛 - large battle-royale map: a 280 x 280 m island with a container port, warehouses, a village,
 // rock outcrops and woods, a pier with the cargo ship hull as backdrop. Same interface as buildMap().
 import * as THREE from 'three';
+import { decorateIsland } from './islanddeco.js';
 
 const HALF = 140; // island half size (playable)
 export const ISLAND = { minX: -HALF, maxX: HALF, minZ: -HALF, maxZ: HALF };
@@ -33,7 +34,7 @@ export function buildIsland(scene, quality) {
   const T = {
     sand: canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#f2dc9e'; g.fillRect(0, 0, w, h); noise(g, w, h, 0.15, 1500); }, 60, 60),
     grass: canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#74c94e'; g.fillRect(0, 0, w, h); noise(g, w, h, 0.08, 900); noise(g, w, h, 0.18, 700, '200,240,120'); }, 50, 50),
-    asphalt: canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#6c7080'; g.fillRect(0, 0, w, h); noise(g, w, h, 0.2, 1800); g.fillStyle = 'rgba(230,200,60,.8)'; g.fillRect(0, 60, w, 5); }, 1, 1),
+    asphalt: canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#6c7080'; g.fillRect(0, 0, w, h); noise(g, w, h, 0.2, 1800); }, 1, 1),   // lane paint is geometry now (islanddeco.js)
     cont: canvasTex(128, 64, (g, w, h) => { g.fillStyle = '#d8d8d8'; g.fillRect(0, 0, w, h); for (let x = 0; x < w; x += 8) { g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(x, 0, 3, h); } g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(0, 0, w, 3); g.fillRect(0, h - 3, w, 3); noise(g, w, h, 0.15, 400); }),
     wall: canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#fff1d8'; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 16) { g.fillStyle = 'rgba(0,0,0,.08)'; g.fillRect(0, y, w, 2); } noise(g, w, h, 0.12, 700); }, 2, 1),
     metal: canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#b9d4e6'; g.fillRect(0, 0, w, h); for (let x = 0; x < w; x += 12) { g.fillStyle = 'rgba(0,0,0,.15)'; g.fillRect(x, 0, 4, h); } noise(g, w, h, 0.1, 500); }, 3, 1),
@@ -69,7 +70,8 @@ export function buildIsland(scene, quality) {
   // edge: low sea wall keeps players on the island (bullets pass over)
   for (const s of [-1, 1]) { solid(-HALF - 12, 0, s * (HALF + 11) - 1, HALF + 12, 1.1, s * (HALF + 11) + 1, MAT.concrete); solid(s * (HALF + 11) - 1, 0, -HALF - 12, s * (HALF + 11) + 1, 1.1, HALF + 12, MAT.concrete); }
   // roads (decor, minimap)
-  const road = (x0, z0, x1, z1) => { const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(-Math.PI / 2); const t = T.asphalt.clone(); t.needsUpdate = true; t.repeat.set(Math.max(1, (x1 - x0) / 8), Math.max(1, (z1 - z0) / 8)); if (z1 - z0 > x1 - x0) { t.rotation = Math.PI / 2; t.repeat.set(Math.max(1, (z1 - z0) / 8), Math.max(1, (x1 - x0) / 8)); } const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: t })); m.material.polygonOffset = true; m.material.polygonOffsetFactor = -2; m.material.polygonOffsetUnits = -4; m.position.set((x0 + x1) / 2, 0.07, (z0 + z1) / 2); scene.add(m); minimapRects.push({ x0, z0, x1, z1, c: '#55585c' }); };
+  const ROADS = [], BLD = [], TREES = [], FENCES = [];   // recorded for the decorative pass (islanddeco.js)
+  const road = (x0, z0, x1, z1) => { ROADS.push([x0, z0, x1, z1]); const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(-Math.PI / 2); const t = T.asphalt.clone(); t.needsUpdate = true; t.repeat.set(Math.max(1, (x1 - x0) / 8), Math.max(1, (z1 - z0) / 8)); if (z1 - z0 > x1 - x0) { t.rotation = Math.PI / 2; t.repeat.set(Math.max(1, (z1 - z0) / 8), Math.max(1, (x1 - x0) / 8)); } const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: t })); m.material.polygonOffset = true; m.material.polygonOffsetFactor = -2; m.material.polygonOffsetUnits = -4; m.position.set((x0 + x1) / 2, 0.07, (z0 + z1) / 2); scene.add(m); minimapRects.push({ x0, z0, x1, z1, c: '#55585c' }); };
   road(-128, -4, 128, 4); road(-4, -128, 4, 128); road(30, -100, 36, -4); road(-100, 40, -4, 46);
 
   // ---------- port (south-east): container yard + cranes + pier ----------
@@ -102,6 +104,7 @@ export function buildIsland(scene, quality) {
     wallX(z0, opts.n || [cx]); wallX(z1, opts.s || [cx]); wallZ(x0, opts.w || []); wallZ(x1, opts.e || []);
     solid(x0 - 0.3, h, z0 - 0.3, x1 + 0.3, h + 0.4, z1 + 0.3, opts.roof || MAT.roof);
     minimapRects.push({ x0, z0, x1, z1, c: opts.mm || '#b9b0a2' });
+    BLD.push({ x0, x1, z0, z1, h, t, door, metal: mat === MAT.metal, n: opts.n || [cx], s: opts.s || [cx], w: opts.w || [], e: opts.e || [] });
     // a few crates inside for cover
     for (let i = 0; i < (opts.crates ?? 2); i++) { const px = rr(x0 + 2, x1 - 2), pz = rr(z0 + 2, z1 - 2); if (Math.abs(px - cx) < 2) continue; solid(px - 0.6, 0, pz - 0.6, px + 0.6, 1.2, pz + 0.6, MAT.crate); }
     G_DOORS.push(...(opts.n || [cx]).map(x => new THREE.Vector3(x, 0, z0)), ...(opts.s || [cx]).map(x => new THREE.Vector3(x, 0, z1)), ...(opts.w || []).map(z => new THREE.Vector3(x0, 0, z)), ...(opts.e || []).map(z => new THREE.Vector3(x1, 0, z)));
@@ -121,14 +124,14 @@ export function buildIsland(scene, quality) {
   building(-100, 90, 12, 10, 3.4, { n: [-100], crates: 1 });
   building(-20, 100, 12, 10, 3.4, { w: [100], crates: 1 });
   // fences around the village
-  for (let x = -122; x < -36; x += 4) if (rand() < 0.6) solid(x, 0, -122, x + 3.6, 1.1, -121.8, MAT.fence);
+  for (let x = -122; x < -36; x += 4) if (rand() < 0.6) { solid(x, 0, -122, x + 3.6, 1.1, -121.8, null); FENCES.push([x, -122, x + 3.6, -121.8]); }   // drawn as pickets
 
   // ---------- rocks & woods ----------
   const rockGeo = new THREE.DodecahedronGeometry(1, 0);
   const rockAt = (x, z, s) => { if (blocked(x - s, z - s, x + s, z + s, 1)) return; solid(x - s * 0.8, 0, z - s * 0.8, x + s * 0.8, s * 1.3, z + s * 0.8, null, '#7d7a74'); const g = rockGeo.clone(); g.scale(s, s * 1.4, s); deco(g, MAT.rock, x, s * 0.5, z, rand() * 6); };
   for (let i = 0; i < 18; i++) { const cx = rr(-120, 120), cz = rr(-120, 120); if (Math.abs(cx) < 8 || Math.abs(cz) < 8) continue; for (let k = 0; k < 3; k++) rockAt(cx + rr(-5, 5), cz + rr(-5, 5), rr(1.2, 2.6)); }
-  const trunkGeo = new THREE.CylinderGeometry(0.25, 0.35, 3, 6), leafGeo = new THREE.ConeGeometry(2.2, 5, 7), leafGeo2 = new THREE.IcosahedronGeometry(2.2, 0);
-  const treeAt = (x, z) => { if (blocked(x - 0.5, z - 0.5, x + 0.5, z + 0.5, 1.5) || Math.abs(x) < 6 || Math.abs(z) < 6) return; solid(x - 0.35, 0, z - 0.35, x + 0.35, 6, z + 0.35, null); deco(trunkGeo, MAT.trunk, x, 1.5, z); if (rand() < 0.6) deco(leafGeo, MAT.leaf, x, 5.2, z); else deco(leafGeo2, MAT.leaf2, x, 4.4, z); minimapRects.push({ x0: x - 1, z0: z - 1, x1: x + 1, z1: z + 1, c: '#2f5a2c' }); };
+  const trunkGeo = new THREE.CylinderGeometry(0.25, 0.35, 3, 6);
+  const treeAt = (x, z) => { if (blocked(x - 0.5, z - 0.5, x + 0.5, z + 0.5, 1.5) || Math.abs(x) < 6 || Math.abs(z) < 6) return; solid(x - 0.35, 0, z - 0.35, x + 0.35, 6, z + 0.35, null); deco(trunkGeo, MAT.trunk, x, 1.5, z); TREES.push({ x, z, cone: rand() < 0.6 }); /* crowns drawn by islanddeco.js */ minimapRects.push({ x0: x - 1, z0: z - 1, x1: x + 1, z1: z + 1, c: '#2f5a2c' }); };
   // woods: south-west and north strip; scattered elsewhere
   for (let i = 0; i < 110; i++) treeAt(rr(-130, -20), rr(20, 130));
   for (let i = 0; i < 40; i++) treeAt(rr(-30, 130), rr(-130, -100));
@@ -137,6 +140,7 @@ export function buildIsland(scene, quality) {
   for (let i = 0; i < 40; i++) { const x = rr(-125, 125), z = rr(-125, 125); if (blocked(x - 1, z - 1, x + 1, z + 1, 2) || Math.abs(x) < 6 || Math.abs(z) < 6) continue; solid(x - 0.7, 0, z - 0.7, x + 0.7, 1.4, z + 0.7, MAT.crate, '#8a6a40'); }
 
   for (const b of batches.values()) b.build(scene);
+  const decoStats = decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS, quality });
 
   // ---------- nav graph: 4 m grid + door / room nodes ----------
   const free = (x, z, r = 0.6) => { for (const b of solids) if (x + r > b.min.x && x - r < b.max.x && z + r > b.min.z && z - r < b.max.z && b.min.y < 1.6 && b.max.y > 0.3) return false; return Math.abs(x) <= HALF + 8 && Math.abs(z) <= HALF + 8; };
@@ -205,5 +209,5 @@ export function buildIsland(scene, quality) {
   const nearCache = new Map();
   function near(p) { const cx = Math.floor(p.x / CG), cz = Math.floor(p.z / CG), k = cx + ',' + cz; let a = nearCache.get(k); if (a) return a; const set = new Set(); for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) for (const i of cells.get((cx + ox) + ',' + (cz + oz)) || []) set.add(solids[i]); a = [...set]; nearCache.set(k, a); return a; }
   const spawns = { blue: [], red: [] };
-  return { solids, nodes, covers, spawns, minimapRects, findPath, nearestNode, rayWorld, hasLOS, update() {}, walkY: 0, bounds: ISLAND, kind: 'island', near };
+  return { solids, nodes, covers, spawns, minimapRects, findPath, nearestNode, rayWorld, hasLOS, update() {}, walkY: 0, bounds: ISLAND, kind: 'island', near, decoStats };
 }

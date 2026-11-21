@@ -80,6 +80,84 @@ function stance(root, clip, last, idle) {
   return new THREE.AnimationClip(clip.name, last ? 1 : clip.duration, tracks);
 }
 const _v = new THREE.Vector3();
+// ---------- detail pass: small original add-ons skinned to the shared rig (eye shine, blush, shoe soles, team armband, back emblem) ----------
+// Everything for one character is ONE extra SkinnedMesh (rigid-skinned, vertex colours) -> +1 draw call per character, ~400 tris.
+const FACE = new Set(['rogue', 'knight', 'barbarian', 'mage', 'rogue-hood']);      // painted-face heroes (skeletons have glowing eyes)
+const SOLES = new Set(['rogue', 'knight', 'barbarian', 'mage', 'rogue-hood', 'skel-warrior', 'skel-rogue']);
+// measure rest-pose surface points once per character (raycast the rest pose), in model (scene) space
+function measure(n, sc) {
+  let sk = null; sc.traverse(o => { if (o.isSkinnedMesh && !sk) sk = o; }); if (!sk) return null;
+  const bi = (name) => sk.skeleton.bones.findIndex(b => b.name === name);
+  const rc = new THREE.Raycaster(), head = sc.getObjectByName('head').matrixWorld, chest = sc.getObjectByName('chest').matrixWorld;
+  // cast from in front (+Z) toward the body at a point given in a bone's local frame; returns { p, n } in mesh space
+  const hit = (m, x, y, back = false) => {
+    const o = new THREE.Vector3(x, y, back ? -3 : 3).applyMatrix4(m), d = new THREE.Vector3(0, 0, back ? 1 : -1).transformDirection(m);
+    rc.set(o, d); const h = rc.intersectObject(sk, false)[0]; if (!h) return null;
+    const nn = h.face ? h.face.normal.clone() : new THREE.Vector3(0, 0, 1);
+    return { p: h.point.clone(), n: nn.transformDirection(sk.matrixWorld) };
+  };
+  const bbox = (names) => {          // mesh-space bounds of the vertices skinned to these bones
+    const ids = names.map(bi), J = sk.geometry.attributes.skinIndex, W = sk.geometry.attributes.skinWeight, b = new THREE.Box3();
+    for (let k = 0; k < J.count; k++) if (ids.includes(J.getX(k)) && W.getX(k) > 0.5) b.expandByPoint(sk.getVertexPosition(k, _v).applyMatrix4(sk.matrixWorld));
+    return b;
+  };
+  const S = { sk, bone: bi, feet: { l: bbox(['footl', 'toesl']), r: bbox(['footr', 'toesr']) }, arm: bbox(['upperarml']), backPin: hit(chest, 0, -0.12, true) };
+  const ua = sc.getObjectByName('upperarml'); S.armM = ua.matrixWorld.clone();
+  // the rig's bind pose differs from the GLB's rest pose: map a rest-pose point on bone i back into bind space
+  const ibm = sk.bindMatrix.clone().invert();
+  S.boneMats = sk.skeleton.bones.map((b, i) => ibm.clone().multiply(sk.skeleton.boneInverses[i].clone().invert()).multiply(b.matrixWorld.clone().invert()));
+  // arm radius around the bone axis (bone-local X/Z extent of its vertices)
+  { const ib = ua.matrixWorld.clone().invert(), J = sk.geometry.attributes.skinIndex, W = sk.geometry.attributes.skinWeight, id = bi('upperarml'); let r = 0, y0 = 1e9, y1 = -1e9;
+    for (let k = 0; k < J.count; k++) if (J.getX(k) === id && W.getX(k) > 0.5) { sk.getVertexPosition(k, _v).applyMatrix4(sk.matrixWorld).applyMatrix4(ib); r = Math.max(r, Math.hypot(_v.x, _v.z)); y0 = Math.min(y0, _v.y); y1 = Math.max(y1, _v.y); }
+    S.armR = r; S.armY = [y0, y1]; }
+  if (FACE.has(n)) {
+    S.eyes = [-1, 1].map(s => [hit(head, s * 0.195 - 0.022, 0.378), hit(head, s * 0.195 + 0.026, 0.333)]);
+    if (n !== 'barbarian') S.cheeks = [-1, 1].map(s => hit(head, s * 0.29, 0.245));
+  }
+  return S;
+}
+const EXTRA = {};
+function starGeo(R, r, t) {        // 5-point star lying in XZ, thickness t along +Y
+  const sh = new THREE.Shape();
+  for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 + Math.PI / 2, k = i % 2 ? r : R; const x = Math.cos(a) * k, y = Math.sin(a) * k; i ? sh.lineTo(x, y) : sh.moveTo(x, y); }
+  const g = new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false }); g.translate(0, 0, -t / 2); g.rotateX(-Math.PI / 2); return g;
+}
+const _qn = new THREE.Quaternion(), _zA = new THREE.Vector3(0, 0, 1);
+function extrasGeo(n, color) {
+  const key = n + ':' + color; if (EXTRA[key]) return EXTRA[key];
+  const S = T.chars[n].spots; if (!S) return null;
+  const B = new Builder(), bone = (b) => ({ bone: S.bone(b) }); B.boneMats = S.boneMats;
+  // a flattened blob sitting on the surface along its normal (half sunk in, so it never floats off curved faces)
+  const onSurf = (h, r, flat, sx, sy, col, b, sink = 0.45) => {
+    if (!h) return; _qn.setFromUnitVectors(_zA, h.n);
+    const p = h.p.clone().addScaledVector(h.n, -r * flat * sink);
+    B.add(new THREE.SphereGeometry(r, 10, 6), new THREE.Matrix4().compose(p, _qn, new THREE.Vector3(sx, sy, flat)), col, bone(b));
+  };
+  if (S.eyes) for (const [big, small] of S.eyes) { onSurf(big, 0.026, 0.45, 1, 1.1, 0xffffff, 'head', 0.2); onSurf(small, 0.013, 0.45, 1, 1, 0xffffff, 'head', 0.2); }
+  if (S.cheeks) for (const c of S.cheeks) onSurf(c, 0.062, 0.3, 1.25, 0.62, 0xf59a92, 'head', 0.55);
+  // shoe soles: a cream rubber rim under each boot, with a darker heel block
+  if (SOLES.has(n)) for (const [side, f] of [['l', S.feet.l], ['r', S.feet.r]]) {
+    if (f.isEmpty()) continue;
+    const w = f.max.x - f.min.x + 0.035, d = f.max.z - f.min.z + 0.04, cx = (f.min.x + f.max.x) / 2, cz = (f.min.z + f.max.z) / 2, y = f.min.y;
+    B.add(new THREE.CylinderGeometry(0.5, 0.5, 1, 14), M(cx, y + 0.028, cz + 0.005, 0, 0, 0, w, 0.055, d), 0xf1e6cf, bone('foot' + side));
+    B.add(new THREE.BoxGeometry(w * 0.86, 0.03, d * 0.28), M(cx, y + 0.016, f.min.z + d * 0.16), 0x5a4636, bone('foot' + side));
+  }
+  // left-arm team / party band with a white stripe
+  if (S.armR > 0) {
+    const r = S.armR + 0.012, yb = S.armY[0] + (S.armY[1] - S.armY[0]) * 0.55;
+    B.add(new THREE.CylinderGeometry(r, r, 0.085, 14, 1, true), new THREE.Matrix4().multiplyMatrices(S.armM, M(0, yb, 0)), color, bone('upperarml'));
+    B.add(new THREE.CylinderGeometry(r + 0.004, r + 0.004, 0.022, 14, 1, true), new THREE.Matrix4().multiplyMatrices(S.armM, M(0, yb, 0)), 0xffffff, bone('upperarml'));
+  }
+  // round party emblem on the back (what the third-person camera sees most): white rim, coloured disc, white star
+  if (S.backPin) {
+    const h = S.backPin, up = new THREE.Vector3(0, 1, 0); _qn.setFromUnitVectors(up, h.n);
+    const at = (geo, off, col) => B.add(geo, new THREE.Matrix4().compose(h.p.clone().addScaledVector(h.n, off), _qn, new THREE.Vector3(1, 1, 1)), col, bone('chest'));
+    at(new THREE.CylinderGeometry(0.15, 0.15, 0.05, 18), 0.0, 0xffffff); at(new THREE.CylinderGeometry(0.125, 0.125, 0.05, 18), 0.012, color);
+    at(starGeo(0.085, 0.036, 0.03), 0.035, 0xffffff);
+  }
+  const g = B.build(true); g.userData.tris = B.tris;
+  return (EXTRA[key] = g);
+}
 async function load() {
   const L = new GLTFLoader();
   const [anims, ...rest] = await Promise.all([L.loadAsync(BASE + 'anims.glb'), ...CHARS.map(n => L.loadAsync(BASE + n + '.glb')), ...BLASTERS.map(b => L.loadAsync(BASE + 'blaster-' + b + '.glb'))]);
@@ -100,7 +178,7 @@ async function load() {
       }
     });
     const head = sc.getObjectByName('head'), hp = new THREE.Vector3(); head.getWorldPosition(hp);
-    T.chars[n] = { scene: sc, headTop: headTop - hp.y, tris };
+    T.chars[n] = { scene: sc, headTop: headTop - hp.y, tris, spots: measure(n, sc) };
   });
   BLASTERS.forEach((b, i) => {
     const sc = rest[CHARS.length + i].scene;
@@ -215,6 +293,10 @@ export function createSoldier(skin = 'party', variant) {
     m.parent.add(ol); outlines.push(ol);
   }
   for (const m of rigid) { const ol = new THREE.Mesh(m.geometry, T.outlineRigid); m.add(ol); outlines.push(ol); }
+  // detail add-ons (eye shine, blush, soles, armband, back emblem) share the body's skeleton
+  const exGeo = extrasGeo(char, team ? TEAM_HAT[skin] : hatColor);
+  let extras = null;
+  if (exGeo && meshes[0]) { extras = new THREE.SkinnedMesh(exGeo, critterMaterial()); extras.bind(meshes[0].skeleton, meshes[0].bindMatrix); extras.boundingSphere = meshes[0].boundingSphere; meshes[0].parent.add(extras); }
   const bones = {}; model.traverse(o => { if (o.isBone) bones[o.name] = o; });
   // toy blaster in the right hand slot, barrel straight ahead in the holding pose
   const gunT = T.blasters[gunId];
@@ -249,7 +331,7 @@ export function createSoldier(skin = 'party', variant) {
   A.idle.time = Math.random() * T.clips.idle.duration;
 
   g.userData = {
-    skin, char, hat, hatColor, gun: gunId, root, model, bones, mixer, A, meshes, outlines, gunMesh: gun, bow, hatMesh, muzzle, blob, puffs,
+    skin, char, hat, hatColor, gun: gunId, root, model, bones, mixer, A, meshes, outlines, extras, gunMesh: gun, bow, hatMesh, muzzle, blob, puffs,
     mesh: meshes[0], phase: Math.random() * 6, moveK: 0, crouchK: 0, aimK: 0, fullK: 0, full: null, kick: 0, t: Math.random() * 10, pitch: 0, lo: false, acc: 0, relK: 0,
     tris: C.tris,
   };
@@ -260,6 +342,7 @@ export function soldierTris() { return T.ok ? T.chars[CHARS[0]].tris : BEAN.sold
 export function setSoldierLOD(g, lo) {
   const u = g.userData; if (!u.outlines || u.lo === lo) return;
   u.lo = lo; for (const o of u.outlines) o.visible = !lo;
+  if (u.extras) u.extras.visible = !lo;
 }
 
 const _q = new THREE.Quaternion(), _e = new THREE.Euler();

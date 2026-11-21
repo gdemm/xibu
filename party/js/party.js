@@ -10,6 +10,7 @@ function toToon(m) {
   let t = cache.get(m); if (t) return t;
   t = new THREE.MeshToonMaterial({ color: boost(m.color.clone()), map: m.map, gradientMap: toonRamp(), transparent: m.transparent, opacity: m.opacity, vertexColors: m.vertexColors, side: m.side });
   if (m.emissive) { t.emissive.copy(m.emissive); t.emissiveIntensity = m.emissiveIntensity; }
+  if (m.polygonOffset) { t.polygonOffset = true; t.polygonOffsetFactor = m.polygonOffsetFactor; t.polygonOffsetUnits = m.polygonOffsetUnits; }
   cache.set(m, t); return t;
 }
 export function toonify(root) {
