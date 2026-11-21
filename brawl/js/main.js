@@ -25,6 +25,11 @@ const podium = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 0.4, 40), new
 const podO = new THREE.Mesh(podium.geometry, new THREE.MeshBasicMaterial({ color: 0x1a1022, side: THREE.BackSide })); podO.scale.setScalar(1.04); podium.add(podO);
 let lobMesh = null, sel = localStorage.getItem('mdl_kind') || 'chef'; if (!CHARS[sel]) sel = 'chef';
 let opts = { n: 16, diff: 1, mode: localStorage.getItem('mdl_mode') || 'party' }; if (!['party', 'solo', 'duo'].includes(opts.mode)) opts.mode = 'party';
+const TROPHY_KEY = 'brawlTrophies';
+const TROPHY_SOLO = { 1: 10, 2: 8, 3: 7, 4: 6, 5: 4, 6: 2, 7: 2, 8: 1, 9: 0, 10: -1 };
+const TROPHY_DUO = { 1: 9, 2: 7, 3: 4, 4: 0, 5: -3 };
+const trophyTotal = () => +(localStorage.getItem(TROPHY_KEY) || 0);
+function updateTrophyTotal() { const el = $('trophyTotal'); if (el) el.textContent = '🏆 ' + trophyTotal(); }
 
 // ---------- sizes / rotation ----------
 let W = 1, Hh = 1;
@@ -73,10 +78,10 @@ function showSel() {
   if (lobMesh) lob.remove(lobMesh); lobMesh = makeBrawler(sel); lobMesh.scale.setScalar(1.15); lob.add(lobMesh);
 }
 for (const b of $('segN').children) b.onclick = () => { opts.n = +b.dataset.n; for (const x of $('segN').children) x.classList.toggle('on', x === b); };
-const MODE_SUB = { party: '派对吃鸡 · 最后一个站着的赢', solo: '经典单人 · 10人抢能量块', duo: '经典双人 · 队友在就能复活' };
+const MODE_SUB = { party: '派对吃鸡 · 最后一个站着的赢', solo: '经典单人 · 10人抢能量块 · 随机事件', duo: '经典双人 · 5队抢能量块 · 随机事件' };
 function showMode() { for (const x of $('segM').children) x.classList.toggle('on', x.dataset.m === opts.mode); $('rowN').classList.toggle('hidden', opts.mode !== 'party'); document.querySelector('.lbLeft .sub').textContent = MODE_SUB[opts.mode]; }
 for (const b of $('segM').children) b.onclick = () => { opts.mode = b.dataset.m; localStorage.setItem('mdl_mode', opts.mode); showMode(); };
-showMode();
+showMode(); updateTrophyTotal();
 for (const b of $('segD').children) b.onclick = () => { opts.diff = +b.dataset.d; for (const x of $('segD').children) x.classList.toggle('on', x === b); };
 buildCards(); showSel();
 
@@ -104,13 +109,21 @@ function startMatch() {
   camPos.set(G.plane.pos.x, 70, G.plane.pos.z + 40);
   H.msg('选好落点，点「跳伞」！', 2200);
 }
-function toLobby() { G.cleanup(); state = 'lobby'; paused = false; $('lobby').classList.remove('hidden'); $('hud').classList.add('hidden'); $('end').classList.add('hidden'); $('pause').classList.add('hidden'); document.body.classList.remove('air'); }
+function toLobby() { G.cleanup(); state = 'lobby'; paused = false; $('lobby').classList.remove('hidden'); $('hud').classList.add('hidden'); $('end').classList.add('hidden'); $('pause').classList.add('hidden'); document.body.classList.remove('air'); updateTrophyTotal(); }
 function showEnd(r) {
   if (state !== 'game') return; state = 'end';
   const of = G.duo ? ' / 5 队' : G.classic ? ' / 10' : '';
   $('endRank').textContent = r.place === 1 ? '🏆 第 1 名！' : `第 ${r.place} 名${of}`;
   const mk = G.duo && G.player.mate ? `，队友击败 ${G.player.mate.kills} 人` : '';
   $('endSub').textContent = r.place === 1 ? `${G.duo ? '双人组夺冠' : '大吉大利，今晚吃鸡'}！击败 ${r.kills} 人${mk}` : `击败 ${r.kills} 人${mk} · 再接再厉`;
+  const trophyEl = $('endTrophy');
+  if (G.classic) {
+    const d = ((G.duo ? TROPHY_DUO : TROPHY_SOLO)[r.place] ?? 0);
+    localStorage.setItem(TROPHY_KEY, trophyTotal() + d);
+    trophyEl.textContent = '奖杯 ' + (d >= 0 ? '+' : '') + d;
+    trophyEl.style.display = '';
+    updateTrophyTotal();
+  } else { trophyEl.textContent = ''; trophyEl.style.display = 'none'; }
   const list = G.ents.filter(e => !e.pet).sort((a, b) => (a.place || 0) - (b.place || 0) || (a.team - b.team) || (b.isPlayer - a.isPlayer));
   $('endList').innerHTML = list.map(e => `<div class="${e.isPlayer ? 'me' : G.duo && e.team === G.player.team ? 'mate' : ''}"><span>${e.place ? e.place + '.' : '存活'} ${e.name}${G.duo && e.team === G.player.team && !e.isPlayer ? '（队友）' : ''}</span><span><img class="eh" src="${PORT[e.kind]}">${CHARS[e.kind].name} · ${e.kills}杀</span></div>`).join('');
   $('end').classList.remove('hidden');
@@ -281,10 +294,12 @@ function updateHud(dt) {
   hudT -= dt; if (hudT > 0) return; hudT = 0.1;
   const p = G.player; $('alive').textContent = G.duo ? `剩余 ${G.teamsLeft()} 队` : '存活 ' + G.alive().length;
   const Z = G.zone; $('zoneT').textContent = G.state === 'count' ? '准备开战…' : Z.stage === 'final' ? '最终决战！' : Z.sq ? (Z.stage === 'wait' ? `毒雾将在 ${fmt(Z.t)} 后逼近` : `毒雾逼近中 ${fmt(Z.t)}`) : Z.stage === 'wait' ? `毒雾将在 ${fmt(Z.t)} 后扩散` : `毒雾扩散中 ${fmt(Z.t)}`;
-  $('gCube').textContent = '⚡' + p.cubes; $('gArmor').textContent = '甲' + p.armor; $('gArmor').className = 'lv' + p.armor; $('gHelm').textContent = '盔' + p.helmet; $('gHelm').className = 'lv' + p.helmet;
+  $('gCube').textContent = '⚡' + p.cubes; $('gArmor').style.display = $('gHelm').style.display = G.classic ? 'none' : ''; $('gArmor').textContent = '甲' + p.armor; $('gArmor').className = 'lv' + p.armor; $('gHelm').textContent = '盔' + p.helmet; $('gHelm').className = 'lv' + p.helmet;
   const sb = $('btnSup'); sb.classList.toggle('ready', p.superC >= 1); sb.style.setProperty('--p', Math.round(p.superC * 100) + '%'); const sp = sb.querySelector('.pct'); if (sp) sp.textContent = p.superC >= 1 ? '大招!' : Math.floor(p.superC * 100) + '%';
   const air = !!p.air && p.alive; document.body.classList.toggle('air', air); $('btnJump').classList.toggle('hidden', !(p.air === 'plane' || p.air === 'fall'));
-  $('hint').textContent = !p.alive && p.respawnT ? `${Math.max(0, Math.ceil(p.respawnT - G.now))} 秒后在队友身边复活` : p.air === 'plane' ? (G.plane.k > G.plane.k0 ? '点「跳伞」跳下飞机' : '飞机即将到达小岛…') : p.air === 'fall' ? '摇杆控制方向，可提前开伞' : p.air === 'chute' ? '滑翔中，选好落点' : (p.alive && G.outside(p) ? '⚠ 你在毒雾里！快跑回安全区' : '');
+  let hint = !p.alive && p.respawnT ? `${Math.max(0, Math.ceil(p.respawnT - G.now))} 秒后在队友身边复活` : p.air === 'plane' ? (G.plane.k > G.plane.k0 ? '点「跳伞」跳下飞机' : '飞机即将到达小岛…') : p.air === 'fall' ? '摇杆控制方向，可提前开伞' : p.air === 'chute' ? '滑翔中，选好落点' : (p.alive && G.outside(p) ? '⚠ 你在毒雾里！快跑回安全区' : '');
+  if (p.drinkT > G.now) hint = `⚡能量饮料 ${Math.ceil(p.drinkT - G.now)}s` + (hint ? ' · ' + hint : '');
+  $('hint').textContent = hint;
   drawMini();
 }
 

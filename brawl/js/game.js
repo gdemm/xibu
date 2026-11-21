@@ -17,11 +17,13 @@ const CPHASES = [
 const ARMOR_RED = [0, 0.12, 0.2, 0.28], HELM_RED = [0, 0.06, 0.1, 0.15];
 const PLANE_ALT = 44, PLANE_SPEED = 13, FALL_V = 13, CHUTE_V = 4.5, FALL_H = 10, CHUTE_H = 7, CHUTE_AT = 16;
 const BOT_DIFF = [{ err: 0.32, react: 0.55, cd: 0.9 }, { err: 0.18, react: 0.35, cd: 0.55 }, { err: 0.08, react: 0.2, cd: 0.3 }];
+const EVENT_NAMES = { meteor: '流星雨', drink: '能量饮料', mushroom: '治疗蘑菇', none: '无事件' };
 const v2 = (x, z) => ({ x, z });
 
 export function createGame(scene, FX, H) {
   // H: { killFeed(k,v,me), msg(text,ms), onEnd(), dmgNum(x,y,z,amt,col) }
-  const G = { scene, FX, ents: [], projs: [], lobs: [], items: [], storms: [], drops: [], now: 0, state: 'plane', diff: 1, aliveCount: 0 };
+  const G = { scene, FX, ents: [], projs: [], lobs: [], items: [], storms: [], drops: [], meteors: [], mushrooms: [], now: 0, state: 'plane', diff: 1, aliveCount: 0, event: 'none', eventNext: Infinity };
+  const atkMul = (e) => e.dmgMul * (e.drinkT > G.now ? 1.5 : 1);
 
   function setup(opts) {
     G.mode = opts.mode || 'party'; G.classic = G.mode !== 'party'; G.duo = G.mode === 'duo';
@@ -66,6 +68,12 @@ export function createGame(scene, FX, H) {
     G.zone = { sq: true, phase: -1, stage: 'wait', t: 0, c: new THREE.Vector2(0, 0), r: PH + 0.01, from: null, next: null, dps: 0 };
     nextPhase(); G.zone.t += 3;
     G.countT = 3; G.state = 'count'; G.aliveCount = n; G.boxTick = 0;
+    // random field event (25% none, otherwise one of three)
+    const er = Math.random(); G.event = er < 0.25 ? 'none' : er < 0.5 ? 'meteor' : er < 0.75 ? 'drink' : 'mushroom';
+    G.eventNext = G.event === 'meteor' ? 20 : G.event === 'mushroom' ? 15 : Infinity;
+    G.meteors.length = 0; G.mushrooms.length = 0;
+    if (G.event === 'drink') for (let i = 0; i < 6; i++) { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * PH * 0.85; spawnItem('drink', 0, Math.cos(a) * d, Math.sin(a) * d); }
+    H.msg('本局事件：' + EVENT_NAMES[G.event], 3000);
   }
 
   function makeEnt(kind, name, isPlayer, owner) {
@@ -79,7 +87,7 @@ export function createGame(scene, FX, H) {
       ammo: 3, superC: 0, lastDmgT: -9, lastAtkT: -9, alive: true, air: null, mesh, r: kind === PET.kind ? 0.85 : 0.6, team: owner ? owner.team : G.ents.length,
       kills: 0, place: 0, vel: new THREE.Vector3(), slowT: 0, revealT: 0, inBush: false, queue: [], action: null, moving: 0, owner: owner || null,
       bot: isPlayer ? null : { think: 0, goal: null, mode: 'loot', strafe: 1, strafeT: 0, nextShot: 0, stuckT: 0, lastPos: new THREE.Vector3(), wander: null, tgt: null, seen: 0 },
-      chute: null, dmgMul: 1,
+      chute: null, dmgMul: 1, drinkT: 0,
     };
     if (kind === PET.kind) { e.pet = true; e.life = 22; e.maxHp = e.hp = CHARS.granny.sup.hp; }
     G.ents.push(e); return e;
@@ -181,7 +189,7 @@ export function createGame(scene, FX, H) {
   }
   // ---------------- items ----------------
   function spawnItem(kind, lv, x, z) {
-    const m = outlined(FX.itemGeo[kind], kind === 'cube' || kind === 'med' ? vcMat() : new THREE.MeshToonMaterial({ color: FX.lvCol[lv], emissive: FX.lvCol[lv], emissiveIntensity: 0.25 }), 0.05);
+    const m = outlined(FX.itemGeo[kind], kind === 'cube' || kind === 'med' || kind === 'drink' ? vcMat() : new THREE.MeshToonMaterial({ color: FX.lvCol[lv], emissive: FX.lvCol[lv], emissiveIntensity: 0.25 }), 0.05);
     [x, z] = G.world.freeNear(x, z); m.position.set(x, 0.7, z); scene.add(m);
     G.items.push({ kind, lv, pos: m.position, mesh: m, t: Math.random() * 6, born: G.now });
   }
@@ -193,7 +201,8 @@ export function createGame(scene, FX, H) {
       else if (it.kind === 'armor' && it.lv > e.armor) { e.armor = it.lv; ok = true; }
       else if (it.kind === 'helmet' && it.lv > e.helmet) { e.helmet = it.lv; ok = true; }
       else if (it.kind === 'med' && e.hp < e.maxHp * 0.9) { e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.4); ok = true; FX.burst(e.pos.x, 1, e.pos.z, 0x5dff7a, 10, 3, 0.16, 0.6); }
-      if (ok) { if (e.isPlayer) H.msg({ cube: G.classic ? '能量块 +1 ⚡' : '能量晶 +1 ⚡', armor: it.lv + '级护甲', helmet: it.lv + '级头盔', med: '医疗包 +40%' }[it.kind], 900); FX.burst(it.pos.x, 0.8, it.pos.z, 0xffd23f, 8, 4, 0.14, 0.4); scene.remove(it.mesh); G.items.splice(i, 1); }
+      else if (it.kind === 'drink') { e.drinkT = G.now + 10; ok = true; FX.burst(e.pos.x, 1, e.pos.z, 0x4dd0ff, 12, 4, 0.16, 0.6); }
+      if (ok) { if (e.isPlayer) H.msg({ cube: G.classic ? '能量块 +1 ⚡' : '能量晶 +1 ⚡', armor: it.lv + '级护甲', helmet: it.lv + '级头盔', med: '医疗包 +40%', drink: '能量饮料：10秒加速增伤！' }[it.kind], 1100); FX.burst(it.pos.x, 0.8, it.pos.z, 0xffd23f, 8, 4, 0.14, 0.4); scene.remove(it.mesh); G.items.splice(i, 1); }
     }
   }
   function spawnLoot() {
@@ -204,7 +213,7 @@ export function createGame(scene, FX, H) {
   // ---------------- attacks ----------------
   function shoot(e, ox, oz, dx, dz, a, range, isSup) {
     const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
-    G.projs.push({ x: ox + dx * 0.6, z: oz + dz * 0.6, dx, dz, sp: a.speed, left: range, dmg: a.dmg * e.dmgMul, r: a.r, col: a.col, owner: e, pierce: !!a.pierce, breakWalls: !!a.breakWalls, knock: a.knock || 0, hit: a.pierce ? new Set() : null, wave: a.kind === 'wave', y: 1.0 });
+    G.projs.push({ x: ox + dx * 0.6, z: oz + dz * 0.6, dx, dz, sp: a.speed, left: range, dmg: a.dmg * atkMul(e), r: a.r, col: a.col, owner: e, pierce: !!a.pierce, breakWalls: !!a.breakWalls, knock: a.knock || 0, hit: a.pierce ? new Set() : null, wave: a.kind === 'wave', y: 1.0 });
   }
   function canAct(e) { return e.alive && !e.air && !e.action && G.state !== 'count'; }
   function attack(e, dx, dz, dist) {
@@ -226,7 +235,7 @@ export function createGame(scene, FX, H) {
     else if (s.kind === 'burst') { for (let i = 0; i < s.n; i++) e.queue.push({ t: G.now + i * s.gap, dx, dz, a: s, range: s.range }); }
     else if (s.kind === 'charge') { e.action = { type: 'charge', dx, dz, left: s.dist, hit: new Set() }; }
     else if (s.kind === 'leap') { const d = clamp(dist ?? s.dist, 2, s.dist); let tx = e.pos.x + dx * d, tz = e.pos.z + dz * d; [tx, tz] = G.world.freeNear(tx, tz); e.action = { type: 'leap', x0: e.pos.x, z0: e.pos.z, x1: tx, z1: tz, t: 0, T: 0.65 }; }
-    else if (s.kind === 'pet') { for (const p of G.ents) if (p.pet && p.owner === e && p.alive) kill(p, null); const p = makeEnt(PET.kind, e.name + '的' + PET.name, false, e); let [x, z] = G.world.freeNear(e.pos.x + dx * 2, e.pos.z + dz * 2); p.pos.set(x, 0, z); p.mesh.visible = true; p.yaw = e.yaw; p.dmgMul = e.dmgMul; FX.burst(x, 1, z, 0xff8a2a, 18, 6, 0.25, 0.6); }
+    else if (s.kind === 'pet') { for (const p of G.ents) if (p.pet && p.owner === e && p.alive) kill(p, null); const p = makeEnt(PET.kind, e.name + '的' + PET.name, false, e); let [x, z] = G.world.freeNear(e.pos.x + dx * 2, e.pos.z + dz * 2); p.pos.set(x, 0, z); p.mesh.visible = true; p.yaw = e.yaw; p.dmgMul = atkMul(e); FX.burst(x, 1, z, 0xff8a2a, 18, 6, 0.25, 0.6); }
     else if (s.kind === 'storm') { const d = clamp(dist ?? e.def.range, 2, e.def.range); G.lobs.push({ x0: e.pos.x, z0: e.pos.z, x1: e.pos.x + dx * d, z1: e.pos.z + dz * d, t: 0, T: s.flight, a: s, owner: e, col: s.col, storm: true }); }
     return true;
   }
@@ -236,9 +245,9 @@ export function createGame(scene, FX, H) {
     for (const t of G.ents) {
       if (!t.alive || t.team === e.team || t.air) continue; const dx = t.pos.x - e.pos.x, dz = t.pos.z - e.pos.z, d = Math.hypot(dx, dz);
       if (d > range + t.r) continue; const ang = Math.acos(clamp((dx * q.dx + dz * q.dz) / (d || 1), -1, 1)); if (ang > (a.arc || 1.2) && d > 1) continue;
-      damage(t, a.dmg * e.dmgMul, e, q.dx * 2, q.dz * 2);
+      damage(t, a.dmg * atkMul(e), e, q.dx * 2, q.dz * 2);
     }
-    for (let s = 0.8; s <= range; s += 0.7) if (hitCell(e.pos.x + q.dx * s, e.pos.z + q.dz * s, a.dmg * e.dmgMul, false)) break;
+    for (let s = 0.8; s <= range; s += 0.7) if (hitCell(e.pos.x + q.dx * s, e.pos.z + q.dz * s, a.dmg * atkMul(e), false)) break;
     FX.burst(e.pos.x + q.dx * 1.8, 1.1, e.pos.z + q.dz * 1.8, a.col || 0xffffff, 5, 4, 0.15, 0.25);
   }
   function explode(x, z, radius, dmg, owner, col, knock = 0) {
@@ -261,19 +270,91 @@ export function createGame(scene, FX, H) {
   function updateClassic(dt) {
     if (G.state === 'count') {
       const before = Math.ceil(G.countT); G.countT -= dt; const now = Math.ceil(G.countT);
-      if (G.countT <= 0) { G.state = 'play'; H.msg('开战！', 1000); } else if (now !== before || G.now <= dt) H.msg(String(now), 800);
+      const evLabel = EVENT_NAMES[G.event] ? EVENT_NAMES[G.event] + ' · ' : '';
+      if (G.countT <= 0) { G.state = 'play'; H.msg('开战！', 1000); } else if (now !== before || G.now <= dt) H.msg(evLabel + String(now), 800);
       return;
     }
+    updateEvents(dt);
     updateZone(dt); if (G.zone.stage !== 'wait' || G.zone.phase > 0) gasBoxes(dt);
     // duo respawn next to the living teammate
     for (const e of G.ents) if (!e.alive && e.respawnT && G.now >= e.respawnT) {
       e.respawnT = 0; const m = e.mate; if (!m || !m.alive) continue;
       const [x, z] = G.world.freeNear(m.pos.x + rnd(-1.5, 1.5), m.pos.z + rnd(-1.5, 1.5));
-      Object.assign(e, { alive: true, hp: e.baseHp + 400 * e.cubes, maxHp: e.baseHp + 400 * e.cubes, dmgMul: 1 + 0.1 * e.cubes, ammo: 3, superC: 0, protect: G.now + 2, lastDmgT: G.now, gasN: 0, zoneT: 0, place: 0 });
+      Object.assign(e, { alive: true, hp: e.baseHp + 400 * e.cubes, maxHp: e.baseHp + 400 * e.cubes, dmgMul: 1 + 0.1 * e.cubes, drinkT: 0, ammo: 3, superC: 0, protect: G.now + 2, lastDmgT: G.now, gasN: 0, zoneT: 0, place: 0 });
       e.pos.set(x, 0, z); e.vel.set(0, 0, 0); e.mesh.visible = true; FX.burst(x, 1, z, 0x7fdcff, 18, 5, 0.22, 0.6);
       if (e.isPlayer) H.msg('复活！', 1000);
     }
   }
+  // ---------------- classic field events ----------------
+  function makeRing(radius, color, opacity) {
+    const g = new THREE.RingGeometry(radius * 0.82, radius, 40); g.rotateX(-Math.PI / 2);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
+    m.position.y = 0.09; m.renderOrder = 2; scene.add(m); return m;
+  }
+  function dropMesh(m) { if (!m) return; scene.remove(m); m.geometry?.dispose?.(); m.material?.dispose?.(); }
+  function spawnMeteor(x, z) {
+    const m = makeRing(2, 0xff3b30, 0.55); m.position.set(x, 0.09, z);
+    G.meteors.push({ x, z, t: 1.2, mesh: m });
+    FX.burst(x, 0.4, z, 0xff3b30, 8, 3, 0.18, 0.4);
+  }
+  function updateMeteors(dt) {
+    for (let i = G.meteors.length - 1; i >= 0; i--) {
+      const m = G.meteors[i]; m.t -= dt; if (m.t > 0) continue;
+      G.meteors.splice(i, 1); dropMesh(m.mesh);
+      FX.burst(m.x, 1.2, m.z, 0xff7b2e, 30, 10, 0.3, 0.8);
+      for (const t of G.ents) if (t.alive && !t.air && Math.hypot(t.pos.x - m.x, t.pos.z - m.z) < 2 + t.r) damage(t, 1500, null);
+      for (let dz = -2; dz <= 2; dz += CELL) for (let dx = -2; dx <= 2; dx += CELL) if (dx * dx + dz * dz <= 4) hitCell(m.x + dx, m.z + dz, 1e9, true);
+    }
+  }
+  function makeMushroomMesh(x, z) {
+    const g = new THREE.Group();
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 0.75, 10), new THREE.MeshToonMaterial({ color: 0xfff2d0 }));
+    stem.position.y = 0.38;
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshToonMaterial({ color: 0x7dff8a }));
+    cap.position.y = 0.72; cap.scale.y = 0.75;
+    g.add(stem, cap); g.position.set(x, 0, z); scene.add(g); return g;
+  }
+  function spawnMushroom() {
+    const Z = G.zone; let x = 0, z = 0;
+    for (let t = 0; t < 40; t++) {
+      const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * Math.max(2, Z.r * 0.8);
+      x = Z.c.x + Math.cos(a) * d; z = Z.c.y + Math.sin(a) * d;
+      if (!SOLID(G.world.at(x, z)) && zd(x, z, Z.c) < Z.r - 1) break;
+    }
+    [x, z] = G.world.freeNear(x, z);
+    const m = makeRing(2.5, 0x5dff7a, 0.5); m.position.set(x, 0.09, z);
+    G.mushrooms.push({ x, z, state: 'warn', t: 1.5, mesh: m, mesh2: null, tick: 1 });
+  }
+  function updateMushrooms(dt) {
+    for (let i = G.mushrooms.length - 1; i >= 0; i--) {
+      const m = G.mushrooms[i];
+      if (m.state === 'warn') {
+        m.t -= dt;
+        if (m.t <= 0) { m.state = 'active'; m.t = 3; m.tick = 0; dropMesh(m.mesh); m.mesh = null; m.mesh2 = makeMushroomMesh(m.x, m.z); FX.burst(m.x, 0.5, m.z, 0x5dff7a, 16, 5, 0.22, 0.6); }
+        continue;
+      }
+      m.t -= dt; m.tick -= dt;
+      if (m.tick <= 0) {
+        m.tick = 1;
+        for (const e of G.ents) if (e.alive && !e.air && !e.pet && Math.hypot(e.pos.x - m.x, e.pos.z - m.z) < 2.5 + e.r) { e.hp = Math.min(e.maxHp, e.hp + 1000); FX.burst(e.pos.x, 1, e.pos.z, 0x5dff7a, 6, 3, 0.14, 0.4); }
+      }
+      if (m.t <= 0) { if (m.mesh2) scene.remove(m.mesh2); G.mushrooms.splice(i, 1); }
+    }
+  }
+  G._ev = { spawnMeteor: (x, z) => spawnMeteor(x, z), spawnMushroom: () => spawnMushroom() };
+  function updateEvents(dt) {
+    if (G.event === 'meteor') {
+      if (G.now >= G.eventNext) {
+        G.eventNext = G.now + 4;
+        const a = alive();
+        if (a.length) { const t = a[(Math.random() * a.length) | 0]; let x = t.pos.x + rnd(-4, 4) * CELL, z = t.pos.z + rnd(-4, 4) * CELL; [x, z] = G.world.freeNear(x, z); spawnMeteor(x, z); }
+      }
+    } else if (G.event === 'mushroom') {
+      if (G.now >= G.eventNext) { G.eventNext = G.now + 15; spawnMushroom(); }
+    }
+    updateMeteors(dt); updateMushrooms(dt);
+  }
+
   function updatePlane(dt, input) {
     const P = G.plane; if (P.k > 1.2) { FX.plane.visible = false; return; }
     P.k += dt * PLANE_SPEED / P.len; P.pos.lerpVectors(P.a, P.b, P.k); FX.plane.position.copy(P.pos);
@@ -308,32 +389,41 @@ export function createGame(scene, FX, H) {
       airStep(e, dt, mx, mz); poseMesh(e, dt, 0); return;
     }
     if (G.state === 'count') { poseMesh(e, dt, 0); return; }
-    // ammo reload + regen
+    // ammo reload + regen (13%/s after 3 s out of combat; halved inside the gas)
+    const inGas = outside(e);
     if (!e.pet) {
       if (e.ammo < 3) e.ammo = Math.min(3, e.ammo + dt / def.reload);
-      if (G.now - e.lastDmgT > 3 && G.now - e.lastAtkT > 3 && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.1 * dt);
+      if (G.now - e.lastDmgT > 3 && G.now - e.lastAtkT > 3 && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.13 * (inGas ? 0.5 : 1) * dt);
     } else { e.life -= dt; if (e.life <= 0 || !e.owner.alive) { kill(e, null); return; } }
     // zone damage
-    if (outside(e)) {
+    if (inGas) {
       e.zoneT = (e.zoneT || 0) + dt;
-      if (e.zoneT > 1) { e.zoneT = 0; e.gasN = (e.gasN || 0) + 1; damage(e, G.zone.sq ? e.maxHp * (0.2 + 0.05 * Math.max(0, e.gasN - 5)) : G.zone.dps, 'zone'); if (!e.alive) return; }
+      if (e.zoneT > 1) {
+        e.zoneT = 0; e.gasN = (e.gasN || 0) + 1;
+        let dmg = G.zone.sq ? e.maxHp * (0.2 + 0.05 * Math.max(0, e.gasN - 5)) : G.zone.dps;
+        if (G.zone.sq) { // classic: further outside the safe square hurts more, up to 1.5x
+          const over = Math.max(0, zd(e.pos.x, e.pos.z, G.zone.c) - G.zone.r);
+          dmg *= Math.min(1.5, 1 + 0.5 * over / G.world.PH);
+        }
+        damage(e, dmg, 'zone'); if (!e.alive) return;
+      }
     } else { e.zoneT = 0.7; e.gasN = 0; }
     // queued shots / punches
     while (e.queue.length && e.queue[0].t <= G.now) { const q = e.queue.shift(); if (q.punch) doPunch(e, q); else { const j = q.a.jitter || 0; shoot(e, e.pos.x, e.pos.z, q.dx + rnd(-j, j), q.dz + rnd(-j, j), q.a, q.range); kickBrawler(e.mesh); } }
     // special movement
-    let mvx = 0, mvz = 0, spd = def.speed * (e.slowT > G.now ? 0.55 : 1);
+    let mvx = 0, mvz = 0, spd = def.speed * (e.slowT > G.now ? 0.55 : 1) * (e.drinkT > G.now ? 1.4 : 1);
     if (e.action) {
       const A = e.action;
       if (A.type === 'charge') {
         const st = Math.min(A.left, 22 * dt); A.left -= st; e.pos.x += A.dx * st; e.pos.z += A.dz * st;
         hitCell(e.pos.x + A.dx * 0.9, e.pos.z + A.dz * 0.9, 1e9, true);
-        for (const t of G.ents) if (t.alive && t.team !== e.team && !t.air && !A.hit.has(t) && Math.hypot(t.pos.x - e.pos.x, t.pos.z - e.pos.z) < 1.4) { A.hit.add(t); damage(t, def.sup.dmg * e.dmgMul, e, A.dx * def.sup.knock, A.dz * def.sup.knock); }
+        for (const t of G.ents) if (t.alive && t.team !== e.team && !t.air && !A.hit.has(t) && Math.hypot(t.pos.x - e.pos.x, t.pos.z - e.pos.z) < 1.4) { A.hit.add(t); damage(t, def.sup.dmg * atkMul(e), e, A.dx * def.sup.knock, A.dz * def.sup.knock); }
         if (SOLID(G.world.at(e.pos.x + A.dx * 0.7, e.pos.z + A.dz * 0.7)) || A.left <= 0) e.action = null;
         G.world.collide(e.pos, e.r); poseMesh(e, dt, 9); return;
       }
       if (A.type === 'leap') {
         A.t += dt; const k = Math.min(1, A.t / A.T); e.pos.x = A.x0 + (A.x1 - A.x0) * k; e.pos.z = A.z0 + (A.z1 - A.z0) * k; e.pos.y = Math.sin(k * Math.PI) * 4;
-        if (k >= 1) { e.pos.y = 0; e.action = null; explode(e.pos.x, e.pos.z, def.sup.radius, def.sup.dmg * e.dmgMul, e, 0xe63946, def.sup.knock); for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (dx * dx + dz * dz <= 4) hitCell(e.pos.x + dx * CELL, e.pos.z + dz * CELL, 1e9, true); G.world.collide(e.pos, e.r); }
+        if (k >= 1) { e.pos.y = 0; e.action = null; explode(e.pos.x, e.pos.z, def.sup.radius, def.sup.dmg * atkMul(e), e, 0xe63946, def.sup.knock); for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (dx * dx + dz * dz <= 4) hitCell(e.pos.x + dx * CELL, e.pos.z + dz * CELL, 1e9, true); G.world.collide(e.pos, e.r); }
         poseMesh(e, dt, 0); return;
       }
     }
@@ -376,9 +466,9 @@ export function createGame(scene, FX, H) {
     for (let i = G.lobs.length - 1; i >= 0; i--) {
       const L = G.lobs[i]; L.t += dt; if (L.t < L.T) continue; G.lobs.splice(i, 1);
       const a = L.a, o = L.owner;
-      if (L.storm) { const m = new THREE.Mesh(FX.stormGeo, FX.stormMat); m.position.set(L.x1, 0.09, L.z1); m.scale.setScalar(a.radius); m.renderOrder = 2; scene.add(m); G.storms.push({ x: L.x1, z: L.z1, r: a.radius, t: a.time, owner: o, dmg: a.dmg * o.dmgMul, mesh: m, tick: 0 }); FX.burst(L.x1, 1, L.z1, 0x9fe7ff, 20, 6, 0.2, 0.6); continue; }
-      explode(L.x1, L.z1, a.radius, a.dmg * o.dmgMul, o, 0xe8f7ff);
-      for (let k = 0; k < a.shards; k++) { const an = k / a.shards * Math.PI * 2 + Math.random() * 0.3; G.projs.push({ x: L.x1, z: L.z1, dx: Math.cos(an), dz: Math.sin(an), sp: 16, left: a.shardRange, dmg: a.shardDmg * o.dmgMul, r: 0.18, col: a.shardCol || 0x9fe7ff, owner: o, pierce: false, hit: null, y: 0.7, shard: true }); }
+      if (L.storm) { const m = new THREE.Mesh(FX.stormGeo, FX.stormMat); m.position.set(L.x1, 0.09, L.z1); m.scale.setScalar(a.radius); m.renderOrder = 2; scene.add(m); G.storms.push({ x: L.x1, z: L.z1, r: a.radius, t: a.time, owner: o, dmg: a.dmg * atkMul(o), mesh: m, tick: 0 }); FX.burst(L.x1, 1, L.z1, 0x9fe7ff, 20, 6, 0.2, 0.6); continue; }
+      explode(L.x1, L.z1, a.radius, a.dmg * atkMul(o), o, 0xe8f7ff);
+      for (let k = 0; k < a.shards; k++) { const an = k / a.shards * Math.PI * 2 + Math.random() * 0.3; G.projs.push({ x: L.x1, z: L.z1, dx: Math.cos(an), dz: Math.sin(an), sp: 16, left: a.shardRange, dmg: a.shardDmg * atkMul(o), r: 0.18, col: a.shardCol || 0x9fe7ff, owner: o, pierce: false, hit: null, y: 0.7, shard: true }); }
     }
   }
   function updateStorms(dt) {
@@ -450,7 +540,7 @@ export function createGame(scene, FX, H) {
       b.safe = safe;
       if (b.mode === 'loot') {
         let best = null, bd = 26;
-        for (const it of G.items) { const d = Math.hypot(it.pos.x - e.pos.x, it.pos.z - e.pos.z); const want = it.kind === 'cube' || (it.kind === 'armor' && it.lv > e.armor) || (it.kind === 'helmet' && it.lv > e.helmet) || (it.kind === 'med' && e.hp < e.maxHp * 0.8); if (want && d < bd && zd(it.pos.x, it.pos.z, safe.c) < safe.r) { bd = d; best = { x: it.pos.x, z: it.pos.z }; } }
+        for (const it of G.items) { const d = Math.hypot(it.pos.x - e.pos.x, it.pos.z - e.pos.z); const want = it.kind === 'cube' || it.kind === 'drink' || (it.kind === 'armor' && it.lv > e.armor) || (it.kind === 'helmet' && it.lv > e.helmet) || (it.kind === 'med' && e.hp < e.maxHp * 0.8); if (want && d < bd && zd(it.pos.x, it.pos.z, safe.c) < safe.r) { bd = d; best = { x: it.pos.x, z: it.pos.z }; } }
         for (const d0 of G.drops) if (d0.landed) { const d = Math.hypot(d0.x - e.pos.x, d0.z - e.pos.z); if (d < 40 && d < bd + 10) { bd = d; best = { x: d0.x, z: d0.z }; } }
         if (!best) { // nearest power box / crate
           const W = G.world, i0 = cx(e.pos.x), j0 = cz(e.pos.z);
@@ -462,6 +552,11 @@ export function createGame(scene, FX, H) {
         if (G.duo && e.mate && e.mate.alive && Math.hypot(e.mate.pos.x - e.pos.x, e.mate.pos.z - e.pos.z) > 13 && (!best || !best.box || Math.hypot(best.x - e.mate.pos.x, best.z - e.mate.pos.z) > 13)) best = { x: e.mate.pos.x, z: e.mate.pos.z };
         b.goal = best;
       }
+    }
+    // dodge incoming meteor warning circles
+    for (const m of G.meteors) {
+      const dx = e.pos.x - m.x, dz = e.pos.z - m.z, d = Math.hypot(dx, dz);
+      if (d < 2.6) { if (d < 0.05) return v2(Math.random() * 2 - 1, Math.random() * 2 - 1); return steer(e, dx, dz); }
     }
     let mx = 0, mz = 0; b.want = true;
     if (b.unstuck > G.now) return v2(Math.cos(b.uDir), Math.sin(b.uDir));
@@ -504,8 +599,10 @@ export function createGame(scene, FX, H) {
     for (const it of G.items) scene.remove(it.mesh);
     for (const s of G.storms) scene.remove(s.mesh);
     for (const d of G.drops) { scene.remove(d.mesh); scene.remove(d.beam); scene.remove(d.chute); }
+    for (const m of G.meteors) dropMesh(m.mesh);
+    for (const m of G.mushrooms) { dropMesh(m.mesh); if (m.mesh2) scene.remove(m.mesh2); }
     if (G.world) { for (const e of Object.values(G.world.I)) { scene.remove(e.m); if (e.o) scene.remove(e.o); e.m.dispose(); e.o?.dispose(); } scene.remove(G.world.ground); scene.remove(G.world.sea); G.world.ground.material.map.dispose(); }
-    G.ents = []; G.projs = []; G.lobs = []; G.items = []; G.storms = []; G.drops = []; G.world = null; FX.plane.visible = false; FX.parts.length = 0;
+    G.ents = []; G.projs = []; G.lobs = []; G.items = []; G.storms = []; G.drops = []; G.meteors = []; G.mushrooms = []; G.event = 'none'; G.eventNext = Infinity; G.world = null; FX.plane.visible = false; FX.parts.length = 0;
   }
   Object.assign(G, { setup, update, attack, superAtk, cleanup, alive, outside, PHASES });
   return G;

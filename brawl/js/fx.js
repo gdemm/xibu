@@ -66,6 +66,7 @@ void main(){ if (abs(vw.x) > lim || abs(vw.y) > lim) discard; vec2 dd = abs(vw -
     armor: new Builder().add(new THREE.CapsuleGeometry(0.32, 0.3, 6, 16), M(0, 0, 0, 0, 0, 0, 1, 1, 0.55), 0xffffff).add(new THREE.BoxGeometry(0.18, 0.5, 0.36), M(0, 0.05, 0), 0xdddddd).build(),
     helmet: new Builder().add(new THREE.SphereGeometry(0.38, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), null, 0xffffff).add(new THREE.CylinderGeometry(0.42, 0.42, 0.06, 20), null, 0xcccccc).build(),
     med: new Builder().add(new THREE.BoxGeometry(0.62, 0.42, 0.45), null, 0xffffff).add(new THREE.BoxGeometry(0.4, 0.13, 0.47), M(0, 0.05, 0), 0xff3b4d).add(new THREE.BoxGeometry(0.13, 0.4, 0.47), M(0, 0.05, 0), 0xff3b4d).build(),
+    drink: new Builder().add(new THREE.BoxGeometry(0.62, 0.42, 0.45), null, 0x9be8ff).add(new THREE.BoxGeometry(0.4, 0.13, 0.47), M(0, 0.05, 0), 0x2b6cff).add(new THREE.BoxGeometry(0.13, 0.4, 0.47), M(0, 0.05, 0), 0x2b6cff).build(),
   };
   FX.lvCol = [0xffffff, 0xe8eef2, 0x4d9bff, 0xc77dff];
   // plane (original cartoon cargo plane)
