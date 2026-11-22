@@ -327,7 +327,7 @@ function frame(now) {
 }
 const off = new THREE.Vector3();
 function render(dt) {
-  const p = G.player; let tgt = p.pos, h = G.classic ? 19 : 20, back = G.classic ? 9.5 : 11.5;
+  const p = G.player; let tgt = p.pos, h = G.classic ? 25 : 26, back = G.classic ? 12.5 : 15;
   if (G.duo && !p.alive && p.mate && p.mate.alive) tgt = p.mate.pos; // spectate the teammate while waiting to respawn
   if (Q.has('overview')) { tgt = new THREE.Vector3(); h = 105; back = 1; } // localhost-only test camera
   if (p.air === 'plane') { tgt = G.plane.pos; h = 52; back = 30; }
@@ -339,7 +339,7 @@ function render(dt) {
   // visibility, culling, shadows, rings
   FX.shadow.begin(); FX.ring.begin();
   for (const e of G.ents) {
-    if (!e.alive) continue; const far = Math.hypot(e.pos.x - camLook.x, e.pos.z - camLook.z) > (p.air || Q.has('overview') ? 90 : 34);
+    if (!e.alive) continue; const far = Math.hypot(e.pos.x - camLook.x, e.pos.z - camLook.z) > (p.air || Q.has('overview') ? 90 : 46);
     const vis = e.air !== 'plane' && !far && (e.isPlayer || !p.alive || G.visibleTo(e, p) || e.air);
     e.mesh.visible = vis; if (e.chute) e.chute.visible = e.air === 'chute' && !far;
     if (!vis) continue;
@@ -347,7 +347,7 @@ function render(dt) {
     if (!e.air) { const s = e.pet ? 1.3 : 0.75; FX.shadow.push(e.pos.x, 0.03, e.pos.z, s, 1, s); FX.ring.push(e.pos.x, 0.05, e.pos.z, e.pet ? 1.4 : 1, 1, e.pet ? 1.4 : 1, e.isPlayer ? 0x4cff6a : e.team === p.team ? 0x4cc9ff : 0xff4d5e); }
     else FX.shadow.push(e.pos.x, 0.03, e.pos.z, 0.6, 1, 0.6);
   }
-  for (const it of G.items) { const far = Math.hypot(it.pos.x - camLook.x, it.pos.z - camLook.z) > 34; it.mesh.visible = !far; if (!far) FX.shadow.push(it.pos.x, 0.03, it.pos.z, 0.4, 1, 0.4); }
+  for (const it of G.items) { const far = Math.hypot(it.pos.x - camLook.x, it.pos.z - camLook.z) > 46; it.mesh.visible = !far; if (!far) FX.shadow.push(it.pos.x, 0.03, it.pos.z, 0.4, 1, 0.4); }
   FX.shadow.end(); FX.ring.end();
   // projectiles
   FX.proj.begin(); FX.projO.begin();
@@ -363,7 +363,7 @@ function render(dt) {
     let k = 0; const r = Z.r + 0.4;
     for (let side = 0; side < 4; side++) for (let u = -r; u <= r; u += 1.1) {
       const x = side < 2 ? u : (side === 2 ? -r : r), z = side < 2 ? (side === 0 ? -r : r) : u;
-      if (Math.abs(x - camLook.x) > 26 || Math.abs(z - camLook.z) > 20) continue; k++;
+      if (Math.abs(x - camLook.x) > 35 || Math.abs(z - camLook.z) > 27) continue; k++;
       const s = 0.5 + (Math.sin(k * 3.1 + side) * 0.5 + 0.5) * 0.45 + Math.sin(G.now * 2 + k) * 0.08, y = 0.35 + s * 0.5 + (k % 2) * 0.3 + Math.sin(G.now * 1.5 + k * 0.7) * 0.15;
       const ox = side >= 2 ? (side === 2 ? -0.4 : 0.4) * (k % 2) : 0, oz = side < 2 ? (side === 0 ? -0.4 : 0.4) * (k % 2) : 0;
       FX.cloud.push(x + ox, y, z + oz, s, s * 0.8, s); FX.cloudO.push(x + ox, y, z + oz, s, s * 0.8, s);
@@ -373,7 +373,7 @@ function render(dt) {
     for (let i = 0; i < n; i++) { // puffs concentrated on the part of the edge near the camera
       const a = base + (i / n - 0.5) * Math.min(Math.PI * 2, 70 / Math.max(4, Z.r)) + Math.sin(i * 12.9) * 0.02;
       const rr2 = Z.r + 0.3 + (i % 2) * 0.9 + Math.sin(i * 7.3) * 0.3, x = Z.c.x + Math.cos(a) * rr2, z = Z.c.y + Math.sin(a) * rr2;
-      if (Math.hypot(x - camLook.x, z - camLook.z) > 34) continue;
+      if (Math.hypot(x - camLook.x, z - camLook.z) > 46) continue;
       const s = 0.45 + (Math.sin(i * 3.1) * 0.5 + 0.5) * 0.45 + Math.sin(G.now * 2 + i) * 0.08;
       const y = 0.3 + s * 0.5 + (i % 2) * 0.35 + Math.sin(G.now * 1.5 + i * 0.7) * 0.15; FX.cloud.push(x, y, z, s, s * 0.8, s); FX.cloudO.push(x, y, z, s, s * 0.8, s);
     }
