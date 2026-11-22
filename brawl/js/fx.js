@@ -30,11 +30,18 @@ export function makeFX(scene) {
   FX.part = new Pool(scene, new THREE.OctahedronGeometry(1, 0), new THREE.MeshBasicMaterial({ color: 0xffffff }), 600, 3);
   FX.parts = [];
   // blob shadows
-  const sg = new THREE.CircleGeometry(1, 20); sg.rotateX(-Math.PI / 2);
-  FX.shadow = new Pool(scene, sg, new THREE.MeshBasicMaterial({ color: 0x0a0a30, transparent: true, opacity: 0.28, depthWrite: false }), 120, 1);
-  // team rings under brawlers
-  const rg = new THREE.RingGeometry(0.62, 0.8, 28); rg.rotateX(-Math.PI / 2);
-  FX.ring = new Pool(scene, rg, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false }), 80, 1);
+  // blob shadows: soft radial falloff
+  const sc = document.createElement('canvas'); sc.width = sc.height = 64; { const c = sc.getContext('2d'), gr = c.createRadialGradient(32, 32, 4, 32, 32, 31); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.55, 'rgba(255,255,255,.75)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = gr; c.fillRect(0, 0, 64, 64); }
+  const sg = new THREE.PlaneGeometry(2, 2); sg.rotateX(-Math.PI / 2);
+  FX.shadow = new Pool(scene, sg, new THREE.MeshBasicMaterial({ color: 0x0a0618, alphaMap: new THREE.CanvasTexture(sc), transparent: true, opacity: 0.42, depthWrite: false }), 120, 1);
+  // rings under brawlers: solid ring + faint fill for you / teammates, dashed ring for enemies
+  const rg = new THREE.RingGeometry(0.66, 0.86, 32); rg.rotateX(-Math.PI / 2);
+  FX.ring = new Pool(scene, rg, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false }), 80, 1);
+  const fg = new THREE.CircleGeometry(0.66, 28); fg.rotateX(-Math.PI / 2);
+  FX.ringFill = new Pool(scene, fg, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false }), 20, 1);
+  const dg = []; for (let k = 0; k < 10; k++) { const g = new THREE.RingGeometry(0.66, 0.86, 4, 1, k / 10 * Math.PI * 2 + 0.08, Math.PI * 2 / 10 - 0.26); g.rotateX(-Math.PI / 2); dg.push(g.toNonIndexed()); }
+  const dgeo = new THREE.BufferGeometry(); { let n = 0; for (const g of dg) n += g.attributes.position.count; const pos = new Float32Array(n * 3); let o = 0; for (const g of dg) { pos.set(g.attributes.position.array, o); o += g.attributes.position.array.length; } dgeo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); }
+  FX.ringD = new Pool(scene, dgeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false }), 80, 1);
   // aim indicator (built per shape on demand)
   FX.aim = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }));
   FX.aim.renderOrder = 4; FX.aim.visible = false; scene.add(FX.aim);
@@ -52,13 +59,16 @@ export function makeFX(scene) {
     vertexShader: 'varying vec2 vw; void main(){ vec4 w = modelMatrix*vec4(position,1.); vw = w.xz; gl_Position = projectionMatrix*viewMatrix*w; }',
     fragmentShader: `uniform vec2 c; uniform float r; uniform float t; uniform vec2 nc; uniform float nr; uniform float sq; uniform float lim; varying vec2 vw;
 void main(){ if (abs(vw.x) > lim || abs(vw.y) > lim) discard; vec2 dd = abs(vw - c); float d = sq > 0.5 ? max(dd.x, dd.y) : distance(vw, c); float a = 0.;
- if (d > r) { float s = 0.5 + 0.5*sin((vw.x+vw.y)*0.6 + t*2.0); a = 0.5 + 0.1*s; gl_FragColor = sq > 0.5 ? vec4(mix(vec3(0.42,0.22,0.62), vec3(0.62,0.38,0.85), s), a + 0.08) : vec4(mix(vec3(0.18,0.75,0.2), vec3(0.45,0.95,0.3), s), a); return; }
+ if (d > r) { float s = 0.5 + 0.5*sin((vw.x+vw.y)*0.6 + t*2.0); a = 0.5 + 0.1*s; gl_FragColor = vec4(mix(vec3(0.18,0.75,0.2), vec3(0.45,0.95,0.3), s), a + 0.04 * sq); return; }
  if (nr > 0.) { float e = abs(distance(vw, nc) - nr); if (e < 0.12 && mod(atan(vw.y-nc.y, vw.x-nc.x)*nr*0.8, 2.0) < 1.0) { gl_FragColor = vec4(1.,1.,1.,0.8); return; } }
  discard; }`,
   });
   FX.zone = new THREE.Mesh(zg, zm); FX.zone.position.y = 0.07; FX.zone.renderOrder = 1; FX.zone.frustumCulled = false; scene.add(FX.zone);
-  const puff = new THREE.IcosahedronGeometry(1, 1);
-  FX.cloud = new Pool(scene, puff, toonMat(0xc9ff7a, { transparent: true, opacity: 0.72, emissive: 0x335500 }), 220, 2);
+  // puffy cloud "cards": a flattened cluster of bumps, lighter on top
+  const puff = new Builder().add(new THREE.IcosahedronGeometry(0.75, 1), M(0, 0, 0), 0xffffff).add(new THREE.IcosahedronGeometry(0.55, 1), M(0.62, -0.12, 0.1), 0xf2f2f2)
+    .add(new THREE.IcosahedronGeometry(0.58, 1), M(-0.6, -0.1, -0.05), 0xf2f2f2).add(new THREE.IcosahedronGeometry(0.45, 1), M(0.15, 0.45, 0.05), 0xffffff).build();
+  puff.scale(1, 0.7, 0.8);
+  FX.cloud = new Pool(scene, puff, toonMat(0xb2f27f, { transparent: true, opacity: 0.88, emissive: 0x3c6a12, vertexColors: true }), 220, 2);
   FX.cloudO = new Pool(scene, puff, outlineMat(0.06, 0x4f9a1a), 220, 1);
   // items
   FX.itemGeo = {

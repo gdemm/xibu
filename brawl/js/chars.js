@@ -62,8 +62,8 @@ function armBase(B, o) {
   B.add(S(r * 1.25), M(0, 0, 0), o.sleeve);
   B.add(CAP(r, len * 0.7), M(hx * 0.45, hy * 0.45, hz * 0.45, ax, 0, -hx * 0.8), o.sleeve2 ?? o.sleeve);
   if (o.cuff !== undefined) B.add(TOR(r * 1.05, r * 0.32, Math.PI * 2, 8, 18), M(hx * 0.78, hy * 0.78, hz * 0.78, tx, 0, 0), o.cuff);
-  B.add(S((o.hand ?? 0.17) * 1.2), M(hx, hy, hz, 0, 0, 0, 1, 0.95, 1.05), o.handCol ?? o.skin); // chunkier hands
-  { const hr = (o.hand ?? 0.17) * 1.2; B.add(S(hr * 0.42), M(hx, hy + hr * 0.72, hz + hr * 0.5, 0.5, 0, 0, 0.85, 0.75, 1.25), o.handCol ?? o.skin); } // thumb on top of the fist
+  B.add(S((o.hand ?? 0.17) * 1.32), M(hx, hy, hz, 0, 0, 0, 1, 0.95, 1.05), o.handCol ?? o.skin); // chunkier hands
+  { const hr = (o.hand ?? 0.17) * 1.32; B.add(S(hr * 0.42), M(hx, hy + hr * 0.72, hz + hr * 0.5, 0.5, 0, 0, 0.85, 0.75, 1.25), o.handCol ?? o.skin); } // thumb on top of the fist
   return [hx, hy, hz];
 }
 
@@ -376,7 +376,7 @@ function parts(kind, lod) {
   DET = 1; return (GEO[key] = P);
 }
 // enlarge everything above the neck around the head centre (smooth blend over the neck) — chunkier, more readable heads
-function bigHead(g, h, K = 1.13) {
+function bigHead(g, h, K = 1.19) {
   const neck = h.y - h.R * 0.95, band = 0.2;
   for (const geo of [g, g.userData.outline]) {
     if (!geo) continue; const p = geo.attributes.position;
@@ -400,13 +400,13 @@ function buildArm(b) {
 export function makeBrawler(kind, lod = false) {
   const P = parts(kind, lod), root = new THREE.Group(), inner = new THREE.Group(), torso = new THREE.Group(); root.add(inner); inner.add(torso);
   const OC = 0x14101c, OP = 0.07; // outline colour + depth push (silhouette-only lines)
-  const body = outlined(P.body, heroMat(), 0.052, OC, OP); torso.add(body);
-  const fl = outlined(P.foot, heroMat(), 0.045, OC, OP), fr = outlined(P.foot, heroMat(), 0.045, OC, OP);
+  const body = outlined(P.body, heroMat(), 0.068, OC, OP); torso.add(body);
+  const fl = outlined(P.foot, heroMat(), 0.06, OC, OP), fr = outlined(P.foot, heroMat(), 0.06, OC, OP);
   fl.position.set(-P.fx, P.fy, 0); fr.position.set(P.fx, P.fy, 0); inner.add(fl, fr);
-  const arm = outlined(P.arm, heroMat(), 0.045, OC, OP); arm.position.set(-P.armPos[0], P.armPos[1], P.armPos[2]); // weapon in the hero's right hand (screen-left when facing camera)
+  const arm = outlined(P.arm, heroMat(), 0.06, OC, OP); arm.position.set(-P.armPos[0], P.armPos[1], P.armPos[2]); // weapon in the hero's right hand (screen-left when facing camera)
   torso.add(arm);
   let arm2 = null;
-  if (P.armL) { arm2 = outlined(P.armL, heroMat(), 0.045, OC, OP); arm2.position.set(P.armPos[0], P.armPos[1], P.armPos[2]); torso.add(arm2); }
+  if (P.armL) { arm2 = outlined(P.armL, heroMat(), 0.06, OC, OP); arm2.position.set(P.armPos[0], P.armPos[1], P.armPos[2]); torso.add(arm2); }
   root.userData = { kind, inner, torso, body, fl, fr, arm, arm2, armBase: P.armPos.slice(), melee: P.melee, t: Math.random() * 6, kick: 0, kick2: 0, w: 0, lean: 0, roll: 0 };
   return root;
 }

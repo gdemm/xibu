@@ -28,7 +28,7 @@ export function createGame(scene, FX, H) {
   function setup(opts) {
     G.mode = opts.mode || 'party'; G.classic = G.mode !== 'party'; G.duo = G.mode === 'duo';
     G.phases = (G.classic ? CPHASES : PHASES).map(p => ({ ...p })); if (opts.fastZone) for (const ph of G.phases) { ph.wait /= 4; ph.shrink /= 4; }
-    G.world = buildWorld(scene, G.classic); G.opts = opts; G.diff = opts.diff ?? 1; G.now = 0; G.over = false; G.placeSeq = opts.n; G.dropTimes = []; G.plane = null;
+    G.world = buildWorld(scene, G.classic, opts.map || 0); G.opts = opts; G.diff = opts.diff ?? 1; G.now = 0; G.over = false; G.placeSeq = opts.n; G.dropTimes = []; G.plane = null;
     if (G.classic) return setupClassic(opts);
     const kinds = []; for (let i = 0; i < opts.n - 1; i++) kinds.push(ORDER[(Math.random() * ORDER.length) | 0]);
     const names = NAMES.slice().sort(() => Math.random() - 0.5);
@@ -61,7 +61,7 @@ export function createGame(scene, FX, H) {
     const place = (e, a, side) => {
       let x = Math.cos(a) * R0, z = Math.sin(a) * R0;
       if (side) { x += -Math.sin(a) * side; z += Math.cos(a) * side; }
-      for (let r = 0; r <= 2; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const i = cx(x) + di, j = cz(z) + dj; if (!W.inb(i, j)) continue; const t = W.type[W.idx(i, j)]; if (t === T.WALL || t === T.BUSH) W.remove(i, j); }
+      for (let r = 0; r <= 2; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const i = cx(x) + di, j = cz(z) + dj; if (!W.inb(i, j)) continue; const t = W.type[W.idx(i, j)]; if (t === T.WALL || t === T.BUSH || t === T.CRATE) W.remove(i, j); }
       [x, z] = W.freeNear(x, z); e.pos.set(x, 0, z); e.yaw = Math.atan2(-x, -z); e.spawnA = a;
     };
     for (let i = 0; i < n; i++) { const e = G.ents[i], slot = G.duo ? order[i >> 1] : order[i]; place(e, a0 + slot / slots * Math.PI * 2, G.duo ? (i & 1 ? 1.6 : -1.6) : 0); e.mesh.visible = true; e.protect = 0; }
@@ -78,7 +78,7 @@ export function createGame(scene, FX, H) {
 
   function makeEnt(kind, name, isPlayer, owner) {
     const d = kind === PET.kind ? { hp: CHARS.granny.sup.hp, speed: 6.4, range: 3 } : CHARS[kind];
-    const mesh = makeBrawler(kind, true); scene.add(mesh);
+    const mesh = makeBrawler(kind, true); mesh.scale.setScalar(kind === PET.kind ? 1.05 : 1.12); scene.add(mesh);
     if (isPlayer) { // own translucent-capable material so hiding in bushes can fade only us
       const mat = heroMat(true); mesh.traverse(o => { if (o.isMesh && o.material === heroMat()) o.material = mat; }); mesh.userData.mat = mat;
     }
@@ -183,7 +183,7 @@ export function createGame(scene, FX, H) {
       const col = t === T.WALL ? 0xe76f51 : t === T.CRATE ? 0xd99a4e : 0x7b3fb0; FX.burst(wx(i), 0.8, wx(j), col, 12, 6, 0.22, 0.6);
       W.remove(i, j);
       if (t === T.BOX) spawnItem('cube', 0, wx(i), wx(j));
-      if (t === T.CRATE && Math.random() < 0.55) { const r = Math.random(); if (r < 0.3) spawnItem('med', 0, wx(i), wx(j)); else spawnItem(r < 0.65 ? 'armor' : 'helmet', Math.random() < 0.7 ? 1 : 2, wx(i), wx(j)); }
+      if (t === T.CRATE && !G.classic && Math.random() < 0.55) { const r = Math.random(); if (r < 0.3) spawnItem('med', 0, wx(i), wx(j)); else spawnItem(r < 0.65 ? 'armor' : 'helmet', Math.random() < 0.7 ? 1 : 2, wx(i), wx(j)); }
     } else FX.burst(x, 0.8, z, 0xfff3e0, 3, 3, 0.1, 0.25);
     return true;
   }
@@ -601,7 +601,7 @@ export function createGame(scene, FX, H) {
     for (const d of G.drops) { scene.remove(d.mesh); scene.remove(d.beam); scene.remove(d.chute); }
     for (const m of G.meteors) dropMesh(m.mesh);
     for (const m of G.mushrooms) { dropMesh(m.mesh); if (m.mesh2) scene.remove(m.mesh2); }
-    if (G.world) { for (const e of Object.values(G.world.I)) { scene.remove(e.m); if (e.o) scene.remove(e.o); e.m.dispose(); e.o?.dispose(); } scene.remove(G.world.ground); scene.remove(G.world.sea); G.world.ground.material.map.dispose(); }
+    if (G.world) { for (const e of Object.values(G.world.I)) { scene.remove(e.m); if (e.o) scene.remove(e.o); e.m.dispose(); e.o?.dispose(); } scene.remove(G.world.ground); scene.remove(G.world.sea); G.world.ground.material.map.dispose(); for (const c of G.world.ground.children) c.geometry.dispose(); }
     G.ents = []; G.projs = []; G.lobs = []; G.items = []; G.storms = []; G.drops = []; G.meteors = []; G.mushrooms = []; G.event = 'none'; G.eventNext = Infinity; G.world = null; FX.plane.visible = false; FX.parts.length = 0;
   }
   Object.assign(G, { setup, update, attack, superAtk, cleanup, alive, outside, PHASES });
