@@ -44,7 +44,8 @@ const saveS = () => { try { localStorage.setItem('partyfps.settings', JSON.strin
 
 // ---------------- renderer ----------------
 const canvas = $('gl');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isTouch, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isTouch || S.quality !== 'low',   // phones too: thin road/roof lines crawl without MSAA (low quality keeps it off)
+  powerPreference: 'high-performance' });
 renderer.autoClear = false;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 function applyPixelRatio() {
