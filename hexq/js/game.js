@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { HERO_NAMES, loadHeroes, makeHero } from './heroes.js';
 import { createMinimap } from './minimap.js';
-import { buildMap, structureMesh, MinionRenderer, Blobs, Bars, FX, laneHalf, TEAM_COL, BUSHES, RELICS, inBush, buildBushes, makeRelic } from './world.js';
+import { buildMap, structureMesh, MinionRenderer, Blobs, Bars, FX, laneHalf, TEAM_COL, BUSHES, RELICS, inBush, buildBushes, tickBushes, makeRelic } from './world.js';
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -12,15 +12,15 @@ const U = 0.01; // 1 LoL unit = 1 cm
 
 /* ---------------- hero stats (LoL-ish base values, ranges in units) ---------------- */
 const STATS = {
-  Ahri: { hp: 590, ad: 53, as: .67, range: 550, ms: 330, col: 0xff8fd8 },
-  Ashe: { hp: 610, ad: 59, as: .66, range: 600, ms: 325, col: 0x8fe3ff },
-  Ezreal: { hp: 600, ad: 62, as: .63, range: 550, ms: 325, col: 0xffe27a },
-  Garen: { hp: 690, ad: 69, as: .63, range: 175, ms: 340, col: 0xffd45c },
-  Jinx: { hp: 630, ad: 59, as: .63, range: 525, ms: 325, col: 0xff6ad5 },
-  Lux: { hp: 580, ad: 54, as: .67, range: 550, ms: 330, col: 0xffc21a },
-  Sett: { hp: 670, ad: 60, as: .63, range: 125, ms: 340, col: 0xffb347 },
-  Teemo: { hp: 615, ad: 54, as: .69, range: 500, ms: 330, col: 0x9be37a },
-  Yasuo: { hp: 590, ad: 60, as: .70, range: 175, ms: 345, col: 0x1fd8e8 },
+  Ahri: { hp: 590, ad: 53, as: .67, range: 550, ms: 330, wu: 0.2, mis: 1750, col: 0xff8fd8 },
+  Ashe: { hp: 610, ad: 59, as: .66, range: 600, ms: 325, wu: 0.219, mis: 2000, col: 0x8fe3ff },
+  Ezreal: { hp: 600, ad: 62, as: .63, range: 550, ms: 325, wu: 0.188, mis: 2000, col: 0xffe27a },
+  Garen: { hp: 690, ad: 69, as: .63, range: 175, ms: 340, wu: 0.2, mis: 0, col: 0xffd45c },
+  Jinx: { hp: 630, ad: 59, as: .63, range: 525, ms: 325, wu: 0.169, mis: 2750, col: 0xff6ad5 },
+  Lux: { hp: 580, ad: 54, as: .67, range: 550, ms: 330, wu: 0.156, mis: 1200, col: 0xffc21a },
+  Sett: { hp: 670, ad: 60, as: .63, range: 125, ms: 340, wu: 0.19, mis: 0, col: 0xffb347 },
+  Teemo: { hp: 615, ad: 54, as: .69, range: 500, ms: 330, wu: 0.217, mis: 1300, col: 0x9be37a },
+  Yasuo: { hp: 590, ad: 60, as: .70, range: 175, ms: 345, wu: 0.22, mis: 0, col: 0x1fd8e8 },
 };
 const MINION = {
   melee: { hp: 480, ad: 12, as: 1.25, range: 110, radius: .35 },
@@ -79,7 +79,7 @@ function onResize() {
 }
 addEventListener('resize', onResize); onResize();
 buildMap(scene, QUALITY);
-buildBushes(scene, QUALITY);
+const bushObjs = buildBushes(scene, QUALITY);
 const G_RELICS = { list: [] }; const RELIC_CD = 22, RELIC_HEAL = .3, RELIC_R = 5; // hx7k2 values: 30% max HP to allied heroes nearby, back after 22 s
 const relicObjs = RELICS.map(r => ({ ...r, ready: 0, m: makeRelic(scene, QUALITY) }));
 G_RELICS.list = relicObjs;
@@ -111,7 +111,7 @@ function spawnHero(name, team, slot, isPlayer) {
   const e = {
     kind: 'hero', name, team, h, slot, isPlayer, x: 0, z: 0, yaw: 0, hp: st.hp, maxHp: st.hp, ad: st.ad, as: st.as, range: st.range * U, ms: st.ms * U * 1.15,
     radius: .5, col: st.col, melee: st.range <= 200, alive: true, respawnT: 0, atkCd: 0, windT: 0, pend: null, target: null, moving: false,
-    laneZ: (slot - 2) * 1.5, think: Math.random() * .2, retreat: false, k: 0, d: 0, cd: [0, 0, 0, 0], fcd: 0, baseRange: st.range * U,
+    laneZ: (slot - 2) * 1.5, think: Math.random() * .2, retreat: false, k: 0, d: 0, cd: [0, 0, 0, 0], fcd: 0, baseRange: st.range * U, wu: st.wu, mis: st.mis * U,
   };
   placeAtFountain(e); G.heroes.push(e); return e;
 }
@@ -149,7 +149,7 @@ function nearestEnemy(u, radius, kinds) {
   }
   return best;
 }
-const inRange = (u, t) => { const r = u.range + t.radius + u.radius * 0.5; return dist2(u, t) <= r * r; };
+const inRange = (u, t) => { const r = u.range + t.radius + u.radius; return dist2(u, t) <= r * r; };
 function damage(t, dmg, src, noPop) {
   if (!t.alive) return;
   if (t.revealT > 0) dmg *= 1.1;
@@ -174,10 +174,10 @@ function kill(t, src) {
   }
 }
 function startAttack(u, t) {
-  if (u.kind === 'hero') u.revealT = G.t;
   if (u.atkCd > 0 || u.windT > 0 || u.stunT > 0 || u.spinT > 0 || u.castT > 0 || u.dash) return;
+  if (u.kind === 'hero') u.revealT = G.t;
   const as = u.as * (u.asBuffT > 0 ? 1.5 : 1) * (u.rockets ? .85 : 1);
-  u.atkCd = 1 / as; u.windT = 0.28 / as; u.pend = t;
+  u.atkCd = 1 / as; u.windT = (u.wu || .28) / as; // per-hero attack windup u.pend = t;
   u.yaw = Math.atan2(t.x - u.x, t.z - u.z);
   if (u.h) { const d = u.h.actions.attack?.getClip().duration || .6; u.h.play('attack', Math.max(1, d * as * 1.1)); }
 }
@@ -188,7 +188,7 @@ function landAttack(u) {
   if (u.emp && u.emp.n > 0) { emp = u.emp; dmg += emp.dmg; if (--emp.n <= 0) u.emp = null; }
   const on = tt => onAttackHit(u, tt, emp, dmg);
   if (u.melee) { damage(t, dmg, u); on(t); G.fxs.push({ x: t.x, z: t.z, y: .8, t: .18, col: emp ? emp.col : (u.col || 0xffffff), r: emp ? .8 : .45 }); }
-  else G.proj.push({ x: u.x + Math.sin(u.yaw) * .5, y: u.kind === 'hero' ? 1.0 : .7, z: u.z + Math.cos(u.yaw) * .5, t, sp: u.kind === 'hero' ? 18 : 12, dmg, src: u, col: u.rockets ? 0xff6ad5 : (u.col || TEAM_COL[u.team]), r: u.kind === 'hero' ? (u.rockets ? .3 : .2) : .13, on: u.kind === 'hero' ? on : null });
+  else G.proj.push({ x: u.x + Math.sin(u.yaw) * .5, y: u.kind === 'hero' ? 1.0 : .7, z: u.z + Math.cos(u.yaw) * .5, t, sp: u.kind === 'hero' ? (u.rockets ? 2000 * U : u.mis || 18) : 12, dmg, src: u, col: u.rockets ? 0xff6ad5 : (u.col || TEAM_COL[u.team]), r: u.kind === 'hero' ? (u.rockets ? .3 : .2) : .13, on: u.kind === 'hero' ? on : null });
 }
 function onAttackHit(u, t, emp, dmg) {
   if (emp?.silence) applyCC(t, { silence: emp.silence }, u);
@@ -647,7 +647,7 @@ function playerTick(u, dt) {
     if (u.target) chaseAttack(u, u.target, dt);
     return;
   }
-  const t = (u.target && u.target.alive && inRange(u, u.target)) ? u.target : nearestEnemy(u, u.range + u.radius * .5, null);
+  const t = (u.target && u.target.alive && inRange(u, u.target)) ? u.target : nearestEnemy(u, u.range + u.radius, null);
   u.target = t; if (t && inRange(u, t)) startAttack(u, t);
 }
 
@@ -770,7 +770,6 @@ function draw(dt) {
     blobs.add(u.x, u.z, 1.3);
     const col = u.isPlayer ? 0x5be06a : (u.team === pl.team ? 0x4fb0ff : 0xff4b4b);
     bars.bar(u.x, u.h.height + .45, u.z, 1.2, .13, u.hp / u.maxHp, col);
-    if (u.bush >= 0 && pl && u.team === pl.team) fx.ringAt(u.x, u.z, .95, 0x7dffb0, u.hid ? .55 : .25); // in a bush (bright = hidden from enemies)
   }
   for (const m of G.minions) {
     const y = m.moving ? Math.abs(Math.sin(G.t * 11 + m.bob)) * .08 : 0;
@@ -787,14 +786,9 @@ function draw(dt) {
   for (const p of G.proj) fx.orbAt(p.x, p.y, p.z, p.r, p.col, 1);
   drawSkills();
   for (const f of G.fxs) { if (f.ring) fx.ringAt(f.x, f.z, f.r * (1.4 - f.t), f.col, f.t * 2.5); else fx.orbAt(f.x, f.y, f.z, f.r * (1.2 - f.t * 2), f.col, f.t * 4); }
+  tickBushes(bushObjs, G, pl, dt);
   // health relics: bobbing orb when ready, faint pad while recharging
   for (const r of relicObjs) { const on = G.t >= r.ready; r.m.orb.visible = on; r.m.orb.position.y = .75 + Math.sin(G.t * 2.4 + r.x) * .12; r.m.orb.rotation.y = G.t * 1.2; r.m.pad.material.opacity = on ? .55 : .12; }
-  // attack range: faint ring when enemies are close, brighter while the attack button is held
-  if (pl?.alive) {
-    const ar = pl.range + pl.radius * .5, near = nearestEnemy(pl, ar + 4, null);
-    if (P.atkHeld || near) fx.ringAt(pl.x, pl.z, ar, P.atkHeld ? 0xffffff : 0xcfe6ff, P.atkHeld ? .6 : .22);
-    if (pl.target?.alive && !P.clickT) fx.ringAt(pl.target.x, pl.target.z, pl.target.radius + .25, 0xffb04b, .6);
-  }
   if (pl?.alive) { fx.ringAt(pl.x, pl.z, .75, 0x5be06a, .8); if (P.clickT?.alive) fx.ringAt(P.clickT.x, P.clickT.z, P.clickT.radius + .3, 0xff4b4b, .8); }
   blobs.end(); bars.end(); fx.end(); minionR.end();
   renderer.render(scene, camera);

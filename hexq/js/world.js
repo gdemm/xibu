@@ -372,33 +372,56 @@ export class FX {
 
 /* ---------- bushes + health relics (step 7, positions follow the hx7k2 / Howling Abyss layout, Q-style look) ---------- */
 // bush = ellipse (x, z, rx, rz). Two per side, alternating lane edges, kept clear of the relics.
-export const BUSHES = [
-  { x: -6.5, z: 5.2, rx: 2.4, rz: 1.5 }, { x: 6.5, z: -5.2, rx: 2.4, rz: 1.5 },
-  { x: -17.5, z: -5.0, rx: 2.3, rz: 1.5 }, { x: 17.5, z: 5.0, rx: 2.3, rz: 1.5 },
+export const BUSHES = [ // from Map12 navgrid grass regions (hx7k2 brush-regions-data), mapped onto this lane: north edge from the data, south edge mirrored
+  { x: -22.8, z: 6.0, rx: 2.3, rz: 1.2 }, { x: -5.4, z: 4.9, rx: 4.4, rz: 2.1 },
+  { x: 6.3, z: 5.1, rx: 4.5, rz: 2.2 }, { x: 23.2, z: 6.0, rx: 2.3, rz: 1.2 },
+  // south edge mirror (bushes on both sides), nudged so they don't swallow the relics
+  { x: -21.6, z: -6.0, rx: 2.3, rz: 1.2 }, { x: -5.4, z: -4.9, rx: 4.2, rz: 2.1 },
+  { x: 6.3, z: -5.1, rx: 4.2, rz: 2.2 }, { x: 22.0, z: -6.0, rx: 2.3, rz: 1.2 },
 ];
-// relics: hx7k2 map-config relics mapped onto this lane (two per side, south edge like the original)
-export const RELICS = [{ x: -11, z: -4.6 }, { x: -26, z: -5.4 }, { x: 11, z: -4.6 }, { x: 26, z: -5.4 }];
+// relics: hx7k2 map-config relics mapped onto this lane (south edge like the original)
+export const RELICS = [{ x: -11.2, z: -4.6 }, { x: -25.6, z: -5.6 }, { x: 11.4, z: -4.5 }, { x: 25.8, z: -5.7 }];
 export const inBush = (x, z) => { for (let i = 0; i < BUSHES.length; i++) { const b = BUSHES[i]; if (((x - b.x) / b.rx) ** 2 + ((z - b.z) / b.rz) ** 2 < 1) return i; } return -1; };
+// Tile-grid bush (chunky square grass blocks with blade tufts, cartoon style). One mesh per bush so it can
+// rustle when someone walks through and turn see-through while the player is inside.
 export function buildBushes(scene, quality) {
-  const B = new Builder(), C = [0x2e9c6a, 0x40b878, 0x5ccf8c], TIP = 0xa6f0b0, SN = 0xc4dbee;
-  for (const b of BUSHES) {
-    let s = Math.abs(Math.round(b.x * 13 + b.z * 7)) + 1234;
+  const out = [], TOP = [0x4cc46a, 0x56d077, 0x45b862], SIDE = 0x2f8f4c, BLADE = [0x6fe08a, 0x8ff0a2];
+  for (const bb of BUSHES) {
+    const B = new Builder(); let s = Math.abs(Math.round(bb.x * 13 + bb.z * 7)) + 1234;
     const r = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
-    // round chunky leaf blobs filling the ellipse
-    for (let i = 0; i < 13; i++) {
-      const a = r() * Math.PI * 2, d = Math.sqrt(r()) * 0.82, sc = 0.5 + r() * 0.3;
-      B.add(new THREE.IcosahedronGeometry(0.75, 1), M(b.x + Math.cos(a) * b.rx * d, 0.45 * sc + 0.1, b.z + Math.sin(a) * b.rz * d, 0, r() * 3, 0, sc * 1.15, sc * 0.9, sc), C[i % 3]);
-    }
-    // grass blades poking out (lighter tips)
-    for (let i = 0; i < 12; i++) {
-      const a = r() * Math.PI * 2, d = 0.35 + Math.sqrt(r()) * 0.7, h = 0.45 + r() * 0.35, x = b.x + Math.cos(a) * b.rx * d, z = b.z + Math.sin(a) * b.rz * d;
-      B.add(new THREE.ConeGeometry(0.2, h, 5), M(x, h / 2 + 0.55, z, (r() - .5) * 0.8, r() * 3, (r() - .5) * 0.8, 1, 1, 0.45), i % 2 ? TIP : C[2]);
-    }
-    // a few snow clumps on top so it belongs to the Howling Abyss
-    for (let i = 0; i < 3; i++) { const a = r() * Math.PI * 2; B.add(new THREE.SphereGeometry(0.28, 7, 5), M(b.x + Math.cos(a) * b.rx * 0.45, 1.05, b.z + Math.sin(a) * b.rz * 0.45, 0, 0, 0, 1, 0.45, 1), SN); }
+    const T = 0.9; // tile size
+    for (let gx = Math.floor((bb.x - bb.rx) / T); gx <= Math.ceil((bb.x + bb.rx) / T); gx++)
+      for (let gz = Math.floor((bb.z - bb.rz) / T); gz <= Math.ceil((bb.z + bb.rz) / T); gz++) {
+        const cx = (gx + .5) * T, cz = (gz + .5) * T;
+        if (((cx - bb.x) / bb.rx) ** 2 + ((cz - bb.z) / bb.rz) ** 2 > 1) continue;
+        const h = 0.95 + r() * 0.12;
+        B.add(new THREE.BoxGeometry(T, h * .75, T), M(cx, h * .375, cz), SIDE)            // block body
+         .add(new THREE.BoxGeometry(T * .98, h * .3, T * .98), M(cx, h * .75 + .02, cz), TOP[(gx + gz) & 1 ? 0 : 1]); // lighter top
+        for (let k = 0; k < 3; k++) {                                                     // blade tuft on top
+          const bx = cx + (r() - .5) * T * .6, bz = cz + (r() - .5) * T * .6, bh = .35 + r() * .25;
+          B.add(new THREE.ConeGeometry(.12, bh, 4), M(bx, h * .9 + bh / 2, bz, (r() - .5) * .5, r() * 3, (r() - .5) * .5, 1, 1, .5), BLADE[k & 1]);
+        }
+      }
+    const g = B.build(), mat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonRamp(), transparent: true, opacity: 1 });
+    const mesh = new THREE.Mesh(g, mat), grp = new THREE.Group(); grp.add(mesh);
+    let ol = null; if (quality !== 'low') { ol = new THREE.Mesh(g, outlineMat(0.04)); grp.add(ol); }
+    // pivot at the bush centre so the rustle squash stays in place
+    g.translate(-bb.x, 0, -bb.z); grp.position.set(bb.x, 0, bb.z); scene.add(grp);
+    out.push({ grp, mat, ol, rustle: 0 });
   }
-  const g = B.build(); scene.add(new THREE.Mesh(g, vcToon()));
-  if (quality !== 'low') scene.add(new THREE.Mesh(g, outlineMat(0.05)));
+  return out;
+}
+// per frame: rustle when a hero moves inside, fade the bush the player stands in
+export function tickBushes(list, G, pl, dt) {
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    if (G.heroes.some(u => u.alive && u.bush === i && u.moving && !(u.hid && pl && u.team !== pl.team))) b.rustle = Math.min(1, b.rustle + dt * 6);
+    else b.rustle = Math.max(0, b.rustle - dt * 2);
+    const w = Math.sin(G.t * 16) * .045 * b.rustle;
+    b.grp.scale.set(1 + w, 1 - Math.abs(w) * 1.5, 1 - w); b.grp.rotation.z = w * .6;
+    const tgt = pl && pl.alive && pl.bush === i ? .45 : 1; b.mat.opacity += (tgt - b.mat.opacity) * Math.min(1, dt * 8);
+    b.mat.depthWrite = b.mat.opacity > .95; if (b.ol) b.ol.visible = b.mat.opacity > .95;
+  }
 }
 export function makeRelic(scene, quality) {
   const B = new Builder();
