@@ -1,6 +1,7 @@
 // Q版大乱斗 — minimal playable loop: hero pick, 5v5 lane, auto-attacks, bots, towers, minion waves, respawn, win/lose.
 // Step 2: QWER + Flash per hero (data table SK), status effects, skillshots/zones/dashes, closer camera.
 import * as THREE from 'three';
+import { createLand } from './land.js';
 import { HERO_NAMES, loadHeroes, makeHero } from './heroes.js';
 import { createMinimap } from './minimap.js';
 import { buildMap, structureMesh, MinionRenderer, Blobs, Bars, FX, laneHalf, TEAM_COL, BUSHES, RELICS, inBush, buildBushes, tickBushes, makeRelic } from './world.js';
@@ -31,39 +32,14 @@ const MINION_MS = 3.25, WAVE_EVERY = 30, RESPAWN = 10, FOUNTAIN_X = 52.5;
 const TOWER = { range: 7.75, ad: 150, as: .83 };
 
 /* ---------------- forced landscape + fullscreen (from party) ---------------- */
-let forceLandOn = false;
-const forceLandPortrait = () => forceLandOn && innerHeight > innerWidth;
+let landReady = false;
+const LAND = createLand({ key: 'hexq_forceLand', cls: 'forceLand', hintSel: '#rotateHint', isTouch, onChange: () => { if (landReady) onResize(); } });
+const forceLandPortrait = () => LAND.rotated();
 const viewSize = () => forceLandPortrait() ? [innerHeight, innerWidth] : [innerWidth, innerHeight];
 const gameXY = (cx, cy) => forceLandPortrait() ? { x: cy, y: innerWidth - cx } : { x: cx, y: cy };
-function setForceLand(on) {
-  forceLandOn = !!on; document.body.classList.toggle('forceLand', forceLandOn);
-  try { forceLandOn ? localStorage.setItem('hexq_forceLand', '1') : localStorage.removeItem('hexq_forceLand'); } catch (e) {}
-  onResize(); centerMsg(forceLandOn ? '已切换横屏' : '已恢复竖屏', 1200);
-}
-try { forceLandOn = localStorage.getItem('hexq_forceLand') === '1'; if (forceLandOn) document.body.classList.add('forceLand'); } catch (e) {}
-const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
-async function goFull() {
-  if (forceLandOn) { setForceLand(false); return; }
-  let ok = false;
-  try {
-    if (!isFull()) {
-      const rf = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
-      if (rf) { await Promise.race([rf.call(document.documentElement, { navigationUI: 'hide' }), new Promise((_, rj) => setTimeout(rj, 900))]); ok = isFull(); }
-    } else ok = true;
-  } catch (e) {}
-  let locked = false;
-  try { if (screen.orientation?.lock) { await Promise.race([screen.orientation.lock('landscape'), new Promise((_, rj) => setTimeout(rj, 900))]); locked = true; } } catch (e) {}
-  if (!locked && innerWidth > innerHeight) locked = true;
-  if (!ok || (!locked && isTouch)) setForceLand(true);
-}
-async function exitFull() {
-  try { screen.orientation?.unlock?.(); } catch (e) {}
-  try { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.webkitFullscreenElement) await document.webkitExitFullscreen?.(); } catch (e) {}
-}
-let lastFullTap = 0;
-function fullTap(e) { e?.stopPropagation(); const n = performance.now(); if (n - lastFullTap < 400) return; lastFullTap = n; goFull(); }
-for (const id of ['bFull', 'bFull2']) { $(id).addEventListener('pointerup', fullTap); $(id).addEventListener('click', fullTap); }
-$('bExit').addEventListener('click', async e => { e.stopPropagation(); await exitFull(); if (forceLandOn) setForceLand(false); else centerMsg('已恢复竖屏', 1000); });
+const isFull = () => LAND.isFull();
+for (const id of ['bFull', 'bFull2']) LAND.bind(id, LAND.toggle);
+LAND.bind('bExit', () => LAND.exit());
 
 /* ---------------- renderer / scene ---------------- */
 const canvas = $('gl');
@@ -77,7 +53,7 @@ function onResize() {
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
   camera.aspect = W / H; camera.fov = W / H < 1.2 ? 55 : 40; camera.updateProjectionMatrix();
 }
-addEventListener('resize', onResize); onResize();
+addEventListener('resize', onResize); onResize(); landReady = true;
 buildMap(scene, QUALITY);
 const bushObjs = buildBushes(scene, QUALITY);
 const G_RELICS = { list: [] }; const RELIC_CD = 22, RELIC_HEAL = .3, RELIC_R = 5; // hx7k2 values: 30% max HP to allied heroes nearby, back after 22 s

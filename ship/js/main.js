@@ -1,5 +1,6 @@
 // 货轮突击 - main: renderer, match flow, player, input, settings
 import * as THREE from 'three';
+import { createLand } from './land.js';
 import { buildMap, moveEntity } from './map.js';
 import { buildIsland } from './island.js';
 import { WEAPONS, ORDER, buildViewmodels, MUZZLE } from './weapons.js';
@@ -12,6 +13,14 @@ import { setupBR, updateBR, brKilled, brResult, brBoardHTML, brGoal, cleanup as 
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+// ---------------- landscape: instant CSS-rotated fallback + background fullscreen/lock ----------------
+let landReady = false;
+const LAND = createLand({ key: 'ship_forceLand', cls: 'forceLand', hintSel: '#rotateHint', isTouch,
+  onChange: () => { if (landReady) { onResize(); syncFsUI(); } } });
+const forceLandPortrait = () => LAND.rotated();
+const viewSize = () => forceLandPortrait() ? [innerHeight, innerWidth] : [innerWidth, innerHeight];
+const gameXY = (cx, cy) => forceLandPortrait() ? { x: cy, y: innerWidth - cx } : { x: cx, y: cy };
 
 // ---------------- settings ----------------
 const DEF = { quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, showFps: 0, tp: 0 };
@@ -27,7 +36,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 function applyPixelRatio() {
   const cap = isTouch ? { low: 1, mid: 1.25, high: 1.5 }[S.quality] : { low: 1, mid: 1.5, high: 2 }[S.quality];
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap));
-  renderer.setSize(innerWidth, innerHeight, false);
+  const [W, H] = viewSize(); renderer.setSize(W, H, false);
 }
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 400);
@@ -39,8 +48,8 @@ const vmSun = new THREE.DirectionalLight(0xffffff, 1.2); vmSun.position.set(1, 2
 const vmRoot = new THREE.Group(); vmScene.add(vmRoot);
 const VM = buildViewmodels();
 for (const k of ORDER) vmRoot.add(VM.models[k]);
-function onResize() { applyPixelRatio(); camera.aspect = vmCamera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); vmCamera.updateProjectionMatrix(); }
-addEventListener('resize', onResize); onResize();
+function onResize() { applyPixelRatio(); const [W, H] = viewSize(); camera.aspect = vmCamera.aspect = W / H; camera.updateProjectionMatrix(); vmCamera.updateProjectionMatrix(); }
+addEventListener('resize', onResize); onResize(); landReady = true;
 
 // ---------------- game state ----------------
 const BLUE_NAMES = ['阿杰', '小林', '老周', '石头', '阿飞'];
@@ -533,25 +542,28 @@ function btnDown(btn, el) {
 touchLayer.addEventListener('touchstart', (e) => {
   e.preventDefault(); unlockAudio();
   if (G.state !== 'playing') return;
+  const [W] = viewSize();
   for (const t of e.changedTouches) {
+    const p = gameXY(t.clientX, t.clientY);
     const el = t.target.closest && t.target.closest('[data-btn]');
-    if (el) { const btn = el.dataset.btn; T.set(t.identifier, { type: 'btn', btn, el, x: t.clientX, y: t.clientY }); btnDown(btn, el); continue; }
-    if (t.clientX < innerWidth * 0.4) {
-      T.set(t.identifier, { type: 'joy', ox: t.clientX, oy: t.clientY });
-      joyBase.style.left = t.clientX + 'px'; joyBase.style.top = t.clientY + 'px'; joyBase.classList.remove('hidden'); joyKnob.style.transform = '';
-    } else T.set(t.identifier, { type: 'look', x: t.clientX, y: t.clientY });
+    if (el) { const btn = el.dataset.btn; T.set(t.identifier, { type: 'btn', btn, el, x: p.x, y: p.y }); btnDown(btn, el); continue; }
+    if (p.x < W * 0.4) {
+      T.set(t.identifier, { type: 'joy', ox: p.x, oy: p.y });
+      joyBase.style.left = p.x + 'px'; joyBase.style.top = p.y + 'px'; joyBase.classList.remove('hidden'); joyKnob.style.transform = '';
+    } else T.set(t.identifier, { type: 'look', x: p.x, y: p.y });
   }
 }, { passive: false });
 touchLayer.addEventListener('touchmove', (e) => {
   e.preventDefault();
   for (const t of e.changedTouches) {
     const s = T.get(t.identifier); if (!s) continue;
+    const p = gameXY(t.clientX, t.clientY);
     if (s.type === 'joy') {
-      let dx = t.clientX - s.ox, dy = t.clientY - s.oy; const d = Math.hypot(dx, dy), R = 50;
+      let dx = p.x - s.ox, dy = p.y - s.oy; const d = Math.hypot(dx, dy), R = 50;
       if (d > R) { dx = dx / d * R; dy = dy / d * R; }
       P.joyX = dx / R; P.joyY = dy / R; joyKnob.style.transform = `translate(${dx}px,${dy}px)`;
     } else if (s.type === 'look' || (s.type === 'btn' && s.btn === 'fire')) {
-      P.lookX += t.clientX - s.x; P.lookY += t.clientY - s.y; s.x = t.clientX; s.y = t.clientY;
+      P.lookX += p.x - s.x; P.lookY += p.y - s.y; s.x = p.x; s.y = p.y;
     }
   }
 }, { passive: false });
@@ -574,20 +586,12 @@ document.querySelectorAll('#lobby .seg').forEach(seg => seg.addEventListener('cl
   if (seg.dataset.k === 'mode') document.getElementById('lobby').classList.toggle('brMode', v === 'br');
 }));
 $('btnStart').addEventListener('click', () => { unlockAudio(); startMatch({ ...lobbyOpts }); });
-async function goFull() {
-  try { if (!document.fullscreenElement) await (document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }) || document.documentElement.webkitRequestFullscreen?.()); } catch (e) {}
-  try { await screen.orientation?.lock?.('landscape'); } catch (e) { if (innerHeight > innerWidth) HUD.centerMsg('请手动将手机横过来', 1800); }
-}
-$('btnFull').addEventListener('click', goFull); $('btnFull2').addEventListener('click', goFull); $('tFull').addEventListener('click', goFull);
+for (const id of ['btnFull', 'btnFull2', 'tFull']) LAND.bind(id, LAND.toggle);
 // fullscreen exit: small always-visible button in play, pause menu entry, Esc/back handled; never auto re-enter
-const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
-async function leaveFull() {
-  try { screen.orientation?.unlock?.(); } catch (e) {}
-  try { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.webkitFullscreenElement) document.webkitExitFullscreen?.(); } catch (e) {}
-  syncFsUI();
-}
+const isFull = () => LAND.isFull();
+function leaveFull() { LAND.exit(); syncFsUI(); }
 function syncFsUI() {
-  const f = isFull();
+  const f = isFull() || LAND.isOn();
   $('tExitFs').classList.toggle('hidden', !f); $('tFull').classList.toggle('hidden', f);
   $('btnExitFs').classList.toggle('hidden', !f);
 }
@@ -596,7 +600,7 @@ function onFsChange() {
   if (!isFull()) { try { screen.orientation?.unlock?.(); } catch (e) {} if (G.state === 'playing' && $('settings').classList.contains('hidden')) openSettings(); }
 }
 document.addEventListener('fullscreenchange', onFsChange); document.addEventListener('webkitfullscreenchange', onFsChange);
-$('tExitFs').addEventListener('click', async () => { await leaveFull(); if (G.state === 'playing' && $('settings').classList.contains('hidden')) openSettings(); });
+LAND.bind('tExitFs', () => { leaveFull(); if (G.state === 'playing' && $('settings').classList.contains('hidden')) openSettings(); });
 function showScoreboard(on) {
   $('sbPanel').innerHTML = (G.mode === 'br' ? brBoardHTML(G, '战绩') : HUD.scoreboardHTML(G, '战绩')) + '<button class="close" id="sbClose">关闭</button>';
   $('scoreboard').classList.toggle('hidden', !on);
@@ -620,7 +624,7 @@ function openSettings() { syncSettingsUI(); syncFsUI(); $('setTitle').textConten
 const closeSettings = () => { $('settings').classList.add('hidden'); G.paused = false; };
 $('btnSettings').addEventListener('click', openSettings); $('tSet').addEventListener('click', openSettings);
 $('setClose').addEventListener('click', closeSettings);
-$('btnExitFs').addEventListener('click', () => leaveFull());
+LAND.bind('btnExitFs', () => leaveFull());
 $('btnHome').addEventListener('click', async () => { await leaveFull(); location.href = '../'; });
 function toLobby() {
   P.inCar = null;

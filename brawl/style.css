@@ -1,7 +1,7 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 html,body{width:100%;height:100%;overflow:hidden;background:#123;color:#fff;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;touch-action:none}
 #app{position:fixed;left:0;top:0;width:100vw;height:100vh;overflow:hidden}
-body.rot #app{width:100vh;height:100vw;transform-origin:0 0;transform:rotate(90deg) translateY(-100%)}
+@media (orientation:portrait){body.rot #app{width:100vh;height:100vw;transform-origin:0 0;transform:rotate(90deg) translateY(-100%)}}
 canvas#gl,canvas#ov{position:absolute;inset:0;width:100%;height:100%;display:block}
 canvas#ov{pointer-events:none;z-index:2}
 .hidden{display:none!important}

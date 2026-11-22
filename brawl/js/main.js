@@ -1,5 +1,6 @@
 // 英雄大乱斗 — bootstrap, lobby, input, camera, HUD
 import * as THREE from 'three';
+import { createLand } from './land.js';
 import { CHARS, ORDER, makeBrawler, animBrawler } from './chars.js';
 import { makeFX } from './fx.js';
 import { createGame } from './game.js';
@@ -33,31 +34,26 @@ function updateTrophyTotal() { const el = $('trophyTotal'); if (el) el.textConte
 
 // ---------- sizes / rotation ----------
 let W = 1, Hh = 1;
-const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
+const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+// landscape: CSS rotation (body.rot) applied instantly on tap, native fullscreen/lock fired in the background;
+// portrait on a phone always shows either the rotated app or the rotate hint (unless 就竖着玩 was chosen)
+let landReady = false;
+const LAND = createLand({ key: 'brawl_forceLand', cls: 'rot', hintSel: '#rotHint', isTouch,
+  allowPortrait: () => document.body.classList.contains('noRot'), onChange: () => { if (landReady) resize(); } });
 function resize() {
-  const rot = document.body.classList.contains('rot');
+  const rot = LAND.rotated();
   W = rot ? innerHeight : innerWidth; Hh = rot ? innerWidth : innerHeight;
   renderer.setSize(W, Hh, false); camera.aspect = W / Hh; camera.updateProjectionMatrix(); lcam.aspect = W / Hh; lcam.updateProjectionMatrix();
   const pr = Math.min(devicePixelRatio || 1, 1.5); ov.width = W * pr; ov.height = Hh * pr; octx.setTransform(pr, 0, 0, pr, 0, 0);
   document.body.classList.toggle('portrait', isTouch && innerHeight > innerWidth);
 }
-addEventListener('resize', resize); resize();
+addEventListener('resize', resize); resize(); landReady = true;
 // map a client point to app-local coords (app may be CSS-rotated 90°)
-function loc(x, y) { return document.body.classList.contains('rot') ? { x: y, y: innerWidth - x } : { x, y }; }
-const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
-async function goLandscape() {
-  try { if (!isFull()) await (document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }) || document.documentElement.webkitRequestFullscreen?.()); } catch (e) {}
-  try { await screen.orientation?.lock?.('landscape'); } catch (e) {}
-  setTimeout(() => { if (innerHeight > innerWidth) document.body.classList.add('rot'); resize(); }, 350);
-}
-async function exitLandscape() {
-  document.body.classList.remove('rot');
-  try { screen.orientation?.unlock?.(); } catch (e) {}
-  try { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.webkitFullscreenElement) await document.webkitExitFullscreen?.(); } catch (e) {}
-  resize();
-}
-$('tFull').onclick = goLandscape; $('pFull').onclick = goLandscape; $('btnRot').onclick = goLandscape;
-$('btnRotNo').onclick = () => document.body.classList.add('noRot');
+function loc(x, y) { return LAND.rotated() ? { x: y, y: innerWidth - x } : { x, y }; }
+const isFull = () => LAND.isFull();
+const exitLandscape = () => LAND.exit();
+for (const id of ['tFull', 'pFull', 'btnRot']) LAND.bind(id, () => { document.body.classList.remove('noRot'); LAND.toggle(); });
+LAND.bind('btnRotNo', () => { document.body.classList.add('noRot'); LAND.guard(); });
 
 // ---------- portraits for the select cards ----------
 function portraits() {
@@ -136,8 +132,8 @@ function pause() { if (state !== 'game') return; paused = true; $('pause').class
 $('btnPlay').onclick = startMatch;
 $('pResume').onclick = () => { paused = false; $('pause').classList.add('hidden'); };
 $('pHome').onclick = toLobby; $('eHome').onclick = toLobby; $('eAgain').onclick = startMatch;
-$('tExit').onclick = () => { exitLandscape(); pause(); };
-document.addEventListener('fullscreenchange', () => { if (!isFull()) { document.body.classList.remove('rot'); resize(); if (state === 'game' && !paused) pause(); } });
+LAND.bind('tExit', () => { exitLandscape(); pause(); });
+document.addEventListener('fullscreenchange', () => { if (!isFull()) { resize(); if (state === 'game' && !paused) pause(); } });
 $('btnJump').onclick = () => { if (G.playerJump()) { input.jumped = true; $('btnJump').textContent = '开 伞'; } };
 
 // ---------- aim helpers ----------

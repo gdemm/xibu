@@ -133,6 +133,10 @@ body.br #topbar .b,body.br #topbar .r{font-size:15px;min-width:0;white-space:now
 #dmg.zone{opacity:.5!important;background:radial-gradient(ellipse at center,transparent 40%,rgba(40,110,255,.65))}
 @keyframes rot{0%,20%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
 @media (orientation:portrait) and (pointer:coarse){#rotateHint{display:flex}}
+@media (orientation:portrait){
+ body.forceLand{width:100vh;height:100vw;transform:rotate(90deg) translateY(-100%);transform-origin:top left}
+ body.forceLand #rotateHint{display:none!important}
+}
 @media (max-height:380px){.brand h1{font-size:38px}.opts{gap:6px;padding:10px 14px}.seg button{padding:5px 4px}}
 </style>
 </head>

@@ -15,23 +15,18 @@ import * as HUD from './hud.js';
 import { initArrows, clearArrows, shootArrow, updateArrows } from './bow.js';
 import { setupBR, updateBR, brKilled, brResult, brBoardHTML, brGoal, cleanup as brCleanup, GEAR_RED, bagCap, gearName, dropBagItem, brNearby, brPickLoot, LV_COLOR } from './br.js';
 
+import { createLand } from './land.js';
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
 // ---------------- forced landscape fallback + HUD layout ----------------
-let forceLandOn = false;
-const forceLandPortrait = () => forceLandOn && innerHeight > innerWidth;
+let landReady = false;
+const LAND = createLand({ key: 'party_forceLand', cls: 'forceLand', hintSel: '#rotateHint', isTouch,
+  onChange: () => { if (landReady) { onResize(); syncFullBtns(); } } });
+const forceLandPortrait = () => LAND.rotated();
 const viewSize = () => forceLandPortrait() ? [innerHeight, innerWidth] : [innerWidth, innerHeight];
 const gameXY = (cx, cy) => forceLandPortrait() ? { x: cy, y: innerWidth - cx } : { x: cx, y: cy };
 const isUI = (t) => !!(t?.closest?.('#lobby,#settings,#topBtns,#rotateHint') || t?.closest?.('button'));
-function setForceLand(on) {
-  forceLandOn = !!on;
-  document.body.classList.toggle('forceLand', forceLandOn);
-  try { forceLandOn ? localStorage.setItem('party_forceLand', '1') : localStorage.removeItem('party_forceLand'); } catch (e) {}
-  onResize(); syncFullBtns();
-  HUD.centerMsg(forceLandOn ? '已切换横屏' : '已恢复竖屏', 1200);
-}
-try { forceLandOn = localStorage.getItem('party_forceLand') === '1'; if (forceLandOn) document.body.classList.add('forceLand'); } catch (e) {}
 let HUDL = {};
 try { HUDL = JSON.parse(localStorage.getItem('party_hud_layout') || '{}') || {}; } catch (e) {}
 let hudEdit = false;
@@ -70,7 +65,7 @@ const vmRoot = new THREE.Group(); vmScene.add(vmRoot);
 const VM = buildViewmodels();
 for (const k of ORDER) vmRoot.add(VM.models[k]);
 function onResize() { applyPixelRatio(); const [W, H] = viewSize(); camera.aspect = vmCamera.aspect = W / H; updateBaseFov(); camera.updateProjectionMatrix(); vmCamera.updateProjectionMatrix(); applyHudLayout(); }
-addEventListener('resize', onResize); onResize();
+addEventListener('resize', onResize); onResize(); landReady = true;
 
 // ---------------- game state ----------------
 const BLUE_NAMES = ['阿杰', '小林', '老周', '石头', '阿飞'];
@@ -792,23 +787,7 @@ document.querySelectorAll('#lobby .seg').forEach(seg => seg.addEventListener('cl
   if (seg.dataset.k === 'mode') document.getElementById('lobby').classList.toggle('brMode', v === 'br');
 }));
 $('btnStart').addEventListener('click', () => { unlockAudio(); startMatch({ ...lobbyOpts }); });
-let lastFullTap = 0;
-async function goFull() {
-  if (forceLandOn) { setForceLand(false); return; }
-  let ok = false;
-  try {
-    if (!isFull()) {
-      const rf = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
-      if (rf) { await Promise.race([rf.call(document.documentElement, { navigationUI: 'hide' }), new Promise((_, rj) => setTimeout(rj, 900))]); ok = isFull(); }
-    } else ok = true;
-  } catch (e) {}
-  let locked = false;
-  try { if (screen.orientation?.lock) { await Promise.race([screen.orientation.lock('landscape'), new Promise((_, rj) => setTimeout(rj, 900))]); locked = true; } } catch (e) {}
-  if (!locked && innerWidth > innerHeight) locked = true;
-  if (!ok || (!locked && isTouch)) setForceLand(true);
-}
-function fullTap() { const n = performance.now(); if (n - lastFullTap < 400) return; lastFullTap = n; goFull(); }
-for (const id of ['btnFull', 'btnFull2', 'tFull', 'lFull']) { const b = $(id); if (b) { b.addEventListener('pointerup', fullTap); b.addEventListener('click', fullTap); } }
+for (const id of ['btnFull', 'btnFull2', 'tFull', 'lFull']) LAND.bind(id, LAND.toggle);
 function showScoreboard(on) {
   $('sbPanel').innerHTML = (G.mode === 'br' ? brBoardHTML(G, '战绩') : HUD.scoreboardHTML(G, '战绩')) + '<button class="close" id="sbClose">关闭</button>';
   $('scoreboard').classList.toggle('hidden', !on);
@@ -995,11 +974,8 @@ const openSettings = () => {
   $('btnQuit').classList.toggle('hidden', !play); $('btnExitFull').classList.toggle('hidden', !isFull());
   $('settings').classList.remove('hidden'); if (document.pointerLockElement) document.exitPointerLock();
 };
-async function exitFull() {
-  try { screen.orientation?.unlock?.(); } catch (e) {}
-  try { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.webkitFullscreenElement) await document.webkitExitFullscreen?.(); } catch (e) {}
-}
-function syncFullBtns() { const f = isFull(); $('tExit').classList.toggle('hidden', !f); $('tFull').classList.toggle('hidden', f && !forceLandOn); $('btnExitFull').classList.toggle('hidden', !f); }
+const exitFull = () => LAND.exit();
+function syncFullBtns() { const f = isFull(); $('tExit').classList.toggle('hidden', !f); $('tFull').classList.toggle('hidden', f && !LAND.isOn()); $('btnExitFull').classList.toggle('hidden', !f); }
 let wasFull = false;
 function onFullChange() {
   const f = isFull(); syncFullBtns();
@@ -1007,9 +983,9 @@ function onFullChange() {
   wasFull = f;
 }
 document.addEventListener('fullscreenchange', onFullChange); document.addEventListener('webkitfullscreenchange', onFullChange);
-$('tExit').addEventListener('click', () => { exitFull(); openSettings(); });
-$('lExit').addEventListener('click', async () => { await exitFull(); if (forceLandOn) setForceLand(false); else HUD.centerMsg('已恢复竖屏', 1000); syncFullBtns(); });
-$('btnExitFull').addEventListener('click', () => { exitFull(); $('btnExitFull').classList.add('hidden'); });
+LAND.bind('tExit', () => { exitFull(); openSettings(); });
+LAND.bind('lExit', () => { exitFull(); syncFullBtns(); });
+LAND.bind('btnExitFull', () => { exitFull(); $('btnExitFull').classList.add('hidden'); });
 $('btnSettings').addEventListener('click', openSettings); $('tSet').addEventListener('click', openSettings);
 $('setClose').addEventListener('click', () => { G.paused = false; $('settings').classList.add('hidden'); });
 function toLobby() {
