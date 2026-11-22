@@ -373,11 +373,11 @@ export class FX {
 /* ---------- bushes + health relics (step 7, positions follow the hx7k2 / Howling Abyss layout, Q-style look) ---------- */
 // bush = ellipse (x, z, rx, rz). Two per side, alternating lane edges, kept clear of the relics.
 export const BUSHES = [ // from Map12 navgrid grass regions (hx7k2 brush-regions-data), mapped onto this lane: north edge from the data, south edge mirrored
-  { x: -22.8, z: 6.0, rx: 2.3, rz: 1.2 }, { x: -5.4, z: 4.9, rx: 4.4, rz: 2.1 },
-  { x: 6.3, z: 5.1, rx: 4.5, rz: 2.2 }, { x: 23.2, z: 6.0, rx: 2.3, rz: 1.2 },
+  { x: -22.8, z: 6.0, rx: 2.4, rz: 1.5 }, { x: -5.4, z: 4.9, rx: 2.4, rz: 1.5 },
+  { x: 6.3, z: 5.1, rx: 2.4, rz: 1.5 }, { x: 23.2, z: 6.0, rx: 2.4, rz: 1.5 },
   // south edge mirror (bushes on both sides), nudged so they don't swallow the relics
-  { x: -21.6, z: -6.0, rx: 2.3, rz: 1.2 }, { x: -5.4, z: -4.9, rx: 4.2, rz: 2.1 },
-  { x: 6.3, z: -5.1, rx: 4.2, rz: 2.2 }, { x: 22.0, z: -6.0, rx: 2.3, rz: 1.2 },
+  { x: -21.6, z: -6.0, rx: 2.4, rz: 1.5 }, { x: -5.4, z: -4.9, rx: 2.4, rz: 1.5 },
+  { x: 6.3, z: -5.1, rx: 2.4, rz: 1.5 }, { x: 22.0, z: -6.0, rx: 2.4, rz: 1.5 },
 ];
 // relics: hx7k2 map-config relics mapped onto this lane (south edge like the original)
 export const RELICS = [{ x: -11.2, z: -4.6 }, { x: -25.6, z: -5.6 }, { x: 11.4, z: -4.5 }, { x: 25.8, z: -5.7 }];
