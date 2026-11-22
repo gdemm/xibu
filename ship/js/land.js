@@ -25,7 +25,8 @@ export function createLand(o = {}) {
   const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
   const save = () => { if (!key) return; try { want ? localStorage.setItem(key, '1') : localStorage.removeItem(key); } catch (e) {} };
   function apply(v) {
-    if (v === on) return; on = v; body.classList.toggle(cls, on);
+    if (body.classList.contains(cls) !== v) body.classList.toggle(cls, v); // also repairs a class removed by other code
+    if (v === on) return; on = v;
     // game resize runs in the next animation frame: rAF callbacks run right before that frame's
     // style/paint, so the rotation and the resized canvas still land in the same frame, but the tap
     // handler itself returns immediately
