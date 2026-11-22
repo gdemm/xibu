@@ -92,11 +92,13 @@ export function createMinimap({ canvas, G, camera, heroNames }) {
       ctx.fillStyle = m.team === 0 ? '#7cc4ff' : '#ff8a7a'; const r = m.type === 'siege' ? 1.9 : 1.3;
       ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
+    // health relics (green when ready)
+    for (const r of G.relics || []) { const [x, y] = P(r.x, r.z); ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 7); ctx.fillStyle = G.t >= r.ready ? '#5dff9e' : 'rgba(93,255,158,.25)'; ctx.fill(); }
     // camera view
     const fp = footprint(); ctx.beginPath(); fp.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
     ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 1; ctx.stroke();
     // heroes: enemies, allies, then player on top
-    const hs = G.heroes.filter(u => u.alive).sort((a, b) => (a.isPlayer - b.isPlayer) || ((a.team === my) - (b.team === my)));
+    const hs = G.heroes.filter(u => u.alive && !(u.hid && u.team !== my)).sort((a, b) => (a.isPlayer - b.isPlayer) || ((a.team === my) - (b.team === my)));
     for (const u of hs) heroIcon(u);
   }
 

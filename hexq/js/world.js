@@ -369,3 +369,47 @@ export class FX {
   beamAt(x, y, z, yaw, len, w, h, col, a = 1) { this._put(3, x, y, z, w, h, len, yaw, col, a * .8); }
   end() { this.sets.forEach((im, k) => { im.count = this.n[k]; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; im.geometry.attributes.aA.needsUpdate = true; }); }
 }
+
+/* ---------- bushes + health relics (step 7, positions follow the hx7k2 / Howling Abyss layout, Q-style look) ---------- */
+// bush = ellipse (x, z, rx, rz). Two per side, alternating lane edges, kept clear of the relics.
+export const BUSHES = [
+  { x: -6.5, z: 5.2, rx: 2.4, rz: 1.5 }, { x: 6.5, z: -5.2, rx: 2.4, rz: 1.5 },
+  { x: -17.5, z: -5.0, rx: 2.3, rz: 1.5 }, { x: 17.5, z: 5.0, rx: 2.3, rz: 1.5 },
+];
+// relics: hx7k2 map-config relics mapped onto this lane (two per side, south edge like the original)
+export const RELICS = [{ x: -11, z: -4.6 }, { x: -26, z: -5.4 }, { x: 11, z: -4.6 }, { x: 26, z: -5.4 }];
+export const inBush = (x, z) => { for (let i = 0; i < BUSHES.length; i++) { const b = BUSHES[i]; if (((x - b.x) / b.rx) ** 2 + ((z - b.z) / b.rz) ** 2 < 1) return i; } return -1; };
+export function buildBushes(scene, quality) {
+  const B = new Builder(), C = [0x2e9c6a, 0x40b878, 0x5ccf8c], TIP = 0xa6f0b0, SN = 0xc4dbee;
+  for (const b of BUSHES) {
+    let s = Math.abs(Math.round(b.x * 13 + b.z * 7)) + 1234;
+    const r = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+    // round chunky leaf blobs filling the ellipse
+    for (let i = 0; i < 13; i++) {
+      const a = r() * Math.PI * 2, d = Math.sqrt(r()) * 0.82, sc = 0.5 + r() * 0.3;
+      B.add(new THREE.IcosahedronGeometry(0.75, 1), M(b.x + Math.cos(a) * b.rx * d, 0.45 * sc + 0.1, b.z + Math.sin(a) * b.rz * d, 0, r() * 3, 0, sc * 1.15, sc * 0.9, sc), C[i % 3]);
+    }
+    // grass blades poking out (lighter tips)
+    for (let i = 0; i < 12; i++) {
+      const a = r() * Math.PI * 2, d = 0.35 + Math.sqrt(r()) * 0.7, h = 0.45 + r() * 0.35, x = b.x + Math.cos(a) * b.rx * d, z = b.z + Math.sin(a) * b.rz * d;
+      B.add(new THREE.ConeGeometry(0.2, h, 5), M(x, h / 2 + 0.55, z, (r() - .5) * 0.8, r() * 3, (r() - .5) * 0.8, 1, 1, 0.45), i % 2 ? TIP : C[2]);
+    }
+    // a few snow clumps on top so it belongs to the Howling Abyss
+    for (let i = 0; i < 3; i++) { const a = r() * Math.PI * 2; B.add(new THREE.SphereGeometry(0.28, 7, 5), M(b.x + Math.cos(a) * b.rx * 0.45, 1.05, b.z + Math.sin(a) * b.rz * 0.45, 0, 0, 0, 1, 0.45, 1), SN); }
+  }
+  const g = B.build(); scene.add(new THREE.Mesh(g, vcToon()));
+  if (quality !== 'low') scene.add(new THREE.Mesh(g, outlineMat(0.05)));
+}
+export function makeRelic(scene, quality) {
+  const B = new Builder();
+  B.add(new THREE.IcosahedronGeometry(0.42, 1), M(0, 0, 0), 0x5dff9e)
+    .add(new THREE.OctahedronGeometry(0.2, 0), M(0, 0, 0, 0, 0.6, 0, 1, 1.5, 1), 0xe6ffe0)
+    .add(new THREE.SphereGeometry(0.1, 6, 4), M(-0.16, 0.2, 0.32, 0, 0, 0, 1, 0.6, 0.5), 0xffffff);
+  const g = B.build(), grp = new THREE.Group();
+  const orb = new THREE.Mesh(g, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonRamp(), emissive: 0x1d8a4a, emissiveIntensity: 0.9 }));
+  grp.add(orb); if (quality !== 'low') grp.add(new THREE.Mesh(g, outlineMat(0.04)));
+  const pad = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.08, 5, 20), new THREE.MeshBasicMaterial({ color: 0x5dff9e, transparent: true, opacity: 0.55 }));
+  pad.rotation.x = Math.PI / 2; pad.position.y = 0.06;
+  const root = new THREE.Group(); root.add(grp); root.add(pad); scene.add(root);
+  return { root, orb: grp, pad };
+}

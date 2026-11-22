@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { HERO_NAMES, loadHeroes, makeHero } from './heroes.js';
 import { createMinimap } from './minimap.js';
-import { buildMap, structureMesh, MinionRenderer, Blobs, Bars, FX, laneHalf, TEAM_COL } from './world.js';
+import { buildMap, structureMesh, MinionRenderer, Blobs, Bars, FX, laneHalf, TEAM_COL, BUSHES, RELICS, inBush, buildBushes, makeRelic } from './world.js';
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -79,10 +79,16 @@ function onResize() {
 }
 addEventListener('resize', onResize); onResize();
 buildMap(scene, QUALITY);
+buildBushes(scene, QUALITY);
+const G_RELICS = { list: [] }; const RELIC_CD = 22, RELIC_HEAL = .3, RELIC_R = 5; // hx7k2 values: 30% max HP to allied heroes nearby, back after 22 s
+const relicObjs = RELICS.map(r => ({ ...r, ready: 0, m: makeRelic(scene, QUALITY) }));
+G_RELICS.list = relicObjs;
+for (const r of relicObjs) r.m.root.position.set(r.x, 0, r.z);
 const minionR = new MinionRenderer(scene, QUALITY, 80), blobs = new Blobs(scene, 120), bars = new Bars(scene, 220), fx = new FX(scene, 200);
 
 /* ---------------- game state ---------------- */
 const G = { state: 'pick', t: 0, heroes: [], minions: [], structs: [], proj: [], fxs: [], shots: [], zones: [], walls: [], vis: [], timed: [], kills: [0, 0], nextWave: 3, wave: 0, spawnQ: [], player: null, winner: -1 };
+G.relics = G_RELICS.list;
 window.__hq = { G, renderer, scene, camera, THREE };
 const dirOf = team => team === 0 ? 1 : -1; // direction toward the enemy base along x
 const dist2 = (a, b) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
@@ -131,7 +137,7 @@ function spawnMinion(type, team, i) {
 
 /* ---------------- combat ---------------- */
 function* enemiesOf(team) {
-  for (const e of G.heroes) if (e.team !== team && e.alive) yield e;
+  for (const e of G.heroes) if (e.team !== team && e.alive && !e.hid) yield e;
   for (const e of G.minions) if (e.team !== team && e.alive) yield e;
   for (const e of G.structs) if (e.team !== team && targetable(e)) yield e;
 }
@@ -168,6 +174,7 @@ function kill(t, src) {
   }
 }
 function startAttack(u, t) {
+  if (u.kind === 'hero') u.revealT = G.t;
   if (u.atkCd > 0 || u.windT > 0 || u.stunT > 0 || u.spinT > 0 || u.castT > 0 || u.dash) return;
   const as = u.as * (u.asBuffT > 0 ? 1.5 : 1) * (u.rockets ? .85 : 1);
   u.atkCd = 1 / as; u.windT = 0.28 / as; u.pend = t;
@@ -219,9 +226,43 @@ function towerSafe(u, x, z) { // is (x,z) outside the next enemy tower, or does 
   for (const m of G.minions) if (m.team === u.team && m.alive && dist2(m, t) < (TOWER.range - .5) ** 2) return true;
   return false;
 }
+function updateBushes() {
+  for (const u of G.heroes) u.bush = u.alive ? inBush(u.x, u.z) : -1;
+  for (const m of G.minions) m.bush = inBush(m.x, m.z);
+  for (const u of G.heroes) {
+    u.hid = false; if (u.bush < 0) continue;
+    // hidden unless an enemy unit stands in the same bush, or the hero attacked/cast in the last second
+    if (G.t - (u.revealT || -9) < 1) continue;
+    let seen = false;
+    for (const e of G.heroes) if (e.team !== u.team && e.alive && e.bush === u.bush) { seen = true; break; }
+    if (!seen) for (const m of G.minions) if (m.team !== u.team && m.alive && m.bush === u.bush) { seen = true; break; }
+    u.hid = !seen;
+  }
+  // enemies lose their lock on a hidden hero
+  for (const u of [...G.heroes, ...G.minions]) if (u.target?.hid && u.target.team !== u.team) u.target = null;
+  if (P.clickT?.hid) P.clickT = null;
+}
+function updateRelics() {
+  for (const r of relicObjs) {
+    if (G.t < r.ready) continue;
+    const ally = G.heroes.find(u => u.alive && u.hp < u.maxHp * .95 && (u.x - r.x) ** 2 + (u.z - r.z) ** 2 < 1.1 ** 2);
+    if (!ally) continue;
+    for (const u of G.heroes) if (u.team === ally.team && u.alive && (u.x - r.x) ** 2 + (u.z - r.z) ** 2 < RELIC_R ** 2) {
+      const amt = u.maxHp * RELIC_HEAL; u.hp = Math.min(u.maxHp, u.hp + amt);
+    }
+    r.ready = G.t + RELIC_CD;
+    G.fxs.push({ x: r.x, z: r.z, y: .05, t: .5, col: 0x7dff9a, r: RELIC_R * .8, ring: true });
+  }
+}
+function relicFor(u) { // nearest ready relic on the bot's own half, not past enemy tower
+  let best = null, bd = 14 * 14;
+  for (const r of relicObjs) { if (G.t < r.ready) continue; const d = (u.x - r.x) ** 2 + (u.z - r.z) ** 2; if (d < bd && towerSafe(u, r.x, r.z)) { bd = d; best = r; } }
+  return best;
+}
 function botThink(u, dt) {
   const s = u.team === 0 ? -1 : 1, d = dirOf(u.team);
   if (u.hp < u.maxHp * .3) u.retreat = true;
+  if (u.hp < u.maxHp * .6) { const r = relicFor(u); if (r && !(u.target?.kind === 'hero' && inRange(u, u.target) && u.target.hp < u.hp)) { u.retreat = false; moveTo(u, r.x, r.z, dt, .2); return; } }
   if (u.retreat) {
     if (u.hp >= u.maxHp * .9) u.retreat = false;
     else { moveTo(u, s * FOUNTAIN_X, u.laneZ * .5, dt, 1.2); return; }
@@ -292,10 +333,10 @@ const inLine = (e, x, z, dx, dz, len, w) => { const rx = e.x - x, rz = e.z - z, 
 const inCone = (e, x, z, dx, dz, len, half) => { const rx = e.x - x, rz = e.z - z, d = Math.hypot(rx, rz); if (d > len + e.radius) return false; return d < .4 || (rx * dx + rz * dz) / d >= Math.cos(half); };
 function foesIn(team, test) { const a = []; for (const e of foes(team)) if (test(e)) a.push(e); return a; }
 function nearFoes(u, r, n = 9) { // heroes first, then minions, nearest first
-  const a = foesIn(u.team, e => dist2(u, e) < (r + e.radius) ** 2);
+  const a = foesIn(u.team, e => !e.hid && dist2(u, e) < (r + e.radius) ** 2);
   a.sort((p, q) => (p.kind === 'hero' ? 0 : 1e4) + dist2(u, p) - ((q.kind === 'hero' ? 0 : 1e4) + dist2(u, q))); return a.slice(0, n);
 }
-function foeHeroNear(x, z, team, r, test) { let b = null, bd = r * r; for (const e of G.heroes) if (e.team !== team && e.alive && (!test || test(e))) { const d = (e.x - x) ** 2 + (e.z - z) ** 2; if (d < bd) { bd = d; b = e; } } return b; }
+function foeHeroNear(x, z, team, r, test) { let b = null, bd = r * r; for (const e of G.heroes) if (e.team !== team && e.alive && !e.hid && (!test || test(e))) { const d = (e.x - x) ** 2 + (e.z - z) ** 2; if (d < bd) { bd = d; b = e; } } return b; }
 const clampPt = (x, z) => { const p = { x, z }; clampLane(p); return p; };
 const vis = (o) => { o.t = o.dur = o.dur || .3; G.vis.push(o); };
 const later = (d, fn) => G.timed.push({ at: G.t + d, fn });
@@ -396,6 +437,7 @@ function castSlot(u, i, aim) {
   if (!u.alive || u.stunT > 0 || u.dash || G.state !== 'play') return false;
   const d = i === 4 ? FLASH : SK[u.name][i];
   if (i === 4 ? u.fcd > 0 : u.cd[i] > 0) return false;
+  u.revealT = G.t;
   if (u.silenceT > 0 && i !== 4) return false;
   let tx, tz;
   if (aim) { tx = aim.x; tz = aim.z; }
@@ -696,6 +738,8 @@ function step(dt) {
   G.minions = G.minions.filter(m => m.alive);
   for (const s of G.structs) if (s.alive && s.kind === 'tower') towerThink(s, dt);
   separate();
+  updateBushes();
+  updateRelics();
   stepSkills(dt);
   for (let i = G.proj.length - 1; i >= 0; i--) {
     const p = G.proj[i], t = p.t;
@@ -717,6 +761,7 @@ function draw(dt) {
   for (const u of G.heroes) {
     if (!u.alive) continue;
     u.airY = u.airT > 0 ? Math.sin(Math.PI * Math.min(1, 1 - u.airT / (u.airDur || 1))) * 1.1 : 0;
+    const hidden = u.hid && pl && u.team !== pl.team; u.h.root.visible = !hidden; if (hidden) continue;
     u.h.root.position.set(u.x, u.airY, u.z); u.h.root.rotation.y = u.yaw;
     if (u.oneShot === undefined) u.oneShot = 0;
     if (u.h.oneShotT <= 0) u.h.play(u.moving ? 'run' : 'idle', u.moving ? 1.15 : 1);
@@ -725,6 +770,7 @@ function draw(dt) {
     blobs.add(u.x, u.z, 1.3);
     const col = u.isPlayer ? 0x5be06a : (u.team === pl.team ? 0x4fb0ff : 0xff4b4b);
     bars.bar(u.x, u.h.height + .45, u.z, 1.2, .13, u.hp / u.maxHp, col);
+    if (u.bush >= 0 && pl && u.team === pl.team) fx.ringAt(u.x, u.z, .95, 0x7dffb0, u.hid ? .55 : .25); // in a bush (bright = hidden from enemies)
   }
   for (const m of G.minions) {
     const y = m.moving ? Math.abs(Math.sin(G.t * 11 + m.bob)) * .08 : 0;
@@ -741,6 +787,14 @@ function draw(dt) {
   for (const p of G.proj) fx.orbAt(p.x, p.y, p.z, p.r, p.col, 1);
   drawSkills();
   for (const f of G.fxs) { if (f.ring) fx.ringAt(f.x, f.z, f.r * (1.4 - f.t), f.col, f.t * 2.5); else fx.orbAt(f.x, f.y, f.z, f.r * (1.2 - f.t * 2), f.col, f.t * 4); }
+  // health relics: bobbing orb when ready, faint pad while recharging
+  for (const r of relicObjs) { const on = G.t >= r.ready; r.m.orb.visible = on; r.m.orb.position.y = .75 + Math.sin(G.t * 2.4 + r.x) * .12; r.m.orb.rotation.y = G.t * 1.2; r.m.pad.material.opacity = on ? .55 : .12; }
+  // attack range: faint ring when enemies are close, brighter while the attack button is held
+  if (pl?.alive) {
+    const ar = pl.range + pl.radius * .5, near = nearestEnemy(pl, ar + 4, null);
+    if (P.atkHeld || near) fx.ringAt(pl.x, pl.z, ar, P.atkHeld ? 0xffffff : 0xcfe6ff, P.atkHeld ? .6 : .22);
+    if (pl.target?.alive && !P.clickT) fx.ringAt(pl.target.x, pl.target.z, pl.target.radius + .25, 0xffb04b, .6);
+  }
   if (pl?.alive) { fx.ringAt(pl.x, pl.z, .75, 0x5be06a, .8); if (P.clickT?.alive) fx.ringAt(P.clickT.x, P.clickT.z, P.clickT.radius + .3, 0xff4b4b, .8); }
   blobs.end(); bars.end(); fx.end(); minionR.end();
   renderer.render(scene, camera);
