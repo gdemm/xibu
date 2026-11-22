@@ -74,11 +74,21 @@ function vehicleMesh(type, color) {
   return g;
 }
 
+// open sky around (x,z): no wall/roof/prop within the rotor disc, from the ground up to 12 m
+function heliClear(map, x, z, R = 4.5) {
+  for (const b of map.solids) { if (b.max.y < 0.35 || b.min.y > 12) continue; if (x + R > b.min.x && x - R < b.max.x && z + R > b.min.z && z - R < b.max.z) return false; }
+  const B = map.bounds; return x > B.minX + 6 && x < B.maxX - 6 && z > B.minZ + 6 && z < B.maxZ - 6;
+}
+function openSpot(map, x, z) {
+  for (let r = 4; r < 90; r += 3) for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r; if (heliClear(map, px, pz)) return [px, pz]; }
+  return [x, z];
+}
 export function spawnVehicles(scene, map) {
   if (map.kind !== 'island') return [];
   const n = {};
   return SPOTS.map(([type, x, z, yaw]) => {
     const k = n[type] = (n[type] || 0) + 1, cs = COLORS[type];
+    if (type === 'heli' && !heliClear(map, x, z)) [x, z] = openSpot(map, x, z); // never park a helicopter indoors / under a roof
     const mesh = vehicleMesh(type, cs[(k - 1) % cs.length]); scene.add(mesh);
     const v = { type, T: VTYPES[type], pos: new THREE.Vector3(x, 0, z), yaw, speed: 0, mesh, driver: null, spin: 0, lean: 0 };
     poseVehicle(v, 0); return v;
@@ -153,9 +163,12 @@ export function vehicleBox(v) {
   v.box.min.set(v.pos.x - hx, y0, v.pos.z - hz); v.box.max.set(v.pos.x + hx, y0 + h, v.pos.z + hz);
   return v.box;
 }
-export function exitSpot(v, free) {
-  const rx = Math.cos(v.yaw), rz = -Math.sin(v.yaw), d0 = v.T.wid + 1;
-  for (const s of [-1, 1]) for (const d of [d0, d0 + 0.7, d0 + 1.5]) { const x = v.pos.x + rx * d * s, z = v.pos.z + rz * d * s; if (free(x, z)) return new THREE.Vector3(x, 0, z); }
-  const bx = v.pos.x + Math.sin(v.yaw) * (v.T.len + 1.2), bz = v.pos.z + Math.cos(v.yaw) * (v.T.len + 1.2);
-  return new THREE.Vector3(bx, 0, bz);
+export function exitSpot(v, free, support) {
+  const y = v.alt || 0, rx = Math.cos(v.yaw), rz = -Math.sin(v.yaw), fx = Math.sin(v.yaw), fz = Math.cos(v.yaw), d0 = v.T.wid + 1, L = v.T.len + 1.2;
+  const cand = [];
+  for (const s of [-1, 1]) for (const d of [d0, d0 + 0.7, d0 + 1.5]) cand.push([v.pos.x + rx * d * s, v.pos.z + rz * d * s]);
+  for (const s of [1, -1]) cand.push([v.pos.x + fx * L * s, v.pos.z + fz * L * s]);
+  for (const [x, z] of cand) if (free(x, z, y) && (!support || support(x, z, y))) return new THREE.Vector3(x, y, z);
+  for (const [x, z] of cand) if (free(x, z, y)) return new THREE.Vector3(x, y, z); // nothing under it: step off and drop
+  return new THREE.Vector3(cand[6][0], y, cand[6][1]);
 }

@@ -355,11 +355,15 @@ function toggleCar() {
 }
 function leaveCar(force) {
   const v = P.inCar; if (!v) return;
-  if (force && v.T.fly) { v.alt = 0; v.speed = 0; poseVehicle(v, 0); }
-  if (v.T.fly && (v.alt || 0) > 2.5) { HUD.centerMsg('太高了，先降落再下机', 1200); return; }
+  // what the helicopter would sit on right now: ground (0) or the highest roof under it
+  const floorY = v.T.fly ? G.solidsNear(v.pos).reduce((m, b) => (v.pos.x > b.min.x - 0.5 && v.pos.x < b.max.x + 0.5 && v.pos.z > b.min.z - 0.5 && v.pos.z < b.max.z + 0.5 && b.max.y <= (v.alt || 0) + 0.3) ? Math.max(m, b.max.y) : m, 0) : 0;
+  if (force && v.T.fly) { v.alt = floorY; v.speed = 0; poseVehicle(v, 0); }
+  if (v.T.fly && (v.alt || 0) - floorY > 2.5) { HUD.centerMsg('太高了，先降落再下机', 1200); return; }
   P.inCar = null; v.driver = null; P.liftUp = P.liftDown = false;
-  const fr = (x, z) => G.solidsNear({ x, z }).every(b => !(x + 0.5 > b.min.x && x - 0.5 < b.max.x && z + 0.5 > b.min.z && z - 0.5 < b.max.z && b.max.y > 0.3)) && !inFootprint(v, x, z, 0.5);
-  G.player.pos.copy(exitSpot(v, fr)); G.player.vel.set(0, 0, 0);
+  // free = no wall/prop in the body's height at that spot; support = ground or a roof right under the feet (so you can get out on a rooftop)
+  const fr = (x, z, y = 0) => G.solidsNear({ x, z }).every(b => !(x + 0.5 > b.min.x && x - 0.5 < b.max.x && z + 0.5 > b.min.z && z - 0.5 < b.max.z && b.max.y > y + 0.3 && b.min.y < y + 1.75)) && !inFootprint(v, x, z, 0.5);
+  const sup = (x, z, y) => y < 0.1 || G.solidsNear({ x, z }).some(b => x > b.min.x && x < b.max.x && z > b.min.z && z < b.max.z && Math.abs(b.max.y - y) < 0.35);
+  G.player.pos.copy(exitSpot(v, fr, sup)); G.player.vel.set(0, 0, 0); G.player.onGround = true;
 }
 function toggleView() { S.tp = S.tp ? 0 : 1; saveS(); const b = $('bView'); if (b) b.classList.toggle('on', !!S.tp); HUD.centerMsg(S.tp ? '第三人称' : '第一人称', 800); }
 // nearby loot list (right-middle): every item within 2.5 m, nearest first; tap a row (or E for the top row) to pick it up
