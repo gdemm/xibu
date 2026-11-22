@@ -37,7 +37,7 @@ try { HUDL = JSON.parse(localStorage.getItem('party_hud_layout') || '{}') || {};
 let hudEdit = false;
 
 // ---------------- settings ----------------
-const DEF = { quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, showFps: 0, tp: 1 };
+const DEF = { quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, showFps: 0, tp: 1, peace: 0 };
 let S = { ...DEF };
 try { S = { ...DEF, ...JSON.parse(localStorage.getItem('partyfps.settings') || '{}') }; } catch (e) {}
 const saveS = () => { try { localStorage.setItem('partyfps.settings', JSON.stringify(S)); } catch (e) {} };
@@ -164,7 +164,7 @@ function startMatch(opts) {
   for (const v of G.vehicles) toonify(v.mesh);
   P.inCar = null; if (P.body) { scene.remove(P.body); P.body = null; }
   G.mode = opts.mode || 'tdm'; G.owned = null; P.runLock = false; P.sprint = false; G.scope = 0; P.draw = 0; clearArrows();
-  G.quality = S.quality; VM.setTeam(opts.mode === 'br' ? 'blue' : opts.team);
+  G.quality = S.quality; G.peace = !!+S.peace; VM.setTeam(opts.mode === 'br' ? 'blue' : opts.team);
   if (G.mode === 'br') {
     G.diff = opts.diff; G.scores = { blue: 0, red: 0 }; G.now = G.now || 0;
     setupBR(G, scene, BRH);
@@ -979,7 +979,7 @@ function syncSettingsUI() {
 }
 document.querySelectorAll('#settings .seg').forEach(seg => seg.addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return; const k = seg.dataset.s, v = b.dataset.v;
-  S[k] = k === 'quality' ? v : +v; G.quality = S.quality; saveS(); syncSettingsUI(); if (k === 'quality') applyPixelRatio();
+  S[k] = k === 'quality' ? v : +v; G.quality = S.quality; G.peace = !!+S.peace; saveS(); syncSettingsUI(); if (k === 'quality') applyPixelRatio();
 }));
 $('sens').addEventListener('input', () => { S.sens = +$('sens').value; saveS(); syncSettingsUI(); });
 const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);

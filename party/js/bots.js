@@ -39,6 +39,7 @@ function findTarget(bot, G) {
   const fx = -Math.sin(bot.yaw), fz = -Math.cos(bot.yaw);
   for (const o of G.entities) {
     if (!o.alive || o.team === bot.team || o.air) continue;
+    if (G.peace && o.isPlayer) continue;   // 设置 > 机器人攻击我: 关 (testing)
     _t.set(o.pos.x, o.pos.y + 1.3, o.pos.z);
     const dx = _t.x - eye.x, dz = _t.z - eye.z, d = Math.hypot(dx, dz);
     if (d > 75) continue;
@@ -61,6 +62,7 @@ export function updateBot(bot, dt, G) {
   if (bot.thinkT <= 0) {
     bot.thinkT = 0.2 + Math.random() * 0.1;
     const t = findTarget(bot, G);
+    if (G.peace && bot.target && bot.target.isPlayer) { bot.target = null; bot.aiState = 'patrol'; setPath(bot, G, pickPatrolGoal(bot, G)); }
     if (t) {
       if (bot.target !== t) { bot.target = t; bot.reactT = D.react * rnd(0.8, 1.3); }
       bot.lastSeen.copy(t.pos); bot.lostT = 0;

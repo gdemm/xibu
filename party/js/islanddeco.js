@@ -276,6 +276,14 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
   const solidMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   const grassMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const paintMat = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
+  // thin paint lines alias at grazing angles on phones (no MSAA): when a pixel covers more ground than the line is wide,
+  // fade the paint toward the asphalt colour so the far lines go soft grey instead of crawling/flowing while you move
+  paintMat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vPW;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvPW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vPW;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n{ vec2 fw = fwidth(vPW.xz); float px = max(max(fw.x, fw.y), 1e-4); float cov = clamp(0.3 / (2.2 * px), 0.0, 1.0); cov = cov * cov * (3.0 - 2.0 * cov); diffuseColor.rgb = mix(vec3(0.149, 0.162, 0.216), diffuseColor.rgb, cov); }');
+  };
   const foamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false });
   const a = solid.build(scene, solidMat), b = grass.build(scene, grassMat);
   const pm = paint.mesh(paintMat); if (pm) { pm.renderOrder = 1; scene.add(pm); }
