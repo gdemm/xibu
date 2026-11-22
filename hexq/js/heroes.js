@@ -38,19 +38,19 @@ function toonOf(src) {
   m = new THREE.MeshToonMaterial({ name: src.name, map: src.map, color: 0xffffff, gradientMap: toonRamp(), side: THREE.DoubleSide, alphaTest: .18 });
   m.onBeforeCompile = s => {
     s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-    { float g = dot(diffuseColor.rgb, vec3(.299,.587,.114)); diffuseColor.rgb = max(mix(vec3(g), diffuseColor.rgb, 1.30), 0.0) * 1.18; }`)
+    { float g = dot(diffuseColor.rgb, vec3(.299,.587,.114)); vec3 c = max(mix(vec3(g), diffuseColor.rgb, 1.65), 0.0); c = pow(c, vec3(.78)); diffuseColor.rgb = min(c * 1.2, vec3(1.0)); }`)
       // faint cool moonlight rim so heroes separate from the dark Howling-Abyss ground
       .replace('#include <dithering_fragment>', `#include <dithering_fragment>
-    { float rim = 1.0 - abs(dot(normal, normalize(vViewPosition))); gl_FragColor.rgb += vec3(.45,.7,1.0) * pow(rim, 3.0) * .28; }`);
+    { float rim = 1.0 - abs(dot(normal, normalize(vViewPosition))); gl_FragColor.rgb = mix(gl_FragColor.rgb, diffuseColor.rgb, .5) * 1.1; gl_FragColor.rgb += vec3(.75,.88,1.0) * pow(rim, 2.4) * .45; }`);
   };
-  m.customProgramCacheKey = () => 'hqToon';
+  m.customProgramCacheKey = () => 'hqToonQ';
   toonCache.set(key, m); return m;
 }
 function outlineOf(src, w) {
   const key = (src.map?.uuid || src.uuid) + w.toFixed(5); let m = olCache.get(key); if (m) return m;
   m = new THREE.MeshBasicMaterial({ color: 0x2a1f2e, side: THREE.BackSide, map: src.map, alphaTest: .18 });
   m.onBeforeCompile = s => {
-    s.vertexShader = 'uniform float OUTLINE_W;\n' + s.vertexShader.replace('#include <skinning_vertex>', '#include <skinning_vertex>\n transformed += normalize(objectNormal) * OUTLINE_W;');
+    s.vertexShader = 'uniform float OUTLINE_W;\n' + s.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n { vec3 vn = normalize(normalMatrix * objectNormal); vec2 d = normalize(vn.xy + 1e-5); gl_Position.xy += d * OUTLINE_W * gl_Position.w; }');
     s.uniforms.OUTLINE_W = { value: w };
     s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.rgb = diffuse;');
   };
@@ -159,12 +159,12 @@ export function makeHero(name) {
   holder.add(model); root.add(holder);
   holder.scale.setScalar(t.scale); holder.position.y = t.ground;
   const outlines = [], meshes = [];
-  const w = 0.016 / t.scale / t.geoToWorld;
+  const w = 0.0045; // clip-space width (screen-constant)
   model.traverse(o => {
     if (!o.isMesh || !o.visible) return;
     const src = o.material; o.material = toonOf(src); meshes.push(o);
     if (o.isSkinnedMesh) {
-      const ol = new THREE.SkinnedMesh(o.geometry, outlineOf(src, w)); ol.bind(o.skeleton, o.bindMatrix); ol.frustumCulled = false; ol.visible = false;
+      const ol = new THREE.SkinnedMesh(o.geometry, outlineOf(src, w)); ol.position.copy(o.position); ol.quaternion.copy(o.quaternion); ol.scale.copy(o.scale); ol.bind(o.skeleton, o.bindMatrix); ol.frustumCulled = false; ol.visible = false;
       o.parent.add(ol); outlines.push(ol);
     }
   });

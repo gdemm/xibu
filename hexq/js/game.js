@@ -260,7 +260,7 @@ function towerThink(s, dt) {
   if (!s.target) s.target = nearestEnemy({ team: s.team, x: s.x, z: s.z }, TOWER.range, ['minion']) || nearestEnemy({ team: s.team, x: s.x, z: s.z }, TOWER.range, ['hero']);
   if (s.target && s.atkCd <= 0) {
     s.atkCd = 1 / TOWER.as;
-    G.proj.push({ x: s.x, y: 5.3, z: s.z, t: s.target, sp: 16, dmg: s.target.kind === 'minion' ? s.target.maxHp * .45 : TOWER.ad, src: s, col: s.team === 0 ? 0x7fc4ff : 0xff8a6a, r: .35 });
+    G.proj.push({ x: s.x, y: 4.4, z: s.z, t: s.target, sp: 16, dmg: s.target.kind === 'minion' ? s.target.maxHp * .45 : TOWER.ad, src: s, col: s.team === 0 ? 0x7fc4ff : 0xff8a6a, r: .35 });
   }
 }
 
@@ -734,7 +734,7 @@ function draw(dt) {
   }
   for (const s of G.structs) {
     if (!s.alive) continue;
-    const h = { tower: 6.2, inhib: 2.8, nexus: 5.2 }[s.kind];
+    const h = { tower: 6.0, inhib: 3.5, nexus: 5.6 }[s.kind];
     bars.bar(s.x, h, s.z, 2, .18, s.hp / s.maxHp, targetable(s) ? (s.team === pl?.team ? 0x4fb0ff : 0xff4b4b) : 0x8a8a8a);
     if (s.kind === 'tower' && s.target && s.target.alive) fx.ringAt(s.x, s.z, TOWER.range, s.team === 0 ? 0x3d8bff : 0xff4b4b, .25);
   }

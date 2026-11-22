@@ -8,6 +8,7 @@ export const LANE = { minX: -56, maxX: 56, half: 7 };
 export const TEAM_COL = [0x3d8bff, 0xff4b4b];
 const TEAM_COL2 = [0x9fd0ff, 0xffb0a0];
 const TEAM_CRY = [0x46d2ff, 0xff3a52]; // structure crystals: blue-cyan / crimson
+const TEAM_CRY_Q = [0x5fe4ff, 0xff5a72], TEAM_CRY_D = [0x2a7fe0, 0xc0203e]; // Q-style gem top / underside
 
 /* ---------- merged vertex-colour geometry builder ---------- */
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
@@ -200,7 +201,7 @@ export function buildMap(scene, quality) {
       const f = new Builder().add(new THREE.CylinderGeometry(5.2, 5.6, 0.3, 20), M(sx * 52.5, 0.15, 0), 0x435064)
         .add(new THREE.TorusGeometry(4.8, 0.25, 5, 28), M(sx * 52.5, 0.3, 0, Math.PI / 2), TEAM_COL[t])
         .add(new THREE.CylinderGeometry(1.1, 1.4, 0.6, 10), M(sx * 52.5, 0.5, 0), 0x56637a)
-        .add(new THREE.OctahedronGeometry(0.7, 0), M(sx * 52.5, 2.0, 0, 0, 0, 0, 1, 1.5, 1), TEAM_CRY[t]).build();
+        .add(new THREE.IcosahedronGeometry(0.75, 1), M(sx * 52.5, 2.0, 0, 0, 0, 0, 1, 1.3, 1), TEAM_CRY_Q[t]).build();
       const fm = new THREE.Mesh(f, vcToon()); scene.add(fm);
     }
   }
@@ -214,30 +215,39 @@ export function structureMesh(kind, team, quality) {
   const tc = TEAM_COL[team], tc2 = TEAM_COL2[team];
   if (!g) {
     const B = new Builder();
+    // Q-style (step 6): squat chunky bodies, big rounded gem on top with a white gloss highlight, thick outline — matches the Q skill icons
+    const CRY = TEAM_CRY_Q[team], CRY_D = TEAM_CRY_D[team], GLOSS = 0xffffff, ST = 0x56657f, ST_D = 0x3c4860, ST_L = 0x7686a0;
+    const gem = (y, r, sy) => {
+      B.add(new THREE.IcosahedronGeometry(r, 1), M(0, y, 0, 0, 0, 0, 1, sy, 1), CRY)
+        .add(new THREE.IcosahedronGeometry(r * 0.62, 1), M(0, y - r * sy * 0.42, 0, 0, 0, 0, 1.05, 0.55, 1.05), CRY_D)
+        .add(new THREE.SphereGeometry(r * 0.26, 8, 6), M(-r * 0.4, y + r * sy * 0.52, r * 0.74, -0.6, 0, 0.5, 1, 0.55, 0.35), GLOSS)
+        .add(new THREE.SphereGeometry(r * 0.1, 6, 4), M(-r * 0.05, y + r * sy * 0.72, r * 0.68, -0.8, 0, 0, 1, 1, 0.5), GLOSS);
+    };
     if (kind === 'tower') {
-      B.add(new THREE.CylinderGeometry(1.25, 1.5, 0.5, 8), M(0, 0.25, 0), 0x435068)
-        .add(new THREE.CylinderGeometry(0.8, 1.05, 3.2, 8), M(0, 2.1, 0), 0x66758c)
-        .add(new THREE.CylinderGeometry(0.95, 0.95, 0.35, 8), M(0, 1.0, 0), tc)
-        .add(new THREE.CylinderGeometry(1.25, 0.85, 0.6, 8), M(0, 3.9, 0), 0x55637a)
-        .add(new THREE.CylinderGeometry(1.3, 1.3, 0.15, 8), M(0, 4.25, 0), SNOW);
-      for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; B.add(new THREE.BoxGeometry(0.35, 1.0, 0.35), M(Math.cos(a) * 1.05, 4.7, Math.sin(a) * 1.05, 0, -a, 0.25 * (i % 2 ? 1 : -1)), 0x435068); }
-      B.add(new THREE.OctahedronGeometry(0.62, 0), M(0, 5.3, 0, 0, 0, 0, 1, 1.4, 1), TEAM_CRY[team]);
+      B.add(new THREE.CylinderGeometry(1.45, 1.7, 0.7, 10), M(0, 0.35, 0), ST_D)
+        .add(new THREE.CylinderGeometry(1.0, 1.25, 1.9, 10), M(0, 1.65, 0), ST)
+        .add(new THREE.CylinderGeometry(1.18, 1.18, 0.38, 10), M(0, 1.15, 0), tc)
+        .add(new THREE.CylinderGeometry(1.55, 1.0, 0.7, 10), M(0, 2.9, 0), ST_L)
+        .add(new THREE.CylinderGeometry(1.6, 1.6, 0.18, 10), M(0, 3.28, 0), tc);
+      for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; B.add(new THREE.ConeGeometry(0.28, 0.9, 5), M(Math.cos(a) * 1.3, 3.75, Math.sin(a) * 1.3, Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35), ST_D); }
+      gem(4.25, 0.82, 1.25);
     } else if (kind === 'inhib') {
-      B.add(new THREE.CylinderGeometry(1.7, 1.9, 0.45, 10), M(0, 0.22, 0), 0x435068)
-        .add(new THREE.TorusGeometry(1.2, 0.28, 6, 14), M(0, 1.35, 0, 0, 0, 0, 1, 1, 1), 0x66758c)
-        .add(new THREE.IcosahedronGeometry(0.85, 0), M(0, 1.35, 0), TEAM_CRY[team]);
-      for (let i = 0; i < 3; i++) { const a = i * 2.094; B.add(new THREE.ConeGeometry(0.3, 1.6, 5), M(Math.cos(a) * 1.5, 1.0, Math.sin(a) * 1.5, 0, 0, Math.cos(a) * 0.3), 0x55637a); }
+      B.add(new THREE.CylinderGeometry(1.8, 2.0, 0.6, 12), M(0, 0.3, 0), ST_D)
+        .add(new THREE.CylinderGeometry(1.35, 1.6, 0.5, 12), M(0, 0.8, 0), ST)
+        .add(new THREE.TorusGeometry(1.45, 0.16, 6, 18), M(0, 1.06, 0, Math.PI / 2), tc);
+      for (let i = 0; i < 3; i++) { const a = i * 2.094; B.add(new THREE.ConeGeometry(0.32, 1.3, 5), M(Math.cos(a) * 1.55, 1.5, Math.sin(a) * 1.55, Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3), ST_L); }
+      gem(1.95, 0.75, 1.2);
     } else if (kind === 'nexus') {
-      B.add(new THREE.CylinderGeometry(2.6, 3.0, 0.6, 12), M(0, 0.3, 0), 0x435068)
-        .add(new THREE.CylinderGeometry(1.8, 2.2, 1.0, 12), M(0, 1.0, 0), 0x66758c)
-        .add(new THREE.TorusGeometry(2.0, 0.2, 5, 20), M(0, 1.55, 0, Math.PI / 2), tc);
-      for (let i = 0; i < 5; i++) { const a = i * 1.2566; B.add(new THREE.ConeGeometry(0.45, 2.6, 5), M(Math.cos(a) * 1.9, 2.1, Math.sin(a) * 1.9, Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35), 0x55637a); }
-      B.add(new THREE.OctahedronGeometry(1.1, 0), M(0, 3.4, 0, 0, 0.4, 0, 1, 1.6, 1), TEAM_CRY[team]);
+      B.add(new THREE.CylinderGeometry(2.7, 3.1, 0.7, 14), M(0, 0.35, 0), ST_D)
+        .add(new THREE.CylinderGeometry(2.0, 2.4, 0.9, 14), M(0, 1.1, 0), ST)
+        .add(new THREE.TorusGeometry(2.2, 0.22, 6, 22), M(0, 1.58, 0, Math.PI / 2), tc);
+      for (let i = 0; i < 5; i++) { const a = i * 1.2566; B.add(new THREE.ConeGeometry(0.42, 1.7, 5), M(Math.cos(a) * 1.95, 2.2, Math.sin(a) * 1.95, Math.sin(a) * 0.32, 0, -Math.cos(a) * 0.32), ST_L); }
+      gem(3.2, 1.15, 1.3);
     }
     g = structGeo[key] = B.build();
   }
   const grp = new THREE.Group(); const m = new THREE.Mesh(g, vcToon()); grp.add(m);
-  if (quality !== 'low') grp.add(new THREE.Mesh(g, outlineMat(0.05)));
+  if (quality !== 'low') grp.add(new THREE.Mesh(g, outlineMat(0.07)));
   // destroyed rubble
   const rub = new THREE.Mesh(new THREE.CylinderGeometry(kind === 'nexus' ? 2.6 : 1.4, kind === 'nexus' ? 3 : 1.6, 0.4, 7), new THREE.MeshToonMaterial({ color: 0x2e3542, gradientMap: toonRamp() }));
   rub.position.y = 0.2; rub.visible = false; grp.add(rub);
@@ -250,24 +260,27 @@ function minionGeo(type, team) {
   const B = new Builder(), tc = TEAM_COL[team], tc2 = TEAM_COL2[team], dark = 0x2a2230;
   const eyes = (y, z, s = 1) => { for (const sx of [-1, 1]) { B.add(new THREE.SphereGeometry(0.07 * s, 5, 4), M(sx * 0.11 * s, y, z, 0, 0, 0, 1, 1.2, 0.6), 0xffffff); B.add(new THREE.SphereGeometry(0.04 * s, 4, 3), M(sx * 0.11 * s, y, z + 0.03, 0, 0, 0, 1, 1.2, 0.5), dark); } };
   if (type === 'melee') {
-    B.add(new THREE.SphereGeometry(0.33, 8, 6), M(0, 0.42, 0, 0, 0, 0, 1, 1.05, 1), 0xe9e3d6)
-      .add(new THREE.SphereGeometry(0.31, 8, 4, 0, Math.PI * 2, 0, Math.PI * 0.55), M(0, 0.5, 0), tc)
+    B.add(new THREE.SphereGeometry(0.38, 10, 8), M(0, 0.45, 0, 0, 0, 0, 1, 1.05, 1), 0xfff3dc)
+      .add(new THREE.SphereGeometry(0.36, 10, 5, 0, Math.PI * 2, 0, Math.PI * 0.55), M(0, 0.54, 0), tc)
+      .add(new THREE.SphereGeometry(0.07, 6, 4), M(-0.14, 0.8, 0.2, 0, 0, 0, 1, 0.6, 0.6), 0xffffff)
       .add(new THREE.ConeGeometry(0.08, 0.22, 5), M(0, 0.86, 0), tc2)
       .add(new THREE.BoxGeometry(0.06, 0.5, 0.04), M(0.34, 0.45, 0.12, 0.5, 0, 0), 0xdfe7f2).add(new THREE.BoxGeometry(0.2, 0.05, 0.06), M(0.34, 0.25, 0.02, 0.5, 0, 0), 0x7a5236)
       .add(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 10), M(-0.34, 0.42, 0.05, 0, 0, Math.PI / 2), tc2);
-    eyes(0.42, 0.28);
+    eyes(0.44, 0.33, 1.2);
   } else if (type === 'caster') {
     B.add(new THREE.ConeGeometry(0.32, 0.6, 7), M(0, 0.3, 0), tc)
-      .add(new THREE.SphereGeometry(0.25, 8, 6), M(0, 0.7, 0), 0xe9e3d6)
+      .add(new THREE.SphereGeometry(0.3, 10, 8), M(0, 0.72, 0), 0xfff3dc)
       .add(new THREE.ConeGeometry(0.27, 0.45, 7), M(0, 1.0, -0.03, -0.25, 0, 0), tc2)
       .add(new THREE.CylinderGeometry(0.025, 0.025, 0.85, 5), M(0.3, 0.45, 0.05), 0x7a5236)
-      .add(new THREE.OctahedronGeometry(0.09, 0), M(0.3, 0.92, 0.05), 0xffe27a);
-    eyes(0.7, 0.21, 0.9);
+      .add(new THREE.IcosahedronGeometry(0.12, 0), M(0.3, 0.92, 0.05), 0xffe27a)
+      .add(new THREE.SphereGeometry(0.05, 6, 4), M(-0.1, 1.12, 0.08), 0xffffff);
+    eyes(0.72, 0.26, 1.05);
   } else {
     B.add(new THREE.BoxGeometry(0.9, 0.45, 1.1), M(0, 0.45, 0), 0x8a6a4a)
       .add(new THREE.BoxGeometry(0.95, 0.12, 1.15), M(0, 0.7, 0), tc)
       .add(new THREE.CylinderGeometry(0.18, 0.22, 0.9, 8), M(0, 0.95, 0.25, Math.PI / 2 - 0.35, 0, 0), 0x5b6474)
-      .add(new THREE.SphereGeometry(0.3, 8, 6), M(0, 0.95, -0.25), tc2);
+      .add(new THREE.SphereGeometry(0.3, 8, 6), M(0, 0.95, -0.25), tc2)
+      .add(new THREE.SphereGeometry(0.08, 6, 4), M(-0.1, 1.15, -0.15), 0xffffff);
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) B.add(new THREE.CylinderGeometry(0.2, 0.2, 0.12, 7), M(sx * 0.5, 0.22, sz * 0.35, 0, 0, Math.PI / 2), 0x3a3540);
   }
   return B.build();
@@ -277,7 +290,7 @@ export class MinionRenderer {
     this.sets = {};
     for (const type of ['melee', 'caster', 'siege']) for (const team of [0, 1]) {
       const g = minionGeo(type, team), im = new THREE.InstancedMesh(g, vcToon(), cap); im.count = 0; im.frustumCulled = false; scene.add(im);
-      let ol = null; if (quality !== 'low') { ol = new THREE.InstancedMesh(g, outlineMat(0.03, true), cap); ol.instanceMatrix = im.instanceMatrix; ol.count = 0; ol.frustumCulled = false; scene.add(ol); }
+      let ol = null; if (quality !== 'low') { ol = new THREE.InstancedMesh(g, outlineMat(0.05, true), cap); ol.instanceMatrix = im.instanceMatrix; ol.count = 0; ol.frustumCulled = false; scene.add(ol); }
       this.sets[type + team] = { im, ol, n: 0 };
     }
   }
