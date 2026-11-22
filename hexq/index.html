@@ -71,7 +71,7 @@ button{font-family:inherit;cursor:pointer}
 </head>
 <body>
 <canvas id="gl"></canvas>
-<div id="fps">-- FPS</div>
+<div id="fps" style="display:none">-- FPS</div>
 <div id="topR"><button id="bFull" title="横屏/全屏">⤢</button><button id="bExit" title="退出横屏/全屏">✕</button></div>
 <div id="pick">
   <h1>Q版大乱斗</h1>
@@ -95,5 +95,6 @@ button{font-family:inherit;cursor:pointer}
 <div id="end" class="hidden"><div id="endTxt">胜利</div><button id="bAgain">再来一局</button></div>
 <div id="rotateHint"><div>请将手机横屏游玩</div><button id="bFull2">横屏/全屏</button></div>
 <script type="module" src="./js/game.js"></script>
+<script>if(/[?&]debug/.test(location.search))document.getElementById('fps').style.display='';</script>
 </body>
 </html>
