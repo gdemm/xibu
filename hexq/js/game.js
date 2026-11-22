@@ -2,6 +2,7 @@
 // Step 2: QWER + Flash per hero (data table SK), status effects, skillshots/zones/dashes, closer camera.
 import * as THREE from 'three';
 import { HERO_NAMES, loadHeroes, makeHero } from './heroes.js';
+import { createMinimap } from './minimap.js';
 import { buildMap, structureMesh, MinionRenderer, Blobs, Bars, FX, laneHalf, TEAM_COL } from './world.js';
 
 const $ = id => document.getElementById(id);
@@ -647,7 +648,8 @@ function startMatch(name, lineup) {
   red.forEach((n, i) => spawnHero(n, 1, i, false));
   $('mePort').style.backgroundPosition = `${HERO_NAMES.indexOf(name) * 12.5}% 0`;
   const row = HERO_NAMES.indexOf(name);
-  SKB.forEach((id, i) => { const b = $(id); b.style.backgroundPosition = i < 4 ? `${i * 25}% ${row * 100 / 9}%` : `0% 100%`; b.title = i < 4 ? SK[name][i].n : FLASH.n; });
+  const rim = '#' + STATS[name].col.toString(16).padStart(6, '0');
+  SKB.forEach((id, i) => { const b = $(id); if (i < 4) b.style.setProperty('--rim', rim); b.style.backgroundPosition = i < 4 ? `${i * 25}% ${row * 100 / 9}%` : `0% 100%`; b.title = i < 4 ? SK[name][i].n : FLASH.n; });
   $('pick').classList.add('hidden'); $('hud').classList.remove('hidden'); $('touch').classList.remove('hidden'); if (!isTouch) $('touch').classList.add('desk');
   G.state = 'play'; G.t = 0; G.nextWave = 3; centerMsg('欢迎来到 Q版大乱斗', 1800);
 }
@@ -742,6 +744,7 @@ function draw(dt) {
   if (pl?.alive) { fx.ringAt(pl.x, pl.z, .75, 0x5be06a, .8); if (P.clickT?.alive) fx.ringAt(P.clickT.x, P.clickT.z, P.clickT.radius + .3, 0xff4b4b, .8); }
   blobs.end(); bars.end(); fx.end(); minionR.end();
   renderer.render(scene, camera);
+  if (minimap && G.state !== 'pick') minimap.tick(dt);
 }
 function hudTick() {
   const pl = G.player; if (!pl) return;
@@ -755,6 +758,7 @@ function hudTick() {
     b.dataset.t = on ? (cd >= 1 ? Math.ceil(cd) : cd.toFixed(1)) : '';
   });
 }
+const minimap = createMinimap({ canvas: $('mm'), G, camera, heroNames: HERO_NAMES }); window.__hq.minimap = minimap;
 let last = performance.now(), fpsN = 0, fpsT = 0, hudT = 0;
 window.__hq.castSlot = castSlot; window.__hq.SK = SK;
 function loop(now) {
