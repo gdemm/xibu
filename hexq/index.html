@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#161c33">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Q版大乱斗</title>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#0d1b26;color:#fff;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;touch-action:none}
+canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+.hidden{display:none!important}
+button{font-family:inherit;cursor:pointer}
+#pick{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:radial-gradient(ellipse at 50% 115%,rgba(255,140,60,.28) 0%,rgba(255,140,60,0) 45%),linear-gradient(180deg,#080c1e 0%,#1f2648 55%,#2f4a5e 100%)}
+#pick h1{font-size:40px;font-weight:900;letter-spacing:4px;color:#ffd45c;-webkit-text-stroke:2px #5a2a8a;paint-order:stroke fill;text-shadow:0 4px 0 #5a2a8a;transform:rotate(-2deg)}
+#pick .sub{font-size:13px;color:#cfe6ff;text-shadow:0 1px 2px #000}
+#heroGrid{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:94vw}
+#heroGrid button{width:78px;height:96px;border-radius:12px;border:3px solid #9fe0ff;background:#fff url(assets/ui/portraits.webp) no-repeat;background-size:900% auto;display:flex;align-items:flex-end;justify-content:center;padding:0;box-shadow:0 3px 0 #0b1226,0 0 10px rgba(80,200,255,.35);overflow:hidden}
+#heroGrid button span{display:block;width:100%;background:rgba(40,30,90,.8);font-size:12px;font-weight:800;padding:2px 0;color:#fff}
+#heroGrid button:disabled{opacity:.45;filter:grayscale(.6)}
+#heroGrid button:active{transform:scale(.94)}
+#loadTxt{font-size:13px;color:#9fd8ff;font-weight:700}
+#topR{position:fixed;z-index:30;right:calc(10px + env(safe-area-inset-right));top:calc(8px + env(safe-area-inset-top));display:flex;gap:8px}
+#topR button{width:40px;height:40px;border-radius:10px;border:2px solid #1a1022;background:#ffffffd8;color:#1a1022;font-size:20px;font-weight:900;display:flex;align-items:center;justify-content:center;padding:0}
+#topR button:active{transform:scale(.92)}
+#bExit{background:#ff5a5a!important;color:#fff!important;font-size:22px!important}
+#fps{position:fixed;z-index:30;left:calc(6px + env(safe-area-inset-left));top:calc(4px + env(safe-area-inset-top));font:700 12px monospace;color:#fff;text-shadow:0 1px 2px #000;pointer-events:none}
+#hud{position:fixed;inset:0;z-index:5;pointer-events:none}
+#score{position:absolute;top:calc(6px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:rgba(0,0,0,.42);padding:3px 12px;border-radius:10px;font-weight:800;display:flex;gap:10px;align-items:center}
+#score .b{color:#5fb0ff;font-size:20px}#score .r{color:#ff6a5c;font-size:20px}#score #clock{font-size:14px}
+#feed{position:absolute;top:calc(52px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.kf{background:rgba(0,0,0,.5);padding:2px 8px;border-radius:5px;font-size:12px;transition:opacity .6s}
+.kf .b{color:#6db8ff}.kf .r{color:#ff7468}.kf.out{opacity:0}
+#me{position:absolute;left:50%;bottom:calc(8px + env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.45);padding:4px 10px;border-radius:10px}
+#mePort{width:40px;height:40px;border-radius:8px;border:2px solid #fff;background:#fff url(assets/ui/portraits.webp) no-repeat;background-size:900% 100%}
+#meBar{width:150px;height:10px;background:rgba(255,255,255,.18);border-radius:5px;overflow:hidden}#meFill{height:100%;background:#5be06a;width:100%}
+#meHp{font-size:12px;font-weight:700;min-width:70px}
+#center{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);font-size:24px;font-weight:900;text-shadow:0 2px 4px #000;white-space:nowrap}
+#touch{position:fixed;inset:0;z-index:6;pointer-events:none}
+#joyBase{position:absolute;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.14);border:2px solid rgba(255,255,255,.35);left:calc(40px + env(safe-area-inset-left));bottom:calc(30px + env(safe-area-inset-bottom))}
+#joyKnob{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;background:rgba(255,255,255,.6)}
+#bAtk{position:absolute;pointer-events:auto;width:84px;height:84px;border-radius:50%;right:calc(34px + env(safe-area-inset-right));bottom:calc(28px + env(safe-area-inset-bottom));background:rgba(255,190,60,.7);border:3px solid #fff;color:#3a2000;font-size:16px;font-weight:900}
+#bAtk.on{background:rgba(255,140,40,.9);transform:scale(.94)}
+.sk{position:absolute;pointer-events:auto;width:52px;height:52px;border-radius:50%;background:#223 url(assets/ui/icons.webp) no-repeat;background-size:500% 1000%;border:2px solid rgba(255,255,255,.75);color:#fff;font-weight:900;font-size:15px;padding:0;overflow:hidden;touch-action:none}
+.sk::before{content:'';position:absolute;inset:0;border-radius:50%;background:conic-gradient(rgba(0,0,0,.68) calc(var(--p,0)*360deg),transparent 0)}
+.sk::after{content:attr(data-t);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:17px;text-shadow:0 1px 3px #000}
+.sk i{position:absolute;right:3px;bottom:0;font-style:normal;font-size:10px;text-shadow:0 1px 2px #000;z-index:1}
+.sk.cd{border-color:rgba(255,255,255,.3)}.sk.lock{filter:grayscale(1) brightness(.6)}.sk:active{transform:scale(.93)}
+#touch.desk #joyBase,#touch.desk #bAtk{display:none}
+#sQ{right:calc(130px + env(safe-area-inset-right));bottom:calc(22px + env(safe-area-inset-bottom))}
+#sW{right:calc(140px + env(safe-area-inset-right));bottom:calc(84px + env(safe-area-inset-bottom))}
+#sE{right:calc(96px + env(safe-area-inset-right));bottom:calc(136px + env(safe-area-inset-bottom))}
+#sR{right:calc(30px + env(safe-area-inset-right));bottom:calc(132px + env(safe-area-inset-bottom))}
+#sF{width:42px;height:42px;right:calc(196px + env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom))}
+#end{position:fixed;inset:0;z-index:25;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:rgba(10,20,40,.6)}
+#endTxt{font-size:56px;font-weight:900;letter-spacing:8px;-webkit-text-stroke:2px #3a1a5a;paint-order:stroke fill}
+#end button{padding:10px 34px;border:none;border-radius:14px;background:linear-gradient(#ffe36b,#ffb52e);color:#5a2a8a;font-size:18px;font-weight:900;box-shadow:0 4px 0 #b4621a}
+#rotateHint{display:none;position:fixed;inset:0;z-index:40;background:#132532;flex-direction:column;align-items:center;justify-content:center;gap:14px;font-size:16px}
+#rotateHint button{padding:10px 24px;border-radius:10px;border:1px solid #fff5;background:#fff2;color:#fff;font-size:15px}
+@media (orientation:portrait) and (pointer:coarse){#rotateHint{display:flex}}
+@media (orientation:portrait){
+ body.forceLand{width:100vh;height:100vw;transform:rotate(90deg) translateY(-100%);transform-origin:top left}
+ body.forceLand #rotateHint{display:none!important}
+}
+@media (max-height:380px){#pick h1{font-size:30px}#heroGrid button{width:66px;height:82px}}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="fps">-- FPS</div>
+<div id="topR"><button id="bFull" title="横屏/全屏">⤢</button><button id="bExit" title="退出横屏/全屏">✕</button></div>
+<div id="pick">
+  <h1>Q版大乱斗</h1>
+  <div class="sub">选择你的英雄 · 5v5 极地大乱斗</div>
+  <div id="heroGrid"></div>
+  <div id="loadTxt">加载中…</div>
+</div>
+<div id="hud" class="hidden">
+  <div id="score"><span class="b" id="kB">0</span><span id="clock">00:00</span><span class="r" id="kR">0</span></div>
+  <div id="feed"></div>
+  <div id="me"><div id="mePort"></div><div><div id="meHp">0 / 0</div><div id="meBar"><div id="meFill"></div></div></div></div>
+  <div id="center"></div>
+</div>
+<div id="touch" class="hidden">
+  <div id="joyBase"><div id="joyKnob"></div></div>
+  <button id="bAtk">攻击</button>
+  <button class="sk" id="sQ"><i>Q</i></button><button class="sk" id="sW"><i>W</i></button>
+  <button class="sk" id="sE"><i>E</i></button><button class="sk" id="sR"><i>R</i></button><button class="sk" id="sF"><i>D</i></button>
+</div>
+<div id="end" class="hidden"><div id="endTxt">胜利</div><button id="bAgain">再来一局</button></div>
+<div id="rotateHint"><div>请将手机横屏游玩</div><button id="bFull2">横屏/全屏</button></div>
+<script type="module" src="./js/game.js"></script>
+</body>
+</html>
