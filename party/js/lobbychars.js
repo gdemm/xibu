@@ -1,6 +1,7 @@
 // lobby: a little line-up of the party characters idling on the grass (own small canvas, only renders while the lobby is open)
 import * as THREE from 'three';
-import { createSoldier, animateSoldier, CHARS } from './critter.js';
+import { createSoldier, animateSoldier, ensureChar } from './critter.js';
+import { pickedId } from './roster.js';
 
 export function lobbyChars(lobby) {
   const cv = document.createElement('canvas'); cv.id = 'lobbyChars'; lobby.insertBefore(cv, lobby.children[2] || null);
@@ -15,7 +16,7 @@ export function lobbyChars(lobby) {
     { skin: 'player' },
     { char: 'knight', gun: 'k' },
     { char: 'mage', gun: 'c' },
-    { char: 'skel-minion', hat: 'propeller', hatColor: 0x3a86ff, gun: 'd' },
+    { char: 'rogue-hood', gun: 'd' },
     { char: 'barbarian', gun: 'b' },
   ];
   const xs = [0, -1.6, 1.6, -3.2, 3.2, 4.8];
@@ -25,11 +26,19 @@ export function lobbyChars(lobby) {
     if (g.userData.blob) g.userData.blob.visible = true;
     scene.add(g); return g;
   });
+  // the wardrobe changed the player's character: swap the front figure once its model is loaded
+  async function refresh() {
+    const id = pickedId(); if (!(await ensureChar(id)) || id !== pickedId()) return;
+    const old = chars[0], g = createSoldier('player', { char: id });
+    g.position.copy(old.position); g.rotation.copy(old.rotation); if (g.userData.blob) g.userData.blob.visible = true;
+    scene.remove(old); scene.add(g); chars[0] = g;
+  }
+  addEventListener('party:char', refresh);
   let last = performance.now(), w = 0, h = 0, t = 0;
   function frame(now) {
     requestAnimationFrame(frame);
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    if (lobby.classList.contains('hidden')) return;
+    if (lobby.classList.contains('hidden') || document.body.classList.contains('wardrobeOpen')) return;
     const cw = cv.clientWidth, ch = cv.clientHeight; if (!cw || !ch) return;
     if (cw !== w || ch !== h) { w = cw; h = ch; r.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); }
     t += dt;

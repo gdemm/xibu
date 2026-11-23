@@ -185,7 +185,7 @@ export function updateBot(bot, dt, G) {
   const reload = bot.reloadUntil ? 1 - Math.max(0, bot.reloadUntil - G.now) / 2.2 : -1;
   const lo = G.quality === 'low' || (G.player && bot.pos.distanceTo(G.player.pos) > 24);
   setSoldierLOD(bot.mesh, lo);
-  animateSoldier(bot.mesh, dt, { moveX: moving ? moveX : 0, moveZ: moving ? moveZ : 0, speed, yaw: bot.yaw, crouch: bot.crouch, aim: engaging && reload < 0, pitch, reload, ground: bot.onGround, vy: bot.vel.y, bow: bowNow, draw: bot.drawT ? Math.min(1, (G.now - bot.drawT) / 0.8) : 0 });
+  animateSoldier(bot.mesh, dt, { moveX: moving ? moveX : 0, moveZ: moving ? moveZ : 0, speed, yaw: bot.yaw, wep: G.br ? (bot.armed ? bot.gun : 'knife') : (bot.gun || 'rifle'), firing: engaging, crouch: bot.crouch, aim: engaging && reload < 0, pitch, reload, ground: bot.onGround, vy: bot.vel.y, bow: bowNow, draw: bot.drawT ? Math.min(1, (G.now - bot.drawT) / 0.8) : 0 });
 }
 
 function angDiff(a, b) { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; }

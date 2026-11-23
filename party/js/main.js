@@ -5,8 +5,11 @@ import { buildIsland } from './island.js';
 import { WEAPONS, ORDER, buildViewmodels, MUZZLE } from './weapons.js';
 import { createBotMesh, updateBot, eyeOf } from './bots.js';
 import { animateDeath, resetSoldier, animateSoldier, soldierTris, createSoldier, soldierHit, setSoldierGear } from './critter.js';
-import { toonRamp } from './critter.js';
+import { toonRamp, HIT } from './critter.js';
 import { lobbyChars } from './lobbychars.js';
+import { openWardrobe } from './wardrobe.js';
+import { pickedId } from './roster.js';
+import { ensureChar } from './critter.js';
 import { playerJump, airStep, updateDrop } from './drop.js';
 import { partyLook, toonify } from './party.js';
 import { spawnVehicles, driveVehicle, flyVehicle, poseVehicle, inFootprint, vehicleBox, exitSpot } from './vehicles.js';
@@ -194,6 +197,15 @@ function startMatch(opts) {
   HUD.centerMsg(`团队死斗 · 先达到 ${G.target} 击杀获胜`, 2200);
 }
 G.startMatch = startMatch;
+// the picked 角色仓库 character is loaded lazily (only it + the 4 bot characters are in memory for a match)
+let starting = false;
+async function startWithChar(opts) {
+  if (starting) return; starting = true;
+  const b = $('btnStart'); const t = b.textContent; b.textContent = '加载中…';
+  try { await ensureChar(pickedId()); } finally { b.textContent = t; starting = false; }
+  startMatch(opts);
+}
+G.startWithChar = startWithChar;
 
 function endMatch() {
   $('nearList').classList.add('hidden'); nearKey = '';
@@ -218,7 +230,7 @@ const _ray = new THREE.Ray(), _hv = new THREE.Vector3();
 const _body = new THREE.Box3(), _head = new THREE.Box3();
 function hitBoxes(e) {
   // matches the drawn KayKit character (critter.js, measured): neck at 0.92 m (crouch 0.72), head ~0.80 m tall (crouch 0.84), ~0.8 m wide
-  const top = e.crouch ? 0.72 : 0.92, hh = e.crouch ? 0.84 : 0.80, hw = 0.4;
+  const top = e.crouch ? HIT.ctop : HIT.top, hh = e.crouch ? HIT.chh : HIT.hh, hw = HIT.hw;
   _body.min.set(e.pos.x - 0.36, e.pos.y, e.pos.z - 0.36); _body.max.set(e.pos.x + 0.36, e.pos.y + top, e.pos.z + 0.36);
   _head.min.set(e.pos.x - hw, e.pos.y + top, e.pos.z - hw); _head.max.set(e.pos.x + hw, e.pos.y + top + hh, e.pos.z + hw);
 }
@@ -318,14 +330,14 @@ G.solidsNear = (pos) => {
   return out;
 };
 const thirdPerson = () => !!P.inCar || !!G.player?.air || (S.tp && !P.scoped);
-function makeBody() { if (P.body) scene.remove(P.body); P.body = createSoldier(G.mode === 'br' ? 'player' : G.player.team); P.body.visible = false; scene.add(P.body); $('bView')?.classList.toggle('on', !!S.tp); }
+function makeBody() { if (P.body) scene.remove(P.body); P.body = createSoldier(G.mode === 'br' ? 'player' : G.player.team, { char: pickedId() }); P.body.visible = false; scene.add(P.body); $('bView')?.classList.toggle('on', !!S.tp); }
 function poseBody(dt, mx, mz, speed, seated) {
   const b = P.body; if (!b) return;
   b.visible = G.player.alive && thirdPerson() && !(P.inCar && (P.inCar.type === 'bus' || P.inCar.type === 'truck'));
   if (!b.visible) return;
   b.position.copy(G.player.pos); b.rotation.set(0, G.player.yaw, 0);
   if (seated) { const v = P.inCar; b.rotation.set(0, v.yaw, v.lean, 'YXZ'); b.position.y += { jeep: 0.55, moto: 0.45, bike: 0.5 }[v.type] || 0.5; if (v.type === 'jeep') { b.position.x += Math.cos(v.yaw) * -0.45; b.position.z += -Math.sin(v.yaw) * -0.45; } }
-  animateSoldier(b, dt, { moveX: seated ? 0 : mx, moveZ: seated ? 0 : mz, speed, yaw: b.rotation.y, crouch: !!seated || G.player.crouch, aim: !seated, seat: !!seated, bow: !!G.weapon.bow, draw: P.draw, nocked: G.ammo.bow?.mag > 0, pitch: G.player.pitch * 0.6, ground: seated ? true : G.player.onGround, vy: G.player.vel.y, reload: G.reloading ? 1 - Math.max(0, G.reloadEnd - G.now) / G.weapon.reload : -1 });
+  animateSoldier(b, dt, { moveX: seated ? 0 : mx, moveZ: seated ? 0 : mz, speed, yaw: b.rotation.y, wep: G.weapon.id, firing: G.now - (G.player.lastFired || -9) < 0.6, crouch: !!seated || G.player.crouch, aim: !seated, seat: !!seated, bow: !!G.weapon.bow, draw: P.draw, nocked: G.ammo.bow?.mag > 0, pitch: G.player.pitch * 0.6, ground: seated ? true : G.player.onGround, vy: G.player.vel.y, reload: G.reloading ? 1 - Math.max(0, G.reloadEnd - G.now) / G.weapon.reload : -1 });
 }
 const _cd = new THREE.Vector3(), _cp = new THREE.Vector3();
 function chaseCam(x, y, z, dist, side, up) {
@@ -786,7 +798,8 @@ document.querySelectorAll('#lobby .seg').forEach(seg => seg.addEventListener('cl
   const v = b.dataset.v; lobbyOpts[seg.dataset.k] = isNaN(+v) ? v : +v;
   if (seg.dataset.k === 'mode') document.getElementById('lobby').classList.toggle('brMode', v === 'br');
 }));
-$('btnStart').addEventListener('click', () => { unlockAudio(); startMatch({ ...lobbyOpts }); });
+$('btnStart').addEventListener('click', () => { unlockAudio(); startWithChar({ ...lobbyOpts }); });
+$('btnWardrobe').addEventListener('click', () => openWardrobe());
 for (const id of ['btnFull', 'btnFull2', 'tFull', 'lFull']) LAND.bind(id, LAND.toggle);
 function showScoreboard(on) {
   $('sbPanel').innerHTML = (G.mode === 'br' ? brBoardHTML(G, '战绩') : HUD.scoreboardHTML(G, '战绩')) + '<button class="close" id="sbClose">关闭</button>';
@@ -995,7 +1008,7 @@ function toLobby() {
 }
 $('btnQuit').addEventListener('click', toLobby);
 $('btnLobby').addEventListener('click', toLobby);
-$('btnAgain').addEventListener('click', () => startMatch(G.opts));
+$('btnAgain').addEventListener('click', () => startWithChar(G.opts));
 syncSettingsUI();
 lobbyChars($('lobby'));
 
