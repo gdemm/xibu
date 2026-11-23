@@ -5,7 +5,7 @@ import { buildIsland } from './island.js';
 import { WEAPONS, ORDER, buildViewmodels, MUZZLE } from './weapons.js';
 import { createBotMesh, updateBot, eyeOf } from './bots.js';
 import { animateDeath, resetSoldier, animateSoldier, soldierTris, createSoldier, soldierHit, setSoldierGear } from './critter.js';
-import { toonRamp } from './critter.js';
+import { toonRamp, HIT } from './critter.js';
 import { lobbyChars } from './lobbychars.js';
 import { playerJump, airStep, updateDrop } from './drop.js';
 import { partyLook, toonify } from './party.js';
@@ -218,7 +218,7 @@ const _ray = new THREE.Ray(), _hv = new THREE.Vector3();
 const _body = new THREE.Box3(), _head = new THREE.Box3();
 function hitBoxes(e) {
   // matches the drawn KayKit character (critter.js, measured): neck at 0.92 m (crouch 0.72), head ~0.80 m tall (crouch 0.84), ~0.8 m wide
-  const top = e.crouch ? 0.72 : 0.92, hh = e.crouch ? 0.84 : 0.80, hw = 0.4;
+  const top = e.crouch ? HIT.ctop : HIT.top, hh = e.crouch ? HIT.chh : HIT.hh, hw = HIT.hw;
   _body.min.set(e.pos.x - 0.36, e.pos.y, e.pos.z - 0.36); _body.max.set(e.pos.x + 0.36, e.pos.y + top, e.pos.z + 0.36);
   _head.min.set(e.pos.x - hw, e.pos.y + top, e.pos.z - hw); _head.max.set(e.pos.x + hw, e.pos.y + top + hh, e.pos.z + hw);
 }

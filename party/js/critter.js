@@ -8,6 +8,8 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import * as BEAN from './bean.js';
 import { Builder, M } from './soldier.js';
 import { makeBow } from './bow.js';
+import { STYLE } from './charstyle.js';          // optional procedural look (null = the KayKit models as shipped)
+import { buildStyled, reshapeRig, makeGy } from './charkit.js';
 export { toonRamp, critterMaterial, BODY_COLORS } from './bean.js';
 const { toonRamp, critterMaterial } = BEAN;
 
@@ -22,19 +24,26 @@ const TWIST = 0.85;                     // how much of the crossbow stance's sid
 const LOWER = ['idle', 'walk', 'sprint', 'crouch'], UPPER = ['hold', 'reload'], FULL = ['fall', 'drive', 'die', 'cheer'];
 const UPPER_BONE = /^(chest|upperarm|lowerarm|wrist|hand|handslot)/;   // head follows the lower-body clip (looks ahead)
 // characters with their own headgear (helmet, wizard hat, hood, bear hat): no party hat stacked on it
-const CAPPED = new Set(['knight', 'barbarian', 'mage', 'rogue-hood', 'skel-rogue', 'skel-warrior', 'skel-mage']);
+const CAPPED = STYLE ? new Set(STYLE.capped || CHARS) : new Set(['knight', 'barbarian', 'mage', 'rogue-hood', 'skel-rogue', 'skel-warrior', 'skel-mage']);
 const TEAM_TINT = { blue: 0x7fb4ff, red: 0xff8a80 };
 
+// hit boxes (main.js): default = the measured KayKit numbers; a style re-measures its own body
+export const HIT = { top: 0.92, ctop: 0.72, hh: 0.80, chh: 0.84, hw: 0.4 };
 const T = { chars: {}, blasters: {}, clips: {}, mats: {}, gunMat: null, outline: null, gunQ: null, ok: false };
 
+function toonVC(tint) {
+  const k = 'vc' + (tint || '');
+  return T.mats[k] || (T.mats[k] = new THREE.MeshToonMaterial({ vertexColors: true, color: tint ? new THREE.Color(0xffffff).lerp(new THREE.Color(tint), STYLE?.tintK ?? 0.25) : 0xffffff, gradientMap: toonRamp() }));
+}
+const glowVC = new THREE.MeshBasicMaterial({ vertexColors: true });
 function toonOf(map, tint) {
   const k = (map ? map.uuid : 'none') + (tint || '');
   return T.mats[k] || (T.mats[k] = new THREE.MeshToonMaterial({ map, color: tint ? new THREE.Color(0xffffff).lerp(new THREE.Color(tint), 0.35) : 0xffffff, gradientMap: toonRamp() }));
 }
 const glowMat = new THREE.MeshBasicMaterial({ color: 0xfff06a });
 function makeOutlineMat(skinned) {
-  const m = new THREE.MeshBasicMaterial({ color: 0x2a1f2e, side: THREE.BackSide });
-  m.onBeforeCompile = (s) => { s.vertexShader = '#define OUTLINE_W 0.022\n' + s.vertexShader.replace('#include <skinning_vertex>', '#include <skinning_vertex>\n transformed += normalize(' + (skinned ? 'objectNormal' : 'normal') + ') * OUTLINE_W;'); };
+  const m = new THREE.MeshBasicMaterial({ color: STYLE?.outlineColor ?? 0x2a1f2e, side: THREE.BackSide });
+  m.onBeforeCompile = (s) => { s.vertexShader = '#define OUTLINE_W ' + (STYLE?.outlineW ?? 0.022).toFixed(4) + '\n' + s.vertexShader.replace('#include <skinning_vertex>', '#include <skinning_vertex>\n transformed += normalize(' + (skinned ? 'objectNormal' : 'normal') + ') * OUTLINE_W;'); };
   m.customProgramCacheKey = () => 'charOutlineKK' + skinned;
   return m;
 }
@@ -96,8 +105,8 @@ function gait(root, clip) {
 }
 // ---------- detail pass: small original add-ons skinned to the shared rig (eye shine, blush, shoe soles, team armband, back emblem) ----------
 // Everything for one character is ONE extra SkinnedMesh (rigid-skinned, vertex colours) -> +1 draw call per character, ~400 tris.
-const FACE = new Set(['rogue', 'knight', 'barbarian', 'mage', 'rogue-hood']);      // painted-face heroes (skeletons have glowing eyes)
-const SOLES = new Set(['rogue', 'knight', 'barbarian', 'mage', 'rogue-hood', 'skel-warrior', 'skel-rogue']);
+const FACE = new Set(STYLE ? [] : ['rogue', 'knight', 'barbarian', 'mage', 'rogue-hood']);      // painted-face heroes (skeletons have glowing eyes)
+const SOLES = new Set(STYLE ? [] : ['rogue', 'knight', 'barbarian', 'mage', 'rogue-hood', 'skel-warrior', 'skel-rogue']);
 // measure rest-pose surface points once per character (raycast the rest pose), in model (scene) space
 function measure(n, sc) {
   let sk = null; sc.traverse(o => { if (o.isSkinnedMesh && !sk) sk = o; }); if (!sk) return null;
@@ -233,12 +242,12 @@ function gearGeo(n, a, h, bg, color) {
   const key = [n, a, h, bg, color].join(':'); if (GEARGEO[key]) return GEARGEO[key];
   const C = T.chars[n], S = C.spots; if (!S || !S.torsoPts) return null;
   const B = new Builder(); B.boneMats = S.boneMats;
-  const bone = (b) => ({ bone: S.bone(b) }), I = new THREE.Matrix4();
+  const bone = (b) => ({ bone: S.bone(b) }), I = new THREE.Matrix4(), gy = C.gy, gw = C.gw;
   const tp = S.torsoPts, hp = S.headPts;
   const vestPad = [0, 0.04, 0.05, 0.06][a];
   // ---- vest: lower half follows the spine, upper half the chest (overlapping a little so bending never opens a gap)
   if (a) {
-    const body = [0, 0xe8eef2, 0x5b6673, 0x3d3552][a], acc = GEAR_ACC[a], Y0 = 0.72, Y1 = 1.24, YS = 0.97;
+    const body = [0, 0xe8eef2, 0x5b6673, 0x3d3552][a], acc = GEAR_ACC[a], Y0 = gy(0.72), Y1 = gy(1.24), YS = gy(0.97);
     const lerpY = (p, q) => (t) => p + (q - p) * t;
     B.add(shell(tp, { nR: 4, nA: 18, y: lerpY(Y0, YS + 0.03), pad: vestPad }), I, body, bone('spine'));
     B.add(shell(tp, { nR: 4, nA: 18, y: lerpY(YS - 0.03, Y1), pad: vestPad, rMin: 0.2 }), I, body, bone('chest'));
@@ -247,28 +256,28 @@ function gearGeo(n, a, h, bg, color) {
     B.add(shell(tp, { nR: 2, nA: 18, y: lerpY(Y1 - 0.05, Y1 + 0.01), pad: vestPad + 0.012, rMin: 0.2 }), I, a === 1 ? 0xaab6c0 : acc, bone('chest'));
     const surf = (y, th) => radAt(tp, y, th, 0.12, 0.35, 0) + vestPad;
     if (a === 1) {          // soft vest: two front pouches
-      for (const s of [-1, 1]) { const th = s * 0.42, r = surf(0.86, th) + 0.03; B.add(new THREE.BoxGeometry(0.15, 0.13, 0.07), facing(Math.sin(th) * r, 0.86, Math.cos(th) * r, th), 0xc9d2d9, bone('spine')); }
+      for (const s of [-1, 1]) { const th = s * 0.42, r = surf(gy(0.86), th) + 0.03; B.add(new THREE.BoxGeometry(0.15, 0.13, 0.07), facing(Math.sin(th) * r, gy(0.86), Math.cos(th) * r, th), 0xc9d2d9, bone('spine')); }
     } else {                // plate carrier: front + back plates (lv3: bigger, + shoulder pads)
-      const pw = a === 2 ? 0.4 : 0.46, ph = a === 2 ? 0.3 : 0.36, py = 1.02;
+      const pw = (a === 2 ? 0.4 : 0.46) * gw, ph = a === 2 ? 0.3 : 0.36, py = gy(1.02);
       for (const th of [0, Math.PI]) {
         const r = surf(py, th) + 0.03;
         B.add(new THREE.BoxGeometry(pw, ph, 0.06), facing(Math.sin(th) * r, py, Math.cos(th) * r, th), acc, bone('chest'));
         B.add(new THREE.BoxGeometry(pw * 0.7, 0.04, 0.03), facing(Math.sin(th) * (r + 0.035), py + ph * 0.25, Math.cos(th) * (r + 0.035), th), 0xffffff, bone('chest'));
       }
       if (a === 3) for (const s of [-1, 1]) {
-        const th = s * Math.PI / 2, r = surf(1.16, th) + 0.02;
-        B.add(new THREE.SphereGeometry(0.17, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), M(s * r, 1.2, 0, 0, 0, -s * 0.5, 1, 0.55, 1.15), acc, bone(s > 0 ? 'upperarml' : 'upperarmr'));
-        B.add(new THREE.TorusGeometry(0.165, 0.022, 5, 14), M(s * r, 1.2, 0, Math.PI / 2, s * 0.5, 0, 1, 1.15, 1), 0x2b2540, bone(s > 0 ? 'upperarml' : 'upperarmr'));
+        const th = s * Math.PI / 2, r = surf(gy(1.16), th) + 0.02;
+        B.add(new THREE.SphereGeometry(0.17, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), M(s * r, gy(1.2), 0, 0, 0, -s * 0.5, 1, 0.55, 1.15), acc, bone(s > 0 ? 'upperarml' : 'upperarmr'));
+        B.add(new THREE.TorusGeometry(0.165, 0.022, 5, 14), M(s * r, gy(1.2), 0, Math.PI / 2, s * 0.5, 0, 1, 1.15, 1), 0x2b2540, bone(s > 0 ? 'upperarml' : 'upperarmr'));
       }
     }
   }
   // ---- backpack on the back (behind the vest), carrying the party emblem; straps over the shoulders
   if (bg) {
     const acc = GEAR_ACC[bg], canvas = [0, 0x8a7652, 0x6f6448, 0x4e4a3c][bg];
-    const [w, ph, d] = [null, [0.44, 0.44, 0.2], [0.52, 0.54, 0.25], [0.6, 0.64, 0.3]][bg];
-    let rb = 0; for (let y = 0.8; y <= 1.2; y += 0.05) rb = Math.max(rb, radAt(tp, y, Math.PI, 0.05, 0.5, 0));
+    const [w0, ph, d] = [null, [0.44, 0.44, 0.2], [0.52, 0.54, 0.25], [0.6, 0.64, 0.3]][bg], w = w0 * gw;
+    let rb = 0; for (let y = gy(0.8); y <= gy(1.2); y += 0.05) rb = Math.max(rb, radAt(tp, y, Math.PI, 0.05, 0.5, 0));
     rb += 0.06;                                           // clears the thickest vest
-    const top = 1.2, cy = top - ph / 2, cz = -rb - d / 2, back = cz - d / 2;
+    const top = gy(1.2), cy = top - ph / 2, cz = -rb - d / 2, back = cz - d / 2;
     B.add(new THREE.BoxGeometry(w, ph, d), M(0, cy, cz), canvas, bone('chest'));
     B.add(new THREE.BoxGeometry(w + 0.03, 0.14, d + 0.03), M(0, top - 0.06, cz - 0.005), acc, bone('chest'));                // lid
     B.add(new THREE.BoxGeometry(w * 0.72, ph * 0.42, 0.07), M(0, cy - ph * 0.14, back - 0.03), mixC(canvas, 0x000000, 0.18), bone('chest'));   // front pocket
@@ -280,9 +289,9 @@ function gearGeo(n, a, h, bg, color) {
     B.add(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 18), M(0, ey, ez - 0.008, rx), color, bone('chest'));
     B.add(starGeo(0.068, 0.029, 0.025), M(0, ey, ez - 0.025, rx), 0xffffff, bone('chest'));
     // straps: from the lid over the shoulder tops
-    const sh = radAt(tp, 1.22, 0, 0.06, 0.5, 0);
+    const sh = radAt(tp, gy(1.22), 0, 0.06, 0.5, 0);
     for (const s of [-1, 1]) {
-      const p0 = new THREE.Vector3(s * w * 0.28, top - 0.04, -rb + 0.02), p1 = new THREE.Vector3(s * w * 0.3, 1.29, -0.05), p2 = new THREE.Vector3(s * w * 0.3, 1.15, Math.max(0.12, sh));
+      const p0 = new THREE.Vector3(s * w * 0.28, top - 0.04, -rb + 0.02), p1 = new THREE.Vector3(s * w * 0.3, gy(1.29), -0.05), p2 = new THREE.Vector3(s * w * 0.3, gy(1.15), Math.max(0.12, sh));
       B.add(new THREE.BoxGeometry(1, 1, 1), strapM(p0, p1, 0.075, 0.03).m, acc, bone('chest'));
       B.add(new THREE.BoxGeometry(1, 1, 1), strapM(p1, p2, 0.075, 0.03).m, acc, bone('chest'));
     }
@@ -291,9 +300,9 @@ function gearGeo(n, a, h, bg, color) {
   if (h) {
     const acc = GEAR_ACC[h], shellC = [0, 0xe8eef2, 0x3f7fd6, 0x6b45b0][h], rimC = [0, 0xa9b4bd, 0x27313d, 0x2b2540][h];
     const pad = [0, 0.055, 0.07, 0.085][h], drop = [0, 0.08, 0.16, 0.26][h];
-    const headTopAbs = C.headTop + 1.241;
-    let zmin = 1e9, zmax = -1e9; for (let i = 0; i < hp.length; i += 3) if (hp[i + 1] > 1.75 && hp[i + 1] < 1.95 && Math.abs(hp[i]) < 0.3) { zmin = Math.min(zmin, hp[i + 2]); zmax = Math.max(zmax, hp[i + 2]); }
-    const cz = zmin < zmax ? (zmin + zmax) / 2 : 0, yb = 1.7, yTop = Math.min(headTopAbs, yb + 0.72);
+    const headTopAbs = C.headTop + C.headY;
+    let zmin = 1e9, zmax = -1e9; for (let i = 0; i < hp.length; i += 3) if (hp[i + 1] > gy(1.75) && hp[i + 1] < gy(1.95) && Math.abs(hp[i]) < 0.3) { zmin = Math.min(zmin, hp[i + 2]); zmax = Math.max(zmax, hp[i + 2]); }
+    const cz = zmin < zmax ? (zmin + zmax) / 2 : 0, yb = gy(1.7), yTop = Math.min(headTopAbs, yb + (gy(2.42) - gy(1.7)));
     const y0 = (th) => yb - drop * Math.max(0, -Math.cos(th));
     const hs = { nA: 20, cz, rMax: 0.74, dy: 0.05 };
     B.add(shell(hp, { ...hs, nR: 7, y: (t, th) => y0(th) + (yTop - 0.02 - y0(th)) * Math.pow(t, 0.85), pad, env: (t) => 1.12 * Math.pow(Math.max(0.01, 1 - Math.pow(t, 2.6)), 0.4), cap: yTop + pad * 0.9 }), I, shellC, bone('head'));
@@ -335,12 +344,20 @@ async function load() {
   const L = new GLTFLoader();
   const [anims, ...rest] = await Promise.all([L.loadAsync(BASE + 'anims.glb'), ...CHARS.map(n => L.loadAsync(BASE + n + '.glb')), ...BLASTERS.map(b => L.loadAsync(BASE + 'blaster-' + b + '.glb'))]);
   const byName = Object.fromEntries(anims.animations.map(a => [a.name, a]));
+  // a style may re-proportion the shared rig (bone offsets are never animated; only hips/root move): lift the hips track by
+  // the change in leg length so the feet stay on the ground in every clip
+  if (STYLE?.rig) {
+    const dh = reshapeRig(rest[0].scene, STYLE.rig);
+    for (const c of anims.animations) for (const t of c.tracks) if (t.name === 'hips.position') for (let i = 1; i < t.values.length; i += 3) t.values[i] += dh;
+    for (let i = 1; i < CHARS.length; i++) reshapeRig(rest[i].scene, STYLE.rig);
+  }
   for (const n of ['idle', 'walk', 'sprint']) T.clips[n] = part(byName[n], false);
   for (const n of FULL) T.clips[n] = byName[n];
   T.clips.crouch = makeCrouch(byName.idle, byName.drive, 0.85);
   CHARS.forEach((n, i) => {
     const sc = rest[i].scene; let headTop = 0, tris = 0;
     sc.updateMatrixWorld(true);
+    if (STYLE) buildStyled(sc, n, i, STYLE);           // swap the KayKit mesh for this style's procedural body (same skeleton)
     sc.traverse(o => {
       if (!o.isMesh) return;
       o.castShadow = false;
@@ -351,7 +368,8 @@ async function load() {
       }
     });
     const head = sc.getObjectByName('head'), hp = new THREE.Vector3(); head.getWorldPosition(hp);
-    T.chars[n] = { scene: sc, headTop: headTop - hp.y, tris, spots: measure(n, sc) };
+    T.chars[n] = { scene: sc, headTop: headTop - hp.y, headY: hp.y, tris, spots: measure(n, sc) };
+    T.chars[n].gy = makeGy(sc, headTop, !!STYLE); T.chars[n].gw = STYLE ? Math.min(1.25, Math.max(0.75, Math.abs(sc.getObjectByName('upperarml').getWorldPosition(new THREE.Vector3()).x) / 0.212)) : 1;
   });
   BLASTERS.forEach((b, i) => {
     const sc = rest[CHARS.length + i].scene;
@@ -378,6 +396,12 @@ async function load() {
   const ht = T.clips.crouch.tracks.find(t => t.name === 'hips.position'); if (ht) ht.values[1] -= fy.y - fi.y;
   T.loco = { walk: gait(tmp, T.clips.walk), sprint: gait(tmp, T.clips.sprint) };
   T.outline = makeOutlineMat(true); T.outlineRigid = makeOutlineMat(false);
+  if (STYLE) {     // hit boxes that match the drawn body: neck height standing / crouched, head height and half-width (metres)
+    const hy = (clip) => { const m = new THREE.AnimationMixer(tmp); m.clipAction(clip).play(); m.update(0); tmp.updateMatrixWorld(true); const v = tmp.getObjectByName('head').getWorldPosition(new THREE.Vector3()).y; m.stopAllAction(); m.uncacheRoot(tmp); return v; };
+    const C0 = T.chars[CHARS[0]], hp = C0.spots.headPts; let hw = 0; for (let i = 0; i < hp.length; i += 3) hw = Math.max(hw, Math.abs(hp[i]), Math.abs(hp[i + 2]));
+    const neck = (STYLE.neckK ?? 0) * C0.headTop;
+    HIT.top = (hy(T.clips.idle) + neck) * SCALE; HIT.ctop = (hy(T.clips.crouch) + neck) * SCALE; HIT.hh = HIT.chh = (C0.headTop - neck) * SCALE * 1.05; HIT.hw = Math.max(0.16, hw * SCALE * 1.1);
+  }
   T.ok = true;
 }
 try { await load(); } catch (e) { console.warn('character GLBs failed, using bean critters', e); }
@@ -460,9 +484,9 @@ export function createSoldier(skin = 'party', variant) {
   const model = SkeletonUtils.clone(C.scene); model.scale.setScalar(SCALE); model.rotation.y = Math.PI; root.add(model);
   const meshes = [], rigid = [], outlines = [];
   model.traverse(o => { if (o.isSkinnedMesh) meshes.push(o); else if (o.isMesh) rigid.push(o); });
-  for (const m of [...meshes, ...rigid]) m.material = m.material.name === 'Glow' ? glowMat : toonOf(m.material.map, tint);
+  for (const m of [...meshes, ...rigid]) m.material = m.material.name === 'GlowVC' ? glowVC : m.material.name === 'Glow' ? glowMat : m.material.vertexColors ? toonVC(tint) : toonOf(m.material.map, tint);
   for (const m of meshes) {
-    m.computeBoundingSphere(); m.boundingSphere.radius *= 1.7;     // room for poses (lying down, arms up)
+    m.computeBoundingSphere(); if (m.material === glowVC) { m.boundingSphere.radius *= 1.7; continue; } m.boundingSphere.radius *= 1.7;     // room for poses (lying down, arms up)
     const ol = new THREE.SkinnedMesh(m.geometry, T.outline); ol.bind(m.skeleton, m.bindMatrix); ol.boundingSphere = m.boundingSphere;
     m.parent.add(ol); outlines.push(ol);
   }
@@ -490,7 +514,7 @@ export function createSoldier(skin = 'party', variant) {
   let hatMesh = null;
   if (hat !== 'none') {
     hatMesh = new THREE.Mesh(hatGeo(hat, hatColor), critterMaterial());
-    hatMesh.scale.setScalar(HAT_SCALE / SCALE); hatMesh.position.y = C.headTop - 0.07;
+    hatMesh.scale.setScalar(HAT_SCALE * (STYLE?.hatScale ?? 1) / SCALE); hatMesh.position.y = C.headTop - 0.07;
     bones.head.add(hatMesh);
   }
   const blob = new THREE.Mesh(blobGeo, blobMat); blob.position.y = 0.03; g.add(blob);
