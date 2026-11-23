@@ -11,13 +11,14 @@ import { Builder, M } from './soldier.js';
 import { makeBow } from './bow.js';
 import { STYLE } from './charstyle.js';          // optional procedural look (null = the KayKit models as shipped)
 import { buildStyled, reshapeRig, makeGy } from './charkit.js';
+import { BOT_CHARS, REG, pickedId } from './roster.js';
 export { toonRamp, critterMaterial, BODY_COLORS } from './bean.js';
 const { toonRamp, critterMaterial } = BEAN;
 
 const BASE = './assets/chars/';
-export const CHARS = ['rogue', 'knight', 'barbarian', 'mage', 'rogue-hood', 'skel-minion', 'skel-rogue', 'skel-warrior', 'skel-mage'];
+export const CHARS = BOT_CHARS.map(c => c.id);          // bot deck; the player's character comes from the 角色仓库 (roster.js)
 const BLASTERS = ['b', 'c', 'd', 'h', 'k'];
-const PLAYER_CHAR = 'rogue', PLAYER_BLASTER = 'h';
+const PLAYER_BLASTER = 'h';
 const SCALE = 0.79;                    // model units -> metres: bare head-top 2.15 u -> 1.70 m (see main.js hitBoxes)
 const GUN_LEN = 0.62;
 const BOW3_S = 1.13, BOW3_TH = 1.9;     // third-person bow: 1.13 x 1.15 m ≈ 1.3 m tall (characters ~1.72 m), limbs 1.9x thicker
@@ -26,7 +27,7 @@ const ASSETS = STYLE?.assets || null;   // a style that swaps in another KayKit-
 const LOWER = ['idle', 'walk', 'sprint', 'crouch'], UPPER = ASSETS ? ['hold', 'reload', 'hold1', 'reload1', 'sprintGun', 'idleU', 'walkU', 'sprintU'] : ['hold', 'reload'], FULL = ['fall', 'drive', 'die', 'cheer'];
 const UPPER_BONE = /^(chest|upperarm|lowerarm|wrist|hand|handslot)/;   // head follows the lower-body clip (looks ahead)
 // characters with their own headgear (helmet, wizard hat, hood, bear hat): no party hat stacked on it
-const CAPPED = STYLE ? new Set(STYLE.capped || CHARS) : new Set(['knight', 'barbarian', 'mage', 'rogue-hood', 'skel-rogue', 'skel-warrior', 'skel-mage']);
+const CAPPED = { has: () => true };     // every character has its own hair / headgear: no party hats
 const TEAM_TINT = { blue: 0x7fb4ff, red: 0xff8a80 };
 
 // hit boxes (main.js): default = the measured KayKit numbers; a style re-measures its own body
@@ -126,8 +127,8 @@ function gait(root, clip) {
 }
 // ---------- detail pass: small original add-ons skinned to the shared rig (eye shine, blush, shoe soles, team armband, back emblem) ----------
 // Everything for one character is ONE extra SkinnedMesh (rigid-skinned, vertex colours) -> +1 draw call per character, ~400 tris.
-const FACE = new Set(STYLE ? [] : ['rogue', 'knight', 'barbarian', 'mage', 'rogue-hood']);      // painted-face heroes (skeletons have glowing eyes)
-const SOLES = new Set(STYLE ? [] : ['rogue', 'knight', 'barbarian', 'mage', 'rogue-hood', 'skel-warrior', 'skel-rogue']);
+const FACE = new Set(['knight', 'barbarian', 'mage', 'rogue-hood']);      // painted-face heroes (skeletons have glowing eyes)
+const SOLES = new Set(['knight', 'barbarian', 'mage', 'rogue-hood']);
 // measure rest-pose surface points once per character (raycast the rest pose), in model (scene) space
 function measure(n, sc) {
   let sk = null; sc.traverse(o => { if (o.isSkinnedMesh && !sk) sk = o; }); if (!sk) return null;
@@ -361,46 +362,48 @@ export function setSoldierGear(g, armor = 0, helmet = 0, bag = 0) {
   if (u.hatMesh) u.hatMesh.visible = !helmet;                        // party hat off while a helmet is worn
   if (u.extras) { const eg = extrasGeo(u.char, u.exColor, !!bag); if (eg) u.extras.geometry = eg; }   // emblem moves onto the backpack
 }
+const LOADER = new GLTFLoader(), LOADING = {};
+// one character: load its GLB, merge its parts into one skinned mesh, measure it (head top, gear fitting spots)
+function prepChar(n, sc) {
+  let headTop = 0, tris = 0;
+  sc.updateMatrixWorld(true);
+  sc.traverse(o => {
+    if (!o.isMesh) return;
+    o.castShadow = false;
+    tris += o.geometry.index ? o.geometry.index.count / 3 : o.geometry.attributes.position.count / 3;
+    if (o.isSkinnedMesh) {   // head top = highest vertex bound to the head bone (skinned + quantised: measure posed vertices)
+      const hi = o.skeleton.bones.findIndex(b => b.name === 'head'), J = o.geometry.attributes.skinIndex, W = o.geometry.attributes.skinWeight;
+      for (let k = 0; k < J.count; k++) if (J.getX(k) === hi && W.getX(k) > 0.5) headTop = Math.max(headTop, o.getVertexPosition(k, _v).applyMatrix4(o.matrixWorld).y);
+    }
+  });
+  const head = sc.getObjectByName('head'), hp = new THREE.Vector3(); head.getWorldPosition(hp);
+  const C = T.chars[n] = { scene: sc, headTop: headTop - hp.y, headY: hp.y, tris, spots: measure(n, sc) };
+  C.gy = makeGy(sc, headTop, true); C.gw = Math.min(1.25, Math.max(0.75, Math.abs(sc.getObjectByName('upperarml').getWorldPosition(new THREE.Vector3()).x) / 0.212));
+}
+async function loadChar(id) {
+  const e = REG[id]; if (!e) throw new Error('unknown character ' + id);
+  const gl = await LOADER.loadAsync(e.url); const sc = gl.scene; mergeSkinned(sc, e.drop); prepChar(id, sc);
+}
+export const hasChar = (id) => !!T.chars[id];
+// lazy load: the match / wardrobe preview awaits this before creating a soldier with that character
+export function ensureChar(id) {
+  if (T.chars[id] || !REG[id]) return Promise.resolve(!!T.chars[id]);
+  return LOADING[id] || (LOADING[id] = loadChar(id).then(() => true, (err) => { console.warn('character failed to load', id, err); delete LOADING[id]; return false; }));
+}
+export const loadedChars = () => Object.keys(T.chars);
 async function load() {
-  const L = new GLTFLoader();
-  let anims, rest;
-  if (ASSETS) {      // one load per distinct file; slots that reuse a file get their own skeleton-aware clone
-    const files = [...new Set(ASSETS.chars.map(c => c.file))];
-    const [an, ...got] = await Promise.all([L.loadAsync(ASSETS.dir + ASSETS.anims), ...files.map(f => L.loadAsync(ASSETS.dir + f)), ...BLASTERS.map(b => L.loadAsync(BASE + 'blaster-' + b + '.glb'))]);
-    const byFile = Object.fromEntries(files.map((f, i) => [f, got[i]]));
-    anims = an;
-    rest = [...ASSETS.chars.map((c, i) => { const sc = SkeletonUtils.clone(byFile[c.file].scene); mergeSkinned(sc, c.drop); return { scene: sc }; }), ...got.slice(files.length)];
-  } else [anims, ...rest] = await Promise.all([L.loadAsync(BASE + 'anims.glb'), ...CHARS.map(n => L.loadAsync(BASE + n + '.glb')), ...BLASTERS.map(b => L.loadAsync(BASE + 'blaster-' + b + '.glb'))]);
+  const L = LOADER;
+  const pick = pickedId();
+  const [anims, ...bl] = await Promise.all([L.loadAsync(ASSETS.dir + ASSETS.anims), ...BLASTERS.map(b => L.loadAsync(BASE + 'blaster-' + b + '.glb')),
+    ...CHARS.map(n => ensureChar(n)), ensureChar(pick)]);
+  for (const n of CHARS) if (!T.chars[n]) throw new Error('bot character missing ' + n);
+  const rest = bl.slice(0, BLASTERS.length);
   const byName = Object.fromEntries(anims.animations.map(a => [a.name, a]));
-  // a style may re-proportion the shared rig (bone offsets are never animated; only hips/root move): lift the hips track by
-  // the change in leg length so the feet stay on the ground in every clip
-  if (STYLE?.rig) {
-    const dh = reshapeRig(rest[0].scene, STYLE.rig);
-    for (const c of anims.animations) for (const t of c.tracks) if (t.name === 'hips.position') for (let i = 1; i < t.values.length; i += 3) t.values[i] += dh;
-    for (let i = 1; i < CHARS.length; i++) reshapeRig(rest[i].scene, STYLE.rig);
-  }
   for (const n of ['idle', 'walk', 'sprint']) T.clips[n] = part(byName[n], false);
   for (const n of FULL) T.clips[n] = byName[n];
   T.clips.crouch = makeCrouch(byName.idle, byName.drive, 0.85);
-  CHARS.forEach((n, i) => {
-    const sc = rest[i].scene; let headTop = 0, tris = 0;
-    sc.updateMatrixWorld(true);
-    if (STYLE?.build) buildStyled(sc, n, i, STYLE);           // swap the KayKit mesh for this style's procedural body (same skeleton)
-    sc.traverse(o => {
-      if (!o.isMesh) return;
-      o.castShadow = false;
-      tris += o.geometry.index ? o.geometry.index.count / 3 : o.geometry.attributes.position.count / 3;
-      if (o.isSkinnedMesh) {   // head top = highest vertex bound to the head bone (skinned + quantised: measure posed vertices)
-        const hi = o.skeleton.bones.findIndex(b => b.name === 'head'), J = o.geometry.attributes.skinIndex, W = o.geometry.attributes.skinWeight;
-        for (let k = 0; k < J.count; k++) if (J.getX(k) === hi && W.getX(k) > 0.5) headTop = Math.max(headTop, o.getVertexPosition(k, _v).applyMatrix4(o.matrixWorld).y);
-      }
-    });
-    const head = sc.getObjectByName('head'), hp = new THREE.Vector3(); head.getWorldPosition(hp);
-    T.chars[n] = { scene: sc, headTop: headTop - hp.y, headY: hp.y, tris, spots: measure(n, sc) };
-    T.chars[n].gy = makeGy(sc, headTop, !!STYLE); T.chars[n].gw = STYLE ? Math.min(1.25, Math.max(0.75, Math.abs(sc.getObjectByName('upperarml').getWorldPosition(new THREE.Vector3()).x) / 0.212)) : 1;
-  });
   BLASTERS.forEach((b, i) => {
-    const sc = rest[CHARS.length + i].scene;
+    const sc = rest[i].scene;
     sc.traverse(o => { if (o.isMesh) { if (!T.gunMat) T.gunMat = toonOf(o.material.map); o.material = T.gunMat; } });
     const box = new THREE.Box3().setFromObject(sc); T.blasters[b] = { scene: sc, box };
   });
@@ -441,10 +444,10 @@ async function load() {
   const ht = T.clips.crouch.tracks.find(t => t.name === 'hips.position'); if (ht) ht.values[1] -= fy.y - fi.y;
   T.loco = { walk: gait(tmp, T.clips.walk), sprint: gait(tmp, T.clips.sprint) };
   T.outline = makeOutlineMat(true); T.outlineRigid = makeOutlineMat(false);
-  if (STYLE) {     // hit boxes that match the drawn body: neck height standing / crouched, head height and half-width (metres)
+  {     // hit boxes that match the drawn body: neck height standing / crouched, head height and half-width (metres)
     const hy = (clip) => { const m = new THREE.AnimationMixer(tmp); m.clipAction(clip).play(); m.update(0); tmp.updateMatrixWorld(true); const v = tmp.getObjectByName('head').getWorldPosition(new THREE.Vector3()).y; m.stopAllAction(); m.uncacheRoot(tmp); return v; };
     const C0 = T.chars[CHARS[0]], hp = C0.spots.headPts; let hw = 0; for (let i = 0; i < hp.length; i += 3) hw = Math.max(hw, Math.abs(hp[i]), Math.abs(hp[i + 2]));
-    const neck = (STYLE.neckK ?? 0) * C0.headTop;
+    const neck = (STYLE?.neckK ?? 0) * C0.headTop;
     HIT.top = (hy(T.clips.idle) + neck) * SCALE; HIT.ctop = (hy(T.clips.crouch) + neck) * SCALE; HIT.hh = HIT.chh = (C0.headTop - neck) * SCALE * 1.05; HIT.hw = Math.max(0.16, hw * SCALE * 1.1);
   }
   T.ok = true;
@@ -516,7 +519,8 @@ const clamp = (v, a, b) => v < a ? a : v > b ? b : v, lerp = (a, b, k) => a + (b
 export function createSoldier(skin = 'party', variant) {
   if (!T.ok) return BEAN.createSoldier(skin, variant);
   const team = skin === 'blue' || skin === 'red';
-  const char = variant?.char ?? (skin === 'player' ? PLAYER_CHAR : nextChar());
+  let char = variant?.char ?? (skin === 'player' ? pickedId() : nextChar());
+  if (!T.chars[char]) { ensureChar(char); char = CHARS[0]; }     // not loaded yet (callers await ensureChar first)
   let hat = variant?.hat ?? (skin === 'player' || team ? 'cone' : pick(HATS));
   if (CAPPED.has(char)) hat = 'none';
   const hatColor = variant?.hatColor ?? (skin === 'player' ? 0xff4d6d : team ? TEAM_HAT[skin] : pick(HAT_COLORS));
@@ -530,7 +534,7 @@ export function createSoldier(skin = 'party', variant) {
   const meshes = [], rigid = [], outlines = [];
   model.traverse(o => { if (o.isSkinnedMesh) meshes.push(o); else if (o.isMesh) rigid.push(o); });
   const noOl = new Set(meshes.filter(m => m.material.name === 'GlowVC' || m.material.name === 'DecoVC'));
-  const vary = ASSETS ? ASSETS.chars[CHARS.indexOf(char)]?.vary : 0;
+  const vary = REG[char]?.vary || 0;
   for (const m of [...meshes, ...rigid]) m.material = m.material.name === 'GlowVC' ? glowVC : m.material.name === 'Glow' ? glowMat : m.material.vertexColors ? toonVC(tint) : toonOf(m.material.map, tint, vary);
   for (const m of meshes) {
     m.computeBoundingSphere(); if (noOl.has(m)) { m.boundingSphere.radius *= 1.7; continue; } m.boundingSphere.radius *= 1.7;     // room for poses (lying down, arms up)
@@ -539,7 +543,7 @@ export function createSoldier(skin = 'party', variant) {
   }
   for (const m of rigid) { const ol = new THREE.Mesh(m.geometry, T.outlineRigid); m.add(ol); outlines.push(ol); }
   // detail add-ons (eye shine, blush, soles, armband, back emblem) share the body's skeleton
-  const exColor = team ? TEAM_HAT[skin] : hatColor, exGeo = ASSETS ? null : extrasGeo(char, exColor);
+  const exColor = team ? TEAM_HAT[skin] : hatColor, exGeo = REG[char]?.old ? extrasGeo(char, exColor) : null;
   let extras = null;
   if (exGeo && meshes[0]) { extras = new THREE.SkinnedMesh(exGeo, critterMaterial()); extras.bind(meshes[0].skeleton, meshes[0].bindMatrix); extras.boundingSphere = meshes[0].boundingSphere; meshes[0].parent.add(extras); }
   const bones = {}; model.traverse(o => { if (o.isBone) bones[o.name] = o; });

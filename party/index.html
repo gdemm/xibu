@@ -204,6 +204,46 @@ body.hudEdit #touch .sel{outline:3px dashed #ffd45c;outline-offset:3px}
 #lobbyTop button{width:44px;height:44px;border-radius:11px;border:2px solid #1a1022;background:#ffffffd8;color:#1a1022;font-size:20px;font-weight:900;display:flex;align-items:center;justify-content:center;padding:0}
 #lobbyTop button:active{transform:scale(.92)}
 #lExit{background:#ff5a5a!important;color:#fff!important;font-size:24px!important}
+
+/* 角色仓库 */
+#wardrobe{position:absolute;inset:0;z-index:25;display:flex;flex-direction:column;background:linear-gradient(#2d1b4e,#1b2f55);color:#fff;
+  padding:calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));box-sizing:border-box}
+#wardrobe.hidden{display:none}
+.wdHead{display:flex;align-items:center;gap:8px;height:44px;padding-right:104px;flex:none}
+.wdHead h2{margin:0;font-size:19px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wdBack,.wdBtn{height:36px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.12);color:#fff;font-size:14px;font-weight:700;white-space:nowrap}
+.wdBtn:disabled{opacity:.4}
+#wardrobe.editing #wdEdit{background:#ffb52e;color:#3a1a5a;border-color:#ffb52e}
+.wdBody{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.wdPrev{position:relative;flex:0 0 34%;min-height:0;border-radius:16px;background:radial-gradient(ellipse at 50% 80%,#8fd3ff,#4a7fd0);overflow:hidden}
+.wdPrev canvas{position:absolute;inset:0;width:100%;height:100%}
+.wdName{position:absolute;left:10px;top:8px;font-size:18px;font-weight:900;text-shadow:0 2px 0 #1a1022}
+.wdHint{position:absolute;left:10px;bottom:6px;font-size:11px;opacity:.85}
+.wdGrid{flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;align-content:start;padding:4px 2px;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+.wdCard{position:relative;border-radius:12px;background:rgba(255,255,255,.1);border:2px solid transparent;padding:4px 4px 6px;text-align:center;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.wdCard.on{border-color:#ffd84a;background:rgba(255,216,74,.22)}
+.wdCard img{display:block;width:100%;aspect-ratio:4/5;object-fit:contain;pointer-events:none}
+.wdN{display:block;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wdV{position:absolute;left:5px;top:4px;font-size:10px;font-weight:900;background:#1a1022aa;border-radius:6px;padding:1px 5px}
+.wdDel{display:none;position:absolute;right:-4px;top:-4px;width:26px;height:26px;border-radius:50%;border:2px solid #fff;background:#ff4d4d;color:#fff;font-size:13px;font-weight:900;padding:0;line-height:20px}
+#wardrobe.editing .wdDel{display:block}
+#wardrobe.editing .wdCard{animation:wdWob .3s infinite alternate}
+@keyframes wdWob{from{transform:rotate(-1.2deg)}to{transform:rotate(1.2deg)}}
+.wdDlg{position:absolute;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;z-index:2}
+.wdDlg.hidden,.wdToast.hidden{display:none}
+.wdBox{background:#fff;color:#2a1a3a;border-radius:16px;padding:16px 18px;width:min(300px,86%);text-align:center}
+.wdBox p{white-space:pre-line;margin:0 0 14px;font-size:15px;font-weight:700}
+.wdRow{display:flex;gap:10px}.wdRow button{flex:1;height:40px;border-radius:10px;border:none;font-size:15px;font-weight:800;background:#e6e1ee;color:#2a1a3a}
+.wdRow button.danger{background:#ff4d4d;color:#fff}
+.wdToast{position:absolute;left:50%;bottom:12%;transform:translateX(-50%);background:#1a1022e6;padding:8px 16px;border-radius:20px;font-size:14px;z-index:3}
+@media (orientation:landscape){
+  .wdBody{flex-direction:row}
+  .wdPrev{flex:0 0 32%}
+  .wdGrid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr))}
+}
+body.forceLand .wdBody{flex-direction:row}
+body.forceLand .wdPrev{flex:0 0 32%}
+body.forceLand .wdGrid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr))}
 </style>
 </head>
 <body>
@@ -227,6 +267,7 @@ body.hudEdit #touch .sel{outline:3px dashed #ffd45c;outline-offset:3px}
       <div class="row"><label>机器人</label><div class="seg" data-k="diff"><button data-v="easy">简单</button><button data-v="normal" class="on">普通</button><button data-v="hard">困难</button></div></div>
       <div class="actions">
         <button id="btnStart">开始</button>
+        <button class="ghost" id="btnWardrobe">角色仓库</button>
         <button class="ghost" id="btnSettings">画面设置</button>
       </div>
       <div class="tip">电脑：WASD 移动 · 鼠标瞄准 · 左键开火 · 右键开镜 · F 跳伞/开伞/上车 · V 视角 · Tab 战绩</div>
