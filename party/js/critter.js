@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as BEAN from './bean.js';
 import { Builder, M } from './soldier.js';
 import { makeBow } from './bow.js';
@@ -20,8 +21,9 @@ const PLAYER_CHAR = 'rogue', PLAYER_BLASTER = 'h';
 const SCALE = 0.79;                    // model units -> metres: bare head-top 2.15 u -> 1.70 m (see main.js hitBoxes)
 const GUN_LEN = 0.62;
 const BOW3_S = 1.13, BOW3_TH = 1.9;     // third-person bow: 1.13 x 1.15 m ≈ 1.3 m tall (characters ~1.72 m), limbs 1.9x thicker
-const TWIST = 0.85;                     // how much of the crossbow stance's sideways twist is squared to the front                   // blaster length, metres
-const LOWER = ['idle', 'walk', 'sprint', 'crouch'], UPPER = ['hold', 'reload'], FULL = ['fall', 'drive', 'die', 'cheer'];
+const TWIST = STYLE?.twist ?? 0.85;                     // how much of the crossbow stance's sideways twist is squared to the front                   // blaster length, metres
+const ASSETS = STYLE?.assets || null;   // a style that swaps in another KayKit-rig character set (Rig_Medium: same bone names)
+const LOWER = ['idle', 'walk', 'sprint', 'crouch'], UPPER = ASSETS ? ['hold', 'reload', 'hold1', 'reload1', 'sprintGun', 'idleU', 'walkU', 'sprintU'] : ['hold', 'reload'], FULL = ['fall', 'drive', 'die', 'cheer'];
 const UPPER_BONE = /^(chest|upperarm|lowerarm|wrist|hand|handslot)/;   // head follows the lower-body clip (looks ahead)
 // characters with their own headgear (helmet, wizard hat, hood, bear hat): no party hat stacked on it
 const CAPPED = STYLE ? new Set(STYLE.capped || CHARS) : new Set(['knight', 'barbarian', 'mage', 'rogue-hood', 'skel-rogue', 'skel-warrior', 'skel-mage']);
@@ -36,9 +38,28 @@ function toonVC(tint) {
   return T.mats[k] || (T.mats[k] = new THREE.MeshToonMaterial({ vertexColors: true, color: tint ? new THREE.Color(0xffffff).lerp(new THREE.Color(tint), STYLE?.tintK ?? 0.25) : 0xffffff, gradientMap: toonRamp() }));
 }
 const glowVC = new THREE.MeshBasicMaterial({ vertexColors: true });
-function toonOf(map, tint) {
-  const k = (map ? map.uuid : 'none') + (tint || '');
-  return T.mats[k] || (T.mats[k] = new THREE.MeshToonMaterial({ map, color: tint ? new THREE.Color(0xffffff).lerp(new THREE.Color(tint), 0.35) : 0xffffff, gradientMap: toonRamp() }));
+function toonOf(map, tint, vary) {
+  const k = (map ? map.uuid : 'none') + (tint || '') + ':' + (vary || '');
+  if (T.mats[k]) return T.mats[k];
+  const c = new THREE.Color(0xffffff); if (vary) c.lerp(new THREE.Color(vary), 0.45); if (tint) c.lerp(new THREE.Color(tint), ASSETS ? 0.25 : 0.35);
+  return (T.mats[k] = new THREE.MeshToonMaterial({ map, color: c, gradientMap: toonRamp() }));
+}
+// several skinned parts on one skeleton -> one mesh (one draw call + one outline per character)
+function mergeSkinned(sc, drop) {
+  const parts = [], gone = []; sc.traverse(o => { if (o.isMesh && drop && drop.some(d => o.name.includes(d))) gone.push(o); else if (o.isSkinnedMesh) parts.push(o); });
+  for (const o of gone) o.parent.remove(o);
+  const keep = parts.filter(o => o.parent);
+  if (keep.length < 2) return;
+  const base = keep[0], same = keep.filter(o => o.skeleton.bones.length === base.skeleton.bones.length && o.skeleton.bones.every((b, i) => b === base.skeleton.bones[i]) && o.material.map === base.material.map && o.bindMatrix.equals(base.bindMatrix));
+  if (same.length < 2) return;
+  const plain = (a, T) => { const out = new T(a.count * a.itemSize); for (let i = 0; i < a.count; i++) for (let k = 0; k < a.itemSize; k++) out[i * a.itemSize + k] = a.getComponent(i, k); return new THREE.BufferAttribute(out, a.itemSize); };
+  const geos = same.map(o => { const c = new THREE.BufferGeometry(), g = o.geometry;
+    for (const n of ['position', 'normal', 'uv', 'skinWeight']) if (g.attributes[n]) c.setAttribute(n, plain(g.attributes[n], Float32Array));
+    if (g.attributes.skinIndex) c.setAttribute('skinIndex', plain(g.attributes.skinIndex, Uint16Array));
+    c.setIndex(g.index ? Array.from(g.index.array) : null); return c; });
+  const merged = mergeGeometries(geos, false); if (!merged) return;
+  base.geometry = merged; base.name = 'Body';
+  for (const o of same) if (o !== base) o.parent.remove(o);
 }
 const glowMat = new THREE.MeshBasicMaterial({ color: 0xfff06a });
 function makeOutlineMat(skinned) {
@@ -342,7 +363,14 @@ export function setSoldierGear(g, armor = 0, helmet = 0, bag = 0) {
 }
 async function load() {
   const L = new GLTFLoader();
-  const [anims, ...rest] = await Promise.all([L.loadAsync(BASE + 'anims.glb'), ...CHARS.map(n => L.loadAsync(BASE + n + '.glb')), ...BLASTERS.map(b => L.loadAsync(BASE + 'blaster-' + b + '.glb'))]);
+  let anims, rest;
+  if (ASSETS) {      // one load per distinct file; slots that reuse a file get their own skeleton-aware clone
+    const files = [...new Set(ASSETS.chars.map(c => c.file))];
+    const [an, ...got] = await Promise.all([L.loadAsync(ASSETS.dir + ASSETS.anims), ...files.map(f => L.loadAsync(ASSETS.dir + f)), ...BLASTERS.map(b => L.loadAsync(BASE + 'blaster-' + b + '.glb'))]);
+    const byFile = Object.fromEntries(files.map((f, i) => [f, got[i]]));
+    anims = an;
+    rest = [...ASSETS.chars.map((c, i) => { const sc = SkeletonUtils.clone(byFile[c.file].scene); mergeSkinned(sc, c.drop); return { scene: sc }; }), ...got.slice(files.length)];
+  } else [anims, ...rest] = await Promise.all([L.loadAsync(BASE + 'anims.glb'), ...CHARS.map(n => L.loadAsync(BASE + n + '.glb')), ...BLASTERS.map(b => L.loadAsync(BASE + 'blaster-' + b + '.glb'))]);
   const byName = Object.fromEntries(anims.animations.map(a => [a.name, a]));
   // a style may re-proportion the shared rig (bone offsets are never animated; only hips/root move): lift the hips track by
   // the change in leg length so the feet stay on the ground in every clip
@@ -357,7 +385,7 @@ async function load() {
   CHARS.forEach((n, i) => {
     const sc = rest[i].scene; let headTop = 0, tris = 0;
     sc.updateMatrixWorld(true);
-    if (STYLE) buildStyled(sc, n, i, STYLE);           // swap the KayKit mesh for this style's procedural body (same skeleton)
+    if (STYLE?.build) buildStyled(sc, n, i, STYLE);           // swap the KayKit mesh for this style's procedural body (same skeleton)
     sc.traverse(o => {
       if (!o.isMesh) return;
       o.castShadow = false;
@@ -380,14 +408,31 @@ async function load() {
   const tmp = SkeletonUtils.clone(T.chars[CHARS[0]].scene);
   T.clips.hold = stance(tmp, byName.hold, true, byName.idle);
   T.clips.reload = stance(tmp, byName.reload, false, byName.idle);
+  if (ASSETS) {
+    T.clips.hold1 = stance(tmp, byName.hold1, true, byName.idle); T.clips.reload1 = stance(tmp, byName.reload1, false, byName.idle);
+    T.clips.sprintGun = part(byName.sprintGun, true, 'sprintGun');
+    for (const n of ['idle', 'walk', 'sprint']) T.clips[n + 'U'] = part(byName[n], true, n + 'U');
+  }
   // blaster orientation: in the holding pose the barrel points straight ahead (model +Z), upright
   const mx = new THREE.AnimationMixer(tmp);
   mx.clipAction(T.clips.idle).play(); mx.clipAction(T.clips.hold).play(); mx.update(0); tmp.updateMatrixWorld(true);
   const hq = new THREE.Quaternion(); tmp.getObjectByName('handslotr').getWorldQuaternion(hq);
   T.gunQ = hq.clone().invert();
+  if (ASSETS) {
+    const aim = (hr, hl) => { const d = hl.clone().sub(hr).normalize(), up = new THREE.Vector3(0, 1, 0); const m = new THREE.Matrix4().lookAt(new THREE.Vector3(), d.clone().negate(), up); return new THREE.Quaternion().setFromRotationMatrix(m); };
+    const pr = new THREE.Vector3(), pl = new THREE.Vector3(); tmp.getObjectByName('handslotr').getWorldPosition(pr); tmp.getObjectByName('handslotl').getWorldPosition(pl);
+    const tmpQ = tmp.getWorldQuaternion(new THREE.Quaternion());
+    const fw0 = new THREE.Vector3(0, 0, 1).applyQuaternion(tmpQ), dir = pl.clone().sub(pr).normalize().lerp(fw0, STYLE?.gunFwd ?? 0.5).normalize();
+    T.gunQ = hq.clone().invert().multiply(aim(pr, pr.clone().add(dir)));
+    const m1 = new THREE.AnimationMixer(tmp); mx.stopAllAction(); m1.clipAction(T.clips.idle).play(); m1.clipAction(T.clips.hold1).play(); m1.update(0); tmp.updateMatrixWorld(true);
+    const hq1 = tmp.getObjectByName('handslotr').getWorldQuaternion(new THREE.Quaternion());
+    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(tmpQ), p0 = new THREE.Vector3(); tmp.getObjectByName('handslotr').getWorldPosition(p0);
+    T.gunQ1 = hq1.clone().invert().multiply(aim(p0, p0.clone().add(fwd)));
+    m1.stopAllAction(); mx.clipAction(T.clips.idle).play(); mx.clipAction(T.clips.hold).play(); mx.update(0); tmp.updateMatrixWorld(true);
+  }
   // ...and sits between both fists (grip at the midpoint of the two hand slots), so it reads as held two-handed
   const hr = tmp.getObjectByName('handslotr'), hl = tmp.getObjectByName('handslotl'), mid = new THREE.Vector3(), pl = new THREE.Vector3();
-  hr.getWorldPosition(mid); hl.getWorldPosition(pl); mid.lerp(pl, 0.5); T.gunOff = hr.worldToLocal(mid);
+  hr.getWorldPosition(mid); hl.getWorldPosition(pl); mid.lerp(pl, 0.5); T.gunOff = ASSETS ? new THREE.Vector3() : hr.worldToLocal(mid);
   // crouch: drop the hips so the feet stay on the ground
   const mc = new THREE.AnimationMixer(tmp); mx.stopAllAction(); mc.clipAction(T.clips.crouch).play(); mc.update(0); tmp.updateMatrixWorld(true);
   const fy = new THREE.Vector3(); tmp.getObjectByName('footl').getWorldPosition(fy);
@@ -485,7 +530,8 @@ export function createSoldier(skin = 'party', variant) {
   const meshes = [], rigid = [], outlines = [];
   model.traverse(o => { if (o.isSkinnedMesh) meshes.push(o); else if (o.isMesh) rigid.push(o); });
   const noOl = new Set(meshes.filter(m => m.material.name === 'GlowVC' || m.material.name === 'DecoVC'));
-  for (const m of [...meshes, ...rigid]) m.material = m.material.name === 'GlowVC' ? glowVC : m.material.name === 'Glow' ? glowMat : m.material.vertexColors ? toonVC(tint) : toonOf(m.material.map, tint);
+  const vary = ASSETS ? ASSETS.chars[CHARS.indexOf(char)]?.vary : 0;
+  for (const m of [...meshes, ...rigid]) m.material = m.material.name === 'GlowVC' ? glowVC : m.material.name === 'Glow' ? glowMat : m.material.vertexColors ? toonVC(tint) : toonOf(m.material.map, tint, vary);
   for (const m of meshes) {
     m.computeBoundingSphere(); if (noOl.has(m)) { m.boundingSphere.radius *= 1.7; continue; } m.boundingSphere.radius *= 1.7;     // room for poses (lying down, arms up)
     const ol = new THREE.SkinnedMesh(m.geometry, T.outline); ol.bind(m.skeleton, m.bindMatrix); ol.boundingSphere = m.boundingSphere;
@@ -493,17 +539,17 @@ export function createSoldier(skin = 'party', variant) {
   }
   for (const m of rigid) { const ol = new THREE.Mesh(m.geometry, T.outlineRigid); m.add(ol); outlines.push(ol); }
   // detail add-ons (eye shine, blush, soles, armband, back emblem) share the body's skeleton
-  const exColor = team ? TEAM_HAT[skin] : hatColor, exGeo = extrasGeo(char, exColor);
+  const exColor = team ? TEAM_HAT[skin] : hatColor, exGeo = ASSETS ? null : extrasGeo(char, exColor);
   let extras = null;
   if (exGeo && meshes[0]) { extras = new THREE.SkinnedMesh(exGeo, critterMaterial()); extras.bind(meshes[0].skeleton, meshes[0].bindMatrix); extras.boundingSphere = meshes[0].boundingSphere; meshes[0].parent.add(extras); }
   const bones = {}; model.traverse(o => { if (o.isBone) bones[o.name] = o; });
   const rest = { upperlegl: bones.upperlegl.quaternion.clone(), upperlegr: bones.upperlegr.quaternion.clone() };
   // toy blaster in the right hand slot, barrel straight ahead in the holding pose
   const gunT = T.blasters[gunId];
-  const gun = gunT.scene.clone(); const gs = GUN_LEN / SCALE / (gunT.box.max.z - gunT.box.min.z);
+  const gun = gunT.scene.clone(); const gs = GUN_LEN * (STYLE?.gunK ?? 1) / SCALE / (gunT.box.max.z - gunT.box.min.z);
   gun.scale.setScalar(gs);
   const gunPivot = new THREE.Group(); gunPivot.quaternion.copy(T.gunQ); gunPivot.position.copy(T.gunOff);
-  gun.position.set(0, -(gunT.box.min.y + (gunT.box.max.y - gunT.box.min.y) * 0.3) * gs, -(gunT.box.min.z + (gunT.box.max.z - gunT.box.min.z) * 0.4) * gs);
+  gun.position.set(0, -(gunT.box.min.y + (gunT.box.max.y - gunT.box.min.y) * 0.3) * gs, -(gunT.box.min.z + (gunT.box.max.z - gunT.box.min.z) * (ASSETS ? 0.3 : 0.4)) * gs);
   gunPivot.add(gun); bones.handslotr.add(gunPivot);
   // bow (shown instead of the blaster when the owner carries 弓箭): held in the LEFT fist, arm swung out to the side so it reads
   // from behind; ~1.3 m tall with chunky limbs; the string is pulled toward the right fist while charging (see bowPose)
@@ -528,16 +574,18 @@ export function createSoldier(skin = 'party', variant) {
   for (const k of [...LOWER, ...UPPER, ...FULL]) { const a = mixer.clipAction(T.clips[k]); a.play(); a.setEffectiveWeight(0); A[k] = a; }
   A.die.setLoop(THREE.LoopOnce); A.die.clampWhenFinished = true;
   A.reload.timeScale = 0; A.walk.timeScale = 0; A.sprint.timeScale = 0;
+  if (ASSETS) for (const k of ['reload1', 'walkU', 'sprintU', 'sprintGun']) A[k].timeScale = 0;
   A.idle.time = Math.random() * T.clips.idle.duration;
 
   g.userData = {
-    skin, char, hat, hatColor, exColor, gearKey: '0|0|0', gearMesh: null, gearOl: null, gun: gunId, root, model, bones, rest, mixer, A, meshes, outlines, extras, gunMesh: gun, bow, hatMesh, muzzle, blob, puffs,
+    gunPivot, skin, char, hat, hatColor, exColor, gearKey: '0|0|0', gearMesh: null, gearOl: null, gun: gunId, root, model, bones, rest, mixer, A, meshes, outlines, extras, gunMesh: gun, bow, hatMesh, muzzle, blob, puffs,
     mesh: meshes[0], phase: Math.random() * 6, moveK: 0, crouchK: 0, aimK: 0, fullK: 0, full: null, kick: 0, t: Math.random() * 10, pitch: 0, lo: false, acc: 0, relK: 0,
     tris: C.tris,
     // motion state (see animateSoldier): measured ground velocity, gait phase, run blend, hip twist for strafing, smoothed yaw / lean,
     // in-air tuck and landing squash, per-clip full-body weights, hit flinch
     last: null, vx: 0, vz: 0, gait: Math.random(), stride: 1, runK: 0, twist: 0, back: false, visYaw: null, yawRate: 0, lean: 0, fwdLean: 0,
     airK: 0, wasAir: false, minVy: 0, land: 0, landT: 1, diveK: 0, fullW: { fall: 0, drive: 0, cheer: 0 }, flinch: 0, flinchS: 1,
+    freeK: 0, oneK: 0, sprGunK: 0, oneNow: false,
   };
   return g;
 }
@@ -558,6 +606,17 @@ const wrapA = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI
 function setW(u, wIdle, wWalk, wSprint, wCrouch, wHold, wRel, nf) {
   const A = u.A;
   A.idle.setEffectiveWeight(wIdle * nf); A.walk.setEffectiveWeight(wWalk * nf); A.sprint.setEffectiveWeight(wSprint * nf); A.crouch.setEffectiveWeight(wCrouch * nf);
+  if (ASSETS) {     // upper body: rifle (2H) / pistol (1H) aim, rifle carried while sprinting, or free arms swinging with the gait
+    const g = u.gunK, one = u.oneK, armed = 1 - u.freeK, sg = u.sprGunK;
+    const ready = armed * (1 - sg);
+    A.hold.setEffectiveWeight(wHold * ready * (1 - one) * nf); A.reload.setEffectiveWeight(wRel * armed * (1 - one) * nf);
+    A.hold1.setEffectiveWeight(wHold * ready * one * nf); A.reload1.setEffectiveWeight(wRel * armed * one * nf);
+    A.sprintGun.setEffectiveWeight(armed * sg * (1 - wRel) * nf);
+    const free = u.freeK * (1 - wRel * 0) * nf, ls = wIdle + wWalk + wSprint + wCrouch || 1;
+    A.idleU.setEffectiveWeight(free * (wIdle + wCrouch) / ls); A.walkU.setEffectiveWeight(free * wWalk / ls); A.sprintU.setEffectiveWeight(free * wSprint / ls);
+    for (const k of FULLFADE) A[k].setEffectiveWeight(u.fullW[k]);
+    return;
+  }
   A.hold.setEffectiveWeight(wHold * nf); A.reload.setEffectiveWeight(wRel * nf);
   for (const k of FULLFADE) A[k].setEffectiveWeight(u.fullW[k]);
 }
@@ -637,8 +696,19 @@ export function animateSoldier(g, dt, o) {
   u.gait = (u.gait + (u.back ? -1 : 1) * cps * dt + 1) % 1;
   u.A.walk.time = ((u.gait + L.walk.fwd) % 1) * L.walk.dur;
   u.A.sprint.time = ((u.gait + L.sprint.fwd) % 1) * L.sprint.dur;
+  if (ASSETS) {
+    u.A.walkU.time = u.A.walk.time; u.A.sprintU.time = u.A.sprint.time; u.A.sprintGun.time = ((u.gait + L.sprint.fwd) % 1) * T.clips.sprintGun.duration;
+    const wep = o.wep || 'rifle', free = wep === 'knife' || wep === 'none' || !!o.bow;
+    u.freeK = ease(u.freeK ?? 0, free ? 1 : 0, 10, dt);
+    u.oneK = ease(u.oneK ?? 0, wep === 'pistol' ? 1 : 0, 12, dt);
+    // sprinting: the rifle is carried (no aiming) unless the character is shooting / zoomed (aim + slower than a run)
+    u.sprGunK = ease(u.sprGunK ?? 0, u.runK > 0.5 && moving && !(o.aim && o.firing) ? 1 : 0, 8, dt);
+    const one = wep === 'pistol';
+    if (u.gunPivot && u.oneNow !== one) { u.oneNow = one; u.gunPivot.quaternion.copy(one ? T.gunQ1 : T.gunQ); }
+    if (reloading) u.A.reload1.time = clamp(o.reload, 0, 0.999) * T.clips.reload1.duration;
+  }
   const showW = !o.air && !o.seat && full !== 'cheer';
-  u.gunMesh.visible = showW && !o.bow; u.bow.visible = showW && !!o.bow;
+  u.gunMesh.visible = showW && !o.bow && !(ASSETS && (o.wep === 'knife' || o.wep === 'none')); u.bow.visible = showW && !!o.bow;
   if (o.bow) u.bow.userData.setNocked(o.nocked !== false);
   // advance (far bots at ~15 Hz)
   u.acc += dt;

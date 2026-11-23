@@ -325,7 +325,7 @@ function poseBody(dt, mx, mz, speed, seated) {
   if (!b.visible) return;
   b.position.copy(G.player.pos); b.rotation.set(0, G.player.yaw, 0);
   if (seated) { const v = P.inCar; b.rotation.set(0, v.yaw, v.lean, 'YXZ'); b.position.y += { jeep: 0.55, moto: 0.45, bike: 0.5 }[v.type] || 0.5; if (v.type === 'jeep') { b.position.x += Math.cos(v.yaw) * -0.45; b.position.z += -Math.sin(v.yaw) * -0.45; } }
-  animateSoldier(b, dt, { moveX: seated ? 0 : mx, moveZ: seated ? 0 : mz, speed, yaw: b.rotation.y, crouch: !!seated || G.player.crouch, aim: !seated, seat: !!seated, bow: !!G.weapon.bow, draw: P.draw, nocked: G.ammo.bow?.mag > 0, pitch: G.player.pitch * 0.6, ground: seated ? true : G.player.onGround, vy: G.player.vel.y, reload: G.reloading ? 1 - Math.max(0, G.reloadEnd - G.now) / G.weapon.reload : -1 });
+  animateSoldier(b, dt, { moveX: seated ? 0 : mx, moveZ: seated ? 0 : mz, speed, yaw: b.rotation.y, wep: G.weapon.id, firing: G.now - (G.player.lastFired || -9) < 0.6, crouch: !!seated || G.player.crouch, aim: !seated, seat: !!seated, bow: !!G.weapon.bow, draw: P.draw, nocked: G.ammo.bow?.mag > 0, pitch: G.player.pitch * 0.6, ground: seated ? true : G.player.onGround, vy: G.player.vel.y, reload: G.reloading ? 1 - Math.max(0, G.reloadEnd - G.now) / G.weapon.reload : -1 });
 }
 const _cd = new THREE.Vector3(), _cp = new THREE.Vector3();
 function chaseCam(x, y, z, dist, side, up) {
