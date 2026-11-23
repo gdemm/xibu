@@ -22,10 +22,11 @@ export function heroMat(fresh = false) {
   m.onBeforeCompile = (sh) => {
     sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
   { float rim = 1.0 - clamp(dot(normal, geometryViewDir), 0.0, 1.0);
-    outgoingLight += mix(vec3(1.0, 0.97, 0.9), diffuseColor.rgb, 0.35) * smoothstep(0.62, 0.78, rim) * 0.32; }
+    outgoingLight += mix(vec3(1.0, 0.97, 0.9), diffuseColor.rgb, 0.35) * smoothstep(0.62, 0.78, rim) * 0.32;
+    float lum = dot(outgoingLight, vec3(0.299, 0.587, 0.114)); outgoingLight = max(vec3(0.0), mix(vec3(lum), outgoingLight, 1.22)); }
   #include <opaque_fragment>`);
   };
-  m.customProgramCacheKey = () => 'heroRim';
+  m.customProgramCacheKey = () => 'heroRim2';
   if (fresh) { m.transparent = true; return m; }
   return (HMAT = m);
 }
