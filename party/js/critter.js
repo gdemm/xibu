@@ -484,9 +484,10 @@ export function createSoldier(skin = 'party', variant) {
   const model = SkeletonUtils.clone(C.scene); model.scale.setScalar(SCALE); model.rotation.y = Math.PI; root.add(model);
   const meshes = [], rigid = [], outlines = [];
   model.traverse(o => { if (o.isSkinnedMesh) meshes.push(o); else if (o.isMesh) rigid.push(o); });
+  const noOl = new Set(meshes.filter(m => m.material.name === 'GlowVC' || m.material.name === 'DecoVC'));
   for (const m of [...meshes, ...rigid]) m.material = m.material.name === 'GlowVC' ? glowVC : m.material.name === 'Glow' ? glowMat : m.material.vertexColors ? toonVC(tint) : toonOf(m.material.map, tint);
   for (const m of meshes) {
-    m.computeBoundingSphere(); if (m.material === glowVC) { m.boundingSphere.radius *= 1.7; continue; } m.boundingSphere.radius *= 1.7;     // room for poses (lying down, arms up)
+    m.computeBoundingSphere(); if (noOl.has(m)) { m.boundingSphere.radius *= 1.7; continue; } m.boundingSphere.radius *= 1.7;     // room for poses (lying down, arms up)
     const ol = new THREE.SkinnedMesh(m.geometry, T.outline); ol.bind(m.skeleton, m.bindMatrix); ol.boundingSphere = m.boundingSphere;
     m.parent.add(ol); outlines.push(ol);
   }

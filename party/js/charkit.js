@@ -6,7 +6,8 @@
 //             (e.g. lowerlegl: 1.4 = longer thighs). Hips are lifted automatically so the feet stay on the ground.
 //   build(name, index, ctx): adds parts for one of the 9 character slots (index 0 = the player's character).
 //             ctx.R[bone] = rest-pose position (model units, +Y up, +Z = the character's front, +X = the character's LEFT)
-//             ctx.add(geometry, Matrix4, color, bone, glow?) - rigid-skinned to that bone, vertex coloured
+//             ctx.add(geometry, Matrix4, color, bone, layer?) - rigid-skinned to that bone, vertex coloured;
+//             layer: omitted = outlined body, 'glow' (or true) = unlit glowing colour, 'deco' = no outline (face decals; feat() default)
 //   capped:   slots that wear no party hat (default: all)       hatScale: party-hat size factor
 //   outlineW / outlineColor / tintK (team tint strength) / neckK (part of the head above the head bone that counts as neck)
 // Model units: the game draws at 0.79 m per unit; keep the head top near 2.15 units (1.70 m) so hit boxes and cameras fit.
@@ -59,16 +60,21 @@ export function buildStyled(sc, name, index, style) {
   for (const b of bones) R[b.name] = b.getWorldPosition(new THREE.Vector3());
   const ibm = sk.bindMatrix.clone().invert();
   const boneMats = bones.map((b, i) => ibm.clone().multiply(sk.skeleton.boneInverses[i].clone().invert()).multiply(b.matrixWorld.clone().invert()));
-  const body = new Builder(), glow = new Builder(); body.boneMats = glow.boneMats = boneMats;
+  const body = new Builder(), glow = new Builder(), deco = new Builder(); body.boneMats = glow.boneMats = deco.boneMats = boneMats;
   const idx = (n) => { const i = bones.findIndex(b => b.name === n); if (i < 0) throw new Error('no bone ' + n); return i; };
   const ctx = {
     R, THREE,
-    add(geo, m, color, bone = 'chest', isGlow = false) { (isGlow ? glow : body).add(geo, m || new THREE.Matrix4(), color, { bone: idx(bone) }); return ctx; },
+    // layer: false/undefined = body (outlined), true or 'glow' = unlit glow, 'deco' = lit but no outline (face decals, thin trims)
+    add(geo, m, color, bone = 'chest', layer = false) { (layer === 'deco' ? deco : layer ? glow : body).add(geo, m || new THREE.Matrix4(), color, { bone: idx(bone) }); return ctx; },
   };
   style.build(name, index, ctx);
   sk.geometry.dispose();
   sk.geometry = body.build(true);
   sk.material = new THREE.MeshToonMaterial({ vertexColors: true }); sk.material.name = 'StyleVC';
+  if (deco.p.length) {
+    const g = new THREE.SkinnedMesh(deco.build(true), new THREE.MeshToonMaterial({ vertexColors: true }));
+    g.material.name = 'DecoVC'; g.bind(sk.skeleton, sk.bindMatrix); sk.parent.add(g);
+  }
   if (glow.p.length) {
     const g = new THREE.SkinnedMesh(glow.build(true), new THREE.MeshBasicMaterial({ vertexColors: true }));
     g.material.name = 'GlowVC'; g.bind(sk.skeleton, sk.bindMatrix); sk.parent.add(g);
@@ -135,7 +141,7 @@ export function onHead(h, u, v, inset = 0) {
 }
 const _zA = new THREE.Vector3(0, 0, 1);
 // geometry facing +Z placed flat on the head surface, local scale (sx, sy, sz), extra roll rz
-export function feat(ctx, h, geo, u, v, inset, sx, sy, sz, col, rz = 0, bone = 'head', glow = false) {
+export function feat(ctx, h, geo, u, v, inset, sx, sy, sz, col, rz = 0, bone = 'head', glow = 'deco') {
   const { p, n } = onHead(h, u, v, inset);
   const q = new THREE.Quaternion().setFromUnitVectors(_zA, n).multiply(new THREE.Quaternion().setFromAxisAngle(_zA, rz));
   ctx.add(geo, new THREE.Matrix4().compose(p, q, new THREE.Vector3(sx, sy, sz)), col, bone, glow);
