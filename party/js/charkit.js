@@ -88,7 +88,7 @@ export function between(a, b, sx = 1, sz = 1, roll = 0) {
   return new THREE.Matrix4().compose(new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5), q, new THREE.Vector3(sx, 1, sz));
 }
 export const dist = (a, b) => a.distanceTo(b);
-export const S = (r, w = 12, h = 8, ...rest) => new THREE.SphereGeometry(r, w, h, ...rest);
+export const S = (r, w = 10, h = 7, ...rest) => new THREE.SphereGeometry(r, w, h, ...rest);
 export const HEMI = (r, w = 14, h = 6) => new THREE.SphereGeometry(r, w, h, 0, Math.PI * 2, 0, Math.PI / 2);
 export const CAP = (r, len, seg = 10, caps = 3) => new THREE.CapsuleGeometry(r, Math.max(0.001, len), caps, seg);
 export const CYL = (rt, rb, h, seg = 10, open = false) => new THREE.CylinderGeometry(rt, rb, h, seg, 1, open);
@@ -113,14 +113,14 @@ export function limb(ctx, a, b, r0, r1, color, o = {}) {
   const len = A.distanceTo(Bp), r = (r0 + r1) / 2;
   let geo;
   if (o.box) geo = RB(r0 * 2 * (o.sx || 1), len + r * 2 * (o.capK ?? 0.6), r0 * 2 * (o.sz || 1), r0 * (o.round ?? 0.5), 2);
-  else if (Math.abs(r0 - r1) < 1e-4) geo = CAP(r, Math.max(0.001, len), o.seg || 10, o.caps || 3);
-  else { geo = taper(r1, r0, len, o.seg || 10); }
+  else if (Math.abs(r0 - r1) < 1e-4) geo = CAP(r, Math.max(0.001, len), o.seg || 8, o.caps || 2);
+  else { geo = taper(r1, r0, len, o.seg || 8); }
   ctx.add(geo, between(A, Bp, o.box ? 1 : (o.sx || 1), o.box ? 1 : (o.sz || 1), o.roll || 0), color, o.bone || a, o.glow);
   return { a: A, b: Bp, len };
 }
 // tapered capsule (radius rt at +Y end, rb at -Y end) with hemispherical ends
 export function taper(rt, rb, len, seg = 10) {
-  const pts = [], n = 4;
+  const pts = [], n = 3;
   for (let i = 0; i <= n; i++) { const t = -Math.PI / 2 + (i / n) * Math.PI / 2; pts.push(new THREE.Vector2(Math.cos(t) * rb, -len / 2 + Math.sin(t) * rb)); }
   for (let i = 0; i <= n; i++) { const t = (i / n) * Math.PI / 2; pts.push(new THREE.Vector2(Math.cos(t) * rt, len / 2 + Math.sin(t) * rt)); }
   pts[0].x = 0.0001; pts[pts.length - 1].x = 0.0001;
