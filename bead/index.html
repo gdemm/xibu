@@ -55,6 +55,8 @@ canvas#board{touch-action:none;border-radius:14px;box-shadow:0 4px 0 #c9b6a0,0 6
     <button class="btn" id="bFree">✏️ 自由</button>
     <select id="size"><option value="16">16×16</option><option value="24">24×24</option><option value="29" selected>29×29</option></select>
     <button class="btn" id="bImg">🖼 照片转豆</button>
+    <button class="btn on" id="bSmart" title="图案模式下自动用对的颜色">🪄 智能笔</button>
+    <button class="btn" id="bAuto">▶ 自动拼</button>
     <span id="prog"></span>
   </div>
   <div id="wrap"><canvas id="board"></canvas></div>
@@ -183,9 +185,43 @@ const PATS=[
  '.....gggggg.....',
  '................',
  '................']},
+ {name:'美人鱼',map:{k:21,h:4,s:16,r:6,m:5,p:8,t:13,f:10},rows:[
+ '......kkkk......',
+ '....kkhhhhkk....',
+ '...khhhhhhhhk...',
+ '..khhssssssshk..',
+ '..khskssssksshk.',
+ '..khsrssssrsshk.',
+ '..khhsssmsssshk.',
+ '.khhhkssssskhhk.',
+ '.khhkpppkpppkhk.',
+ '.khhkspppppskhk.',
+ '..kk.ktttttk.kk.',
+ '.....kttttttk...',
+ '......kttttttk..',
+ '.......kktttk...',
+ '.....kffkktkffk.',
+ '....kffffkkffffk']},
+ {name:'小恶魔兔',map:{k:21,b:9,v:6,y:7,w:0,r:6},rows:[
+ '.kk..........kk.',
+ 'kvbk........kbvk',
+ 'kbbk........kbbk',
+ 'kbbk........kbbk',
+ '.kbbk......kbbk.',
+ '.kbbbkkkkkkbbbk.',
+ 'kbbbbbbvvbbbbbbk',
+ 'kbbbbbvyyvbbbbbk',
+ 'kbbwwwwvvwwwwbbk',
+ 'kbwwkwwwwwwkwwbk',
+ 'kbwwkwwwwwwkwwbk',
+ 'kbwrwwwkkwwwrwbk',
+ '.kbwwwwwwwwwwbk.',
+ '..kbbwwwwwwbbk..',
+ '...kkbbbbbbkkvv.',
+ '.....kkkkkk..vk.']},
 ];
 const $=s=>document.querySelector(s), cv=$('#board'), ctx=cv.getContext('2d');
-let N=29, grid=[], target=null, mode='free', tool='pen', cur=5, undo=[], cell=10, curPat=-1;
+let smart=true, auto=null, N=29, grid=[], target=null, mode='free', tool='pen', cur=5, undo=[], cell=10, curPat=-1;
 const toast=t=>{const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),1500)};
 function newGrid(n){N=n;grid=new Array(n*n).fill(-1);undo=[];}
 function save(){try{localStorage.setItem('bead.v1',JSON.stringify({N,grid,target,mode,curPat,cur}))}catch(e){}}
@@ -205,7 +241,8 @@ function draw(){const s=cell*N;ctx.clearRect(0,0,s,s);ctx.fillStyle='#f4f4f2';ct
 function status(){const used=grid.filter(v=>v>=0).length;
  if(target){let need=0,ok=0;target.forEach((t,i)=>{if(t>=0){need++;if(grid[i]===t)ok++}});const wrong=grid.filter((v,i)=>v>=0&&target[i]!==v).length;
   $('#prog').textContent=`${PATS[curPat]?PATS[curPat].name:'照片'} ${ok}/${need}`+(wrong?` · ${wrong}颗放错`:'');
-  if(ok===need&&!wrong&&need>0&&!status.done){status.done=true;setTimeout(()=>toast('拼完啦！点 <b>♨️</b>熨烫'),200)}}
+  if(ok===need&&!wrong&&need>0&&!status.done){status.done=true;stopAuto();setTimeout(()=>{toast('拼完啦！自动熨烫');$('#iron').click()},500)}
+  else if(target.every((t,i)=>t!==cur||grid[i]===t)){const nx=target.findIndex((t,i)=>t>=0&&grid[i]!==t);if(nx>=0&&target[nx]!==cur){cur=target[nx];setTimeout(()=>toast('换色：'+(cur+1)+' '+PAL[cur][0]),0)}}}
  else $('#prog').textContent=`已放 ${used} 颗`;
  const cnt={};if(target)target.forEach((t,i)=>{if(t>=0&&grid[i]!==t)cnt[t]=(cnt[t]||0)+1});
  document.querySelectorAll('.sw').forEach((e,k)=>{e.classList.toggle('sel',k===cur);e.classList.toggle('need',!!cnt[k]);e.querySelector('.n').textContent=cnt[k]||''})}
@@ -213,7 +250,7 @@ function buildPal(){const p=$('#pal');PAL.forEach(([n,c],k)=>{const d=document.c
 function setTool(t){tool=t;document.querySelectorAll('#tools [data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===t))}
 function pushUndo(){undo.push(grid.slice());if(undo.length>60)undo.shift()}
 function at(e){const r=cv.getBoundingClientRect();const x=Math.floor((e.clientX-r.left)/r.width*N),y=Math.floor((e.clientY-r.top)/r.height*N);return x>=0&&y>=0&&x<N&&y<N?y*N+x:-1}
-function apply(i){if(i<0)return false;if(tool==='pen'){if(grid[i]===cur)return false;grid[i]=cur}else if(tool==='erase'){if(grid[i]<0)return false;grid[i]=-1}else return false;return true}
+function apply(i){if(i<0)return false;if(tool==='pen'){const c=(smart&&target&&target[i]>=0)?target[i]:cur;if(smart&&target&&target[i]<0)return false;if(grid[i]===c)return false;grid[i]=c}else if(tool==='erase'){if(grid[i]<0)return false;grid[i]=-1}else return false;return true}
 function fill(i){const from=grid[i],to=cur;if(from===to)return;const st=[i];while(st.length){const j=st.pop();if(grid[j]!==from)continue;grid[j]=to;const x=j%N,y=(j/N)|0;if(x>0)st.push(j-1);if(x<N-1)st.push(j+1);if(y>0)st.push(j-N);if(y<N-1)st.push(j+N)}}
 let down=false,last=-1;
 cv.addEventListener('pointerdown',e=>{const i=at(e);if(i<0)return;cv.setPointerCapture(e.pointerId);
@@ -234,7 +271,7 @@ function thumb(g,n){const c=document.createElement('canvas');c.width=c.height=n*
 $('#bPat').onclick=()=>{const c=$('#card');c.innerHTML='<h2>选一个图案</h2><div id="pick"></div><div class="row"><button class="btn" id="cx">取消</button></div>';
  PATS.forEach((p,i)=>{const d=document.createElement('div');d.appendChild(thumb(patGrid(i),16));d.append(p.name);d.onclick=()=>{startPat(i);closeM()};$('#pick').appendChild(d)});
  $('#cx').onclick=closeM;openM()};
-function startPat(i){newGrid(16);target=patGrid(i);curPat=i;mode='pat';status.done=false;const f=target.find(v=>v>=0);if(f!=null)cur=f;modeBtns();layout();save();toast('照着淡色豆子拼，数字是色号')}
+function startPat(i){stopAuto();newGrid(16);target=patGrid(i);curPat=i;mode='pat';status.done=false;const f=target.find(v=>v>=0);if(f!=null)cur=f;modeBtns();layout();save();toast('照着淡色豆子拼，数字是色号')}
 // 照片转豆
 $('#bImg').onclick=()=>$('#file').click();
 $('#file').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Image();img.onload=()=>{const n=29,c=document.createElement('canvas');c.width=c.height=n;const x=c.getContext('2d');const s=Math.min(img.width,img.height);x.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,n,n);const d=x.getImageData(0,0,n,n).data;const rgb=PAL.map(p=>[1,3,5].map(k=>parseInt(p[1].substr(k,2),16)));newGrid(n);target=new Array(n*n).fill(-1);
@@ -257,12 +294,23 @@ $('#iron').onclick=()=>{if(!grid.some(v=>v>=0)){toast('先放几颗豆子');retu
    row.innerHTML='<button class="btn hot" id="sv">保存图片</button><button class="btn" id="bk">继续拼</button>';
    $('#sv').onclick=()=>{const a=document.createElement('a');a.download='拼豆作品.png';a.href=c.toDataURL('image/png');a.click();toast('已保存（手机可长按图片保存）')};$('#bk').onclick=closeM}}
  frame()};
+
+$('#bSmart').onclick=()=>{smart=!smart;$('#bSmart').classList.toggle('on',smart);toast(smart?'智能笔开：随手涂都是对的颜色':'智能笔关：用选中的颜色')};
+function stopAuto(){if(auto){clearInterval(auto);auto=null}$('#bAuto').textContent='▶ 自动拼';$('#bAuto').classList.remove('on')}
+$('#bAuto').onclick=()=>{if(auto){stopAuto();save();return}
+ if(!target){toast('自动拼要先选图案或照片转豆');return}
+ // 先拿掉放错的，再按颜色一种种放（像真的拼豆一样）
+ pushUndo();grid.forEach((v,i)=>{if(v>=0&&target[i]!==v)grid[i]=-1});
+ const order=[];const cols=[...new Set(target.filter(t=>t>=0))];cols.forEach(c=>target.forEach((t,i)=>{if(t===c&&grid[i]!==t)order.push(i)}));
+ if(!order.length){status.done=false;draw();return}
+ $('#bAuto').textContent='⏸ 暂停';$('#bAuto').classList.add('on');let k=0;const per=Math.max(1,Math.ceil(order.length/120));
+ auto=setInterval(()=>{for(let j=0;j<per&&k<order.length;j++,k++){const i=order[k];grid[i]=target[i];cur=target[i]}draw();if(k>=order.length){stopAuto();save()}},30)};
 function openM(){$('#msk').classList.add('show')}function closeM(){$('#msk').classList.remove('show')}
 $('#msk').onclick=e=>{if(e.target.id==='msk')closeM()};
 // ⤢ 全屏 / ✕ 退出
 $('#fs').onclick=()=>{const d=document;if(!d.fullscreenElement)(d.documentElement.requestFullscreen||d.documentElement.webkitRequestFullscreen||(()=>{})).call(d.documentElement);else d.exitFullscreen&&d.exitFullscreen()};
 $('#quit').onclick=()=>{if(document.fullscreenElement){document.exitFullscreen();return}if(history.length>1)history.back();else location.href='/'};
-buildPal();if(!load()){newGrid(29);mode='free'}modeBtns();setTool('pen');addEventListener('resize',layout);layout();
+buildPal();if(!load()){newGrid(29);mode='free'}status.done=!!(target&&target.some(t=>t>=0)&&target.every((t,i)=>t<0||grid[i]===t));modeBtns();setTool('pen');addEventListener('resize',layout);layout();
 window.__bead={get grid(){return grid},get N(){return N},startPat,PAL};
 </script>
 </body>
