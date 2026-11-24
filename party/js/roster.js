@@ -38,7 +38,14 @@ export const SKINS = [
   { id: 'aloha', name: '椰岛花衬衫', acc: ['glasses', 'chain'] }, { id: 'neon', name: '霓虹夜', acc: ['glasses'] }, { id: 'beach', name: '海滩风', acc: ['glasses'] },
   { id: 'street', name: '街头牛仔', acc: ['chain', 'glasses'] },
 ];
-export const skinAcc = (look) => SKINS.find(k => k.id === look)?.acc || [];
+// 2026-11 自由模式双主角 (original looks in a Miami-crime-drama vibe; own names, no game IP): KayKit Driver / Mage + our own palettes
+export const FREE_LEADS = [
+  { char: 'Driver', look: 'vicem', name: '马科', acc: ['chain'] },
+  { char: 'Mage', look: 'vicef', name: '维拉', acc: ['glasses', 'chain'] },
+];
+export const skinAcc = (look) => SKINS.find(k => k.id === look)?.acc || FREE_LEADS.find(k => k.look === look)?.acc || [];
+export function freeLeadIdx() { const v = +ls.get('pgta_lead'); return v === 1 ? 1 : 0; }
+export function setFreeLead(i) { ls.set('pgta_lead', String(i ? 1 : 0)); }
 export const skinTexUrl = (id, look) => look ? D + 'skins/' + id + '_' + look + '.webp' : '';
 export const skinThumb = (id, look) => look ? D + 'thumbs/' + id + '_' + look + '.webp' : D + 'thumbs/' + id + '.webp';
 export const REG = Object.fromEntries([...BOT_CHARS, ...WARDROBE, ...SKIN_MODELS].map(e => [e.id, e]));

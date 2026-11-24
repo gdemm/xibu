@@ -9,7 +9,7 @@ import { animateDeath, resetSoldier, animateSoldier, soldierTris, createSoldier,
 import { toonRamp, HIT } from './critter.js';
 import { lobbyChars } from './lobbychars.js';
 import { openWardrobe } from './wardrobe.js';
-import { pickedLook } from './roster.js';
+import { pickedLook, FREE_LEADS, freeLeadIdx, setFreeLead } from './roster.js';
 import { ensureChar } from './critter.js';
 import { playerJump, airStep, updateDrop } from './drop.js';
 import { partyLook, toonify } from './party.js';
@@ -202,7 +202,7 @@ function startMatch(opts) {
       G.freeCrime = (n, why, pos) => freeCrime(G, WH, n, why, pos); G.freeRobStart = freeRobStart; G.freeRobStop = freeRobStop;
       setupFree(G, { ...WH, setWeapon, WEAPONS });
     }
-    makeBody();
+    makeBody(); refreshLeadBtn();
     $('target').textContent = '';
     $('lobby').classList.add('hidden'); $('endScr').classList.add('hidden'); $('scoreboard').classList.add('hidden'); $('deathScr').classList.add('hidden');
     $('hud').classList.remove('hidden'); $('topBtns').classList.remove('hidden'); $('touch').classList.toggle('hidden', !isTouch);
@@ -238,10 +238,19 @@ let starting = false;
 async function startWithChar(opts) {
   if (starting) return; starting = true;
   const b = $('btnStart'); const t = b.textContent; b.textContent = '加载中…';
-  try { const L = pickedLook(); await ensureChar(L.char, L.look); } finally { b.textContent = t; starting = false; }
+  try { const L = pickedLook(); await ensureChar(L.char, L.look); if (opts.mode === 'free') await Promise.all(FREE_LEADS.map(l => ensureChar(l.char, l.look))); } finally { b.textContent = t; starting = false; }
   startMatch(opts);
 }
 G.startWithChar = startWithChar;
+// 自由模式: 切换主角 (马科 / 维拉) - swaps the third-person body, keeps cash / wanted level
+function swapLead() {
+  if (!G.free || G.state !== 'playing' || !G.player?.alive) return;
+  setFreeLead(1 - freeLeadIdx()); makeBody();
+  if (!S.tp && !P.inCar) { S.tp = true; $('bView')?.classList.add('on'); }
+  HUD.centerMsg('切换到 ' + FREE_LEADS[freeLeadIdx()].name, 1200); refreshLeadBtn();
+}
+function refreshLeadBtn() { const b = $('bLead'); if (b) b.innerHTML = G.free ? '换成<br>' + FREE_LEADS[1 - freeLeadIdx()].name : ''; }
+G.swapLead = swapLead;
 
 function endMatch() {
   $('nearList').classList.add('hidden'); nearKey = '';
@@ -371,7 +380,7 @@ G.solidsNear = (pos) => {
   return out;
 };
 const thirdPerson = () => !!P.inCar || !!G.player?.air || (S.tp && !P.scoped);
-function makeBody() { if (P.body) scene.remove(P.body); P.body = createSoldier(G.mode === 'br' ? 'player' : G.player.team, { ...pickedLook() }); P.body.visible = false; scene.add(P.body); $('bView')?.classList.toggle('on', !!S.tp); }
+function makeBody() { if (P.body) scene.remove(P.body); const lead = G.free ? FREE_LEADS[freeLeadIdx()] : null; P.body = createSoldier(G.mode === 'br' || G.free ? 'player' : G.player.team, lead ? { char: lead.char, look: lead.look, hat: 'none' } : { ...pickedLook() }); P.body.visible = false; scene.add(P.body); $('bView')?.classList.toggle('on', !!S.tp); }
 function poseBody(dt, mx, mz, speed, seated) {
   const b = P.body; if (!b) return;
   b.visible = G.player.alive && thirdPerson() && !(P.inCar && (P.inCar.type === 'bus' || P.inCar.type === 'truck' || P.inCar.T.closed || P.inCar.mesh?.userData.kenney));
@@ -795,6 +804,7 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => {
   if (e.code === 'KeyH' && (G.wanted?.rob || G.freeState?.rob)) robStop(G, WH);
   if (e.code === 'KeyM' && !e.repeat && G.free && G.state === 'playing') toggleMask(G);
+  if (e.code === 'KeyH' && !e.repeat && G.free && G.state === 'playing') swapLead();
   P.keys[e.code] = false;
   if (e.code === 'Tab') showScoreboard(false);
   if ((e.code === 'KeyC' || e.code === 'ControlLeft') && G.player) G.player.crouch = false;
@@ -826,6 +836,7 @@ function btnDown(btn, el) {
   else if (btn === 'auto') setAuto(!P.auto);
   else if (btn === 'rob') robStart(G);
   else if (btn === 'mask') toggleMask(G);
+  else if (btn === 'lead') swapLead();
   else if (btn === 'eject') ejectOrOpen();
   else if (btn === 'view') toggleView();
   else if (btn === 'bag') toggleBag();

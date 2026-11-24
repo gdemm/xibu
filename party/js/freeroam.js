@@ -8,6 +8,7 @@ import { spawnVehicles, driveVehicle, poseVehicle, vehicleBox, inFootprint } fro
 import { autoDrive, resetAuto } from './autodrive.js';
 import { spawnLootDef } from './br.js';
 import { centerMsg } from './hud.js';
+import { buildFreeDeco, disposeFreeDeco } from './freedeco.js';
 import { createPeds, dressPed, posePed, flushPeds, disposePeds } from './peds.js';
 
 const $ = (id) => document.getElementById(id);
@@ -78,6 +79,7 @@ export function freeCleanup(G, scene) {
   for (const c of F.cams || []) if (c.m) { scene.remove(c.m); }
   for (const b of F.bags || []) if (b.m) scene.remove(b.m);
   disposePeds(F.pedMesh, scene);
+  disposeFreeDeco(F.deco, scene, G.map); hideGunDlg();
   for (const v of F.traffic || []) { const i = G.vehicles?.indexOf(v); if (i != null && i >= 0) G.vehicles.splice(i, 1); scene.remove(v.mesh); }
   if (G.onCivJack) G.onCivJack = null;
   if (F.armored) { const i = G.vehicles?.indexOf(F.armored); if (i != null && i >= 0) G.vehicles.splice(i, 1); scene.remove(F.armored.mesh); }
@@ -89,7 +91,7 @@ export function freeCleanup(G, scene) {
 export function setupFree(G, h) {
   const scene = h.scene;
   freeCleanup(G, scene);
-  const F = G.freeState = { locs: [], peds: [], traffic: [], pedPicks: null, cams: [], bags: [], rob: null, armored: null, hudT: 0, clothCd: 0, sprayCd: 0, safeT: 0, lastArmorDest: null };
+  const F = G.freeState = { locs: [], peds: [], traffic: [], pedPicks: null, extraShops: [], kiosks: [], foodCd: 0, gunCd: 0, cams: [], bags: [], rob: null, armored: null, hudT: 0, clothCd: 0, sprayCd: 0, safeT: 0, lastArmorDest: null };
   G.freeMask = false;
   const bm = $('bMask'); if (bm) bm.classList.remove('on');
   bindUI();
@@ -103,6 +105,11 @@ export function setupFree(G, h) {
   F.locs.push(addMarker(G, scene, hospital.x, hospital.z, 0xff5a5a, '医院 · 复活', 'hospital'));
   F.locs.push(addMarker(G, scene, clothes.x, clothes.z, 0xff8fb4, '服装店 · 换衣 $100', 'clothes'));
   F.locs.push(addMarker(G, scene, spray.x, spray.z, 0xb46bff, '喷漆店 · 喷漆 $200', 'spray'));
+
+  // ---- free-mode street extras: neon blade signs / arches, gun shop, food truck, gas station ----
+  F.deco = buildFreeDeco(G, scene);
+  F.extraShops = F.deco.extraShops; F.kiosks = F.deco.kiosks;
+  for (const k of F.kiosks) F.locs.push(addMarker(G, scene, k.x, k.z, k.color, k.label, k.kind));
 
   // ---- two of the convenience stores become jewellery stores ----
   const shops = (map.shops || []).slice();
@@ -436,7 +443,7 @@ function updateArmored(G, dt, h) {
 // ---------------- robberies ----------------
 function nearShop(G) {
   const W = G.wanted, p = G.player; if (!W || !p?.alive || p.air) return null;
-  for (const s of G.map.shops || []) if (Math.hypot(s.x - p.pos.x, s.z - p.pos.z) < ROB_R && (W.shopCd.get(s) || 0) < G.now) return s;
+  for (const s of [...(G.map.shops || []), ...(G.freeState?.extraShops || [])]) if (Math.hypot(s.x - p.pos.x, s.z - p.pos.z) < ROB_R && (W.shopCd.get(s) || 0) < G.now) return s;
   return null;
 }
 export function freeRobStart(G) {
@@ -472,6 +479,31 @@ function finishJewel(G, h, r, phase) {
   else crime(G, h, 2, '珠宝店得手', { x: s.x, z: s.z }, false);
   h.sfx?.kill?.(); h.HUD.centerMsg((phase === 'blast' ? '保险箱炸开 +$' : '找到密码 +$') + cash, 1600);
 }
+const GUN_ITEMS = [['rifle', '步枪', 600], ['sniper', '狙击枪', 900], ['ammo', '弹药', 120], ['armor', '一级甲', 250], ['helmet', '一级头', 150], ['med', '医疗包', 80]];
+function showGunDlg(G, h) {
+  const F = G.freeState; F.gunOpen = true;
+  let d = $('gunDlg');
+  if (!d) {
+    d = document.createElement('div'); d.id = 'gunDlg';
+    d.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:60;background:rgba(14,10,30,.92);border:2px solid #ff5a3a;border-radius:14px;padding:10px 12px;color:#fff;font:600 14px system-ui,sans-serif;display:grid;grid-template-columns:repeat(3,auto);gap:8px;text-align:center';
+    document.body.appendChild(d);
+  }
+  d.innerHTML = '<div style="grid-column:1/-1;font-weight:900;color:#ff8a6a">枪械铺 · 买的东西放在脚下</div>' +
+    GUN_ITEMS.map(([k, n, c]) => `<button data-k="${k}" data-c="${c}" style="background:#2a2140;color:#fff;border:1px solid #ff8a6a;border-radius:10px;padding:8px 10px;font:700 14px system-ui">${n}<br>$${c}</button>`).join('') +
+    '<button data-k="close" style="grid-column:1/-1;background:#ff3a5a;color:#fff;border:0;border-radius:10px;padding:6px;font:900 14px system-ui">离开</button>';
+  d.style.display = 'grid';
+  d.onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    const W = G.wanted, p = G.player;
+    if (b.dataset.k === 'close') { hideGunDlg(G); F.gunCd = G.now + 4; return; }
+    const c = +b.dataset.c;
+    if ((W.cash || 0) < c) { h.HUD.centerMsg('现金不够 $' + c, 900); return; }
+    W.cash -= c; refreshWantedHud(G);
+    spawnLootDef(G, h.scene, b.dataset.k, p.pos.x + (Math.random() - 0.5) * 0.8, p.pos.z + 0.8);
+    h.sfx?.reload?.(); h.HUD.centerMsg('买下 ' + b.textContent.replace(/\$.*/, '') + ' -$' + c, 900);
+  };
+}
+function hideGunDlg(G) { const d = $('gunDlg'); if (d) d.style.display = 'none'; if (G?.freeState) G.freeState.gunOpen = false; }
 function showJewel() { $('jewelDlg')?.classList.remove('hidden'); }
 function hideJewel() { $('jewelDlg')?.classList.add('hidden'); }
 function chooseJewel(G, which) {
@@ -535,6 +567,18 @@ function updateLocations(G, dt, h) {
     if (W.cash >= 100) { W.cash -= 100; W.traits.clothes = false; F.clothCd = G.now + 2; refreshWantedHud(G); h.sfx?.reload?.(); h.HUD.centerMsg('换了一身衣服 · 衣服特征清除', 1400); }
     else { F.clothCd = G.now + 2; h.HUD.centerMsg('换衣服需要 $100', 1000); }
   }
+  for (const k of F.kiosks || []) {
+    if (k.kind === 'food' && near(k, 2.6) && !h.inCar?.() && p.hp < 100 && G.now > F.foodCd) {
+      F.foodCd = G.now + 2;
+      if (W.cash >= 50) { W.cash -= 50; p.hp = 100; refreshWantedHud(G); h.sfx?.reload?.(); h.HUD.centerMsg('吃了份古巴三明治 · 回满血 -$50', 1300); }
+      else h.HUD.centerMsg('快餐要 $50', 900);
+    }
+    if (k.kind === 'gun') {
+      const n = near(k, 2.6) && !h.inCar?.();
+      if (n && !F.gunOpen && G.now > F.gunCd) showGunDlg(G, h);
+      else if (!n && F.gunOpen) hideGunDlg(G);
+    }
+  }
   if (F.spray && near(F.spray, 3.0) && h.inCar?.() && W.traits.car && G.now > F.sprayCd) {
     if (W.cash >= 200) { W.cash -= 200; W.traits.car = false; W.carRef = null; F.sprayCd = G.now + 2; refreshWantedHud(G); h.sfx?.reload?.(); h.HUD.centerMsg('重新喷漆 · 车辆特征清除', 1400); }
     else { F.sprayCd = G.now + 2; h.HUD.centerMsg('喷漆需要 $200', 1000); }
@@ -549,7 +593,7 @@ export function freeKilled(G, t, h) {
     W.hasSeen = false; W.searchPt = null; W.rob = null;
     refreshWantedHud(G);
   }
-  p.respawnAt = G.now + 3;
+  p.respawnAt = G.now + 3; hideGunDlg(G);
   const ri = $('respawnIn'); if (ri) ri.textContent = '3 秒后在医院复活（身上现金已丢失）';
   h.HUD.centerMsg('你倒下了 · 身上现金全部丢失', 1800);
 }
@@ -611,6 +655,9 @@ export function freeMinimap(G, ctx, mx, mz, sx, sz) {
     else if (l.kind === 'clothes') dot(l.x, l.z, '#ff8fb4', 3.6);
     else if (l.kind === 'spray') dot(l.x, l.z, '#b46bff', 3.6);
     else if (l.kind === 'jewel') dot(l.x, l.z, '#ffd24a', 3.6);
+    else if (l.kind === 'gun') dot(l.x, l.z, '#ff5a3a', 3.6);
+    else if (l.kind === 'food') dot(l.x, l.z, '#7dff4a', 3.4);
+    else if (l.kind === 'gas') dot(l.x, l.z, '#28e8ff', 3.6);
   }
   const v = F.armored;
   if (v && !v.freeArmor?.down) {

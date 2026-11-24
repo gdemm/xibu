@@ -67,6 +67,7 @@ body.gtaMode #wantedBox{display:block}
 #jewelDlg.hidden{display:none}#jewelDlg button{font:800 15px system-ui;padding:8px 12px;border-radius:10px;border:0;background:#ffd24a;color:#3a2600;display:flex;flex-direction:column;align-items:center}#jewelDlg small{font:600 10px system-ui;opacity:.8}
 #cash{font:900 20px system-ui;color:#7dff4a;text-shadow:0 0 6px rgba(0,0,0,.6),0 1px 2px #000;margin-top:2px}
 body.hudEdit #touch #bRob{display:none!important}
+#bLead{display:none;width:54px;height:54px;right:calc(262px + env(safe-area-inset-right));top:calc(52px + env(safe-area-inset-top));font-size:13px;font-weight:800;background:rgba(40,232,255,.45)}body.freeMode #bLead{display:flex}body.freeMode #bRob{top:calc(50% - 118px)}body.hudEdit #touch #bLead{display:none!important}
 #bView{width:44px;height:44px;left:calc(22px + env(safe-area-inset-left));bottom:calc(62px + env(safe-area-inset-bottom));font-size:12px}
 #bView.on{background:rgba(255,190,60,.55)}
 #speedo{position:absolute;left:50%;top:calc(52px + env(safe-area-inset-top));transform:translateX(-50%);font:700 22px system-ui;color:#fff;text-shadow:0 1px 3px #000;display:none}
@@ -337,6 +338,7 @@ body.forceLand .wdGrid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr))}
   <div class="tb hidden" id="bAuto" data-btn="auto">自动驾驶</div>
   <div class="tb hidden" id="bRob" data-btn="rob">按住<br>抢劫</div>
   <div class="tb" id="bMask" data-btn="mask">面具</div>
+  <div class="tb" id="bLead" data-btn="lead">维拉</div>
   <div class="tb" id="bUp" data-btn="up">升</div>
   <div class="tb" id="bDown" data-btn="down">降</div>
   <div class="tb hidden" id="bEject" data-btn="eject">跳伞</div>
