@@ -16,6 +16,7 @@ export const VTYPES = {
   convert: { name: '敞篷车', len: 2.2, wid: 0.98, max: 27, acc: 12, turn: 1.9, cam: 6.5, seatY: 1.6, hitK: 1 },
   police:  { name: '警车', len: 2.3, wid: 1.0, max: 29, acc: 13, turn: 1.9, cam: 7, seatY: 1.65, hitK: 1.1, closed: true },
   pickup:  { name: '皮卡', len: 2.5, wid: 1.05, max: 23, acc: 10, turn: 1.7, cam: 7.5, seatY: 1.9, hitK: 1.2, closed: true },
+  armored: { name: '运钞车', len: 2.5, wid: 1.2, max: 17, acc: 7, turn: 1.5, cam: 8.5, seatY: 2.2, hitK: 1.5, closed: true },
 };
 // parked at the roadside (road edge + half width + gap), facing along the road
 const SPOTS = [
@@ -29,7 +30,7 @@ const SPOTS = [
   ['jeep', -120, -198.4, Math.PI / 2], ['jeep', 168.4, 40, 0], ['jeep', 150, 5.6, Math.PI / 2], ['moto', 60, -207.6, Math.PI / 2], ['moto', -168.4, 100, 0],
   ['moto', 168.4, -150, 0], ['bike', 140, -198.6, Math.PI / 2], ['bike', -4.9, -180, 0], ['truck', -168.1, -100, 0], ['heli', -100, -172, 0], ['bus', -150, 5.9, -Math.PI / 2],
 ];
-const COLORS = { coupe: [0xff4fa3, 0x2fe0d0, 0xffe14d, 0xb46bff], muscle: [0xff7a1a, 0x7dff4a, 0x3a86ff, 0xffffff], convert: [0xffb3c7, 0x9fe3d6, 0xfff0a8, 0xc9b6ff], police: [0xffffff], pickup: [0xff6b6b, 0x5fd3c8, 0xf4f1e8], jeep: [0x5b6b3a, 0x3b6fb6, 0xc0392b], moto: [0x111111, 0xc0392b, 0x2e6fb6], bike: [0x2e8b57, 0xd4a017, 0x3b6fb6, 0xe67e22], bus: [0xe1b12c, 0x3b7fc4], heli: [0x2f6e8f, 0xd35400], truck: [0x8a2f24, 0x2f5f8a, 0x51633a] };
+const COLORS = { coupe: [0xff4fa3, 0x2fe0d0, 0xffe14d, 0xb46bff], muscle: [0xff7a1a, 0x7dff4a, 0x3a86ff, 0xffffff], convert: [0xffb3c7, 0x9fe3d6, 0xfff0a8, 0xc9b6ff], police: [0xffffff], pickup: [0xff6b6b, 0x5fd3c8, 0xf4f1e8], jeep: [0x5b6b3a, 0x3b6fb6, 0xc0392b], moto: [0x111111, 0xc0392b, 0x2e6fb6], bike: [0x2e8b57, 0xd4a017, 0x3b6fb6, 0xe67e22], bus: [0xe1b12c, 0x3b7fc4], heli: [0x2f6e8f, 0xd35400], truck: [0x8a2f24, 0x2f5f8a, 0x51633a], armored: [0xe8eef5] };
 
 const MAT = {}; const mat = (c, o) => MAT[c + (o || '')] || (MAT[c + (o || '')] = new THREE.MeshLambertMaterial(o ? { color: c, transparent: true, opacity: o } : { color: c }));
 function builder(g) {
@@ -107,6 +108,18 @@ function vehicleMesh(type, color) {
     const tail = new THREE.Group(); tail.position.set(0.12, 2.4, 5.25); g.add(tail);
     const tb = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.4, 0.16), mat(DARK)); tail.add(tb);
     g.userData.rotor = rotor; g.userData.tail = tail;
+  } else if (type === 'armored') {   // 运钞车: white/blue armoured box with a rear door (opens after it is robbed)
+    box(2.3, 0.5, 4.8, 0, 0.7, 0, 0xe8eef5);
+    box(2.5, 2.0, 4.4, 0, 1.7, 0.2, 0xdfe8f2);
+    box(2.54, 0.34, 4.42, 0, 1.16, 0.2, 0x2a5bd7); box(2.54, 0.3, 4.42, 0, 2.38, 0.2, 0x2a5bd7);
+    box(1.7, 0.7, 0.06, 0, 2.16, -2.02, GLASS, 0.6); box(2.2, 0.14, 0.3, 0, 1.0, -2.35, DARK);
+    box(1.8, 0.18, 0.5, 0, 2.76, 0.25, 0x2a5bd7); box(1.2, 0.08, 0.26, 0, 2.87, 0.25, 0x28e8ff);
+    for (const s of [-1, 1]) box(0.34, 0.14, 0.06, s * 0.86, 1.06, -2.35, 0xfff6c8);
+    const door = new THREE.Group(); door.position.set(0, 1.7, 2.42); g.add(door);
+    const dm = new THREE.Mesh(new THREE.BoxGeometry(2.18, 1.96, 0.12), mat(0xcfd9e6)); dm.position.set(0, 0, 0.06); door.add(dm);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.32, 0.13), mat(0x2a5bd7)); stripe.position.set(0, 0.3, 0.065); door.add(stripe);
+    g.userData.door = door;
+    for (const z of [-1.4, 1.4]) for (const x of [-1.02, 1.02]) wheel(0.52, 0.38, x, 0.52, z);
   } else { // truck: tractor unit only (cab + short chassis with fifth-wheel plate, no trailer)
     box(2.3, 1.8, 2.0, 0, 1.6, -0.75, color); box(2.1, 0.8, 0.06, 0, 2.05, -1.77, GLASS, 0.6); box(2.32, 0.5, 0.9, 0, 1.6, -0.75, GLASS, 0.55);
     box(2.2, 0.35, 0.25, 0, 0.75, -1.85, DARK); box(1.6, 0.5, 0.08, 0, 1.05, -1.8, METAL);   // bumper + grille
@@ -205,7 +218,7 @@ export function poseVehicle(v, dt) {
 // axis-aligned box around a vehicle so people can't walk through it
 export function vehicleBox(v) {
   const T = v.T, c = Math.abs(Math.cos(v.yaw)), s = Math.abs(Math.sin(v.yaw));
-  const hx = T.wid * c + T.len * s, hz = T.wid * s + T.len * c, h = { jeep: 1.6, moto: 1.1, bike: 1.0, bus: 3.1, truck: 2.6, heli: 2.6 }[v.type];
+  const hx = T.wid * c + T.len * s, hz = T.wid * s + T.len * c, h = { jeep: 1.6, moto: 1.1, bike: 1.0, bus: 3.1, truck: 2.6, heli: 2.6, armored: 3.0 }[v.type];
   if (!v.box) v.box = new THREE.Box3(); const y0 = v.alt || 0;
   v.box.min.set(v.pos.x - hx, y0, v.pos.z - hz); v.box.max.set(v.pos.x + hx, y0 + h, v.pos.z + hz);
   return v.box;

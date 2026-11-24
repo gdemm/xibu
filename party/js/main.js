@@ -15,6 +15,7 @@ import { playerJump, airStep, updateDrop } from './drop.js';
 import { partyLook, toonify } from './party.js';
 import { spawnVehicles, driveVehicle, flyVehicle, poseVehicle, inFootprint, vehicleBox, exitSpot } from './vehicles.js';
 import { autoDrive, resetAuto } from './autodrive.js';
+import { setupFree, updateFree, freeKilled, freeShot, freeNoise, freeCleanup, crime as freeCrime, freeRobStart, freeRobStop, toggleMask } from './freeroam.js';
 import { setupWanted, updateWanted, addStars, addCash, shotCops, canJack, jack, robStart, robStop, COP_ENTITY } from './wanted.js';
 import { sfx, unlockAudio } from './audio.js';
 import { pickWeather, setupWeather, updateWeather, WEATHERS, weatherKind } from './weather.js';
@@ -177,6 +178,10 @@ function respawn(e) {
 function startMatch(opts) {
   G.paused = false; closeBag(); $('settings').classList.add('hidden'); $('nearList').classList.add('hidden'); nearKey = '';
   opts = { team: 'blue', size: 5, target: 30, diff: 'normal', ...(opts || {}) };
+  // 自由模式: the 迈阿密 battle-royale pipeline with no rivals, no zone, no plane (freeroam.js)
+  freeCleanup(G, scene); G.free = opts.mode === 'free'; G.freeCrime = G.freeRobStart = G.freeRobStop = null;
+  if (G.free) opts = { ...opts, mode: 'br', brMap: 'miami', brSize: 1 };
+  document.body.classList.toggle('freeMode', G.free);
   G.opts = opts;
   const mapKind = opts.mode === 'br' && opts.brMap !== 'ship' ? (opts.brMap === 'miami' ? 'miami' : 'island') : 'ship';
   if (!G.map || builtQuality !== S.quality + mapKind) buildWorld(mapKind);
@@ -193,12 +198,17 @@ function startMatch(opts) {
   if (G.mode === 'br') {
     G.diff = opts.diff; G.scores = { blue: 0, red: 0 }; G.now = G.now || 0;
     setupBR(G, scene, BRH); setupWanted(G);
+    if (G.free) {
+      G.freeCrime = (n, why, pos) => freeCrime(G, WH, n, why, pos); G.freeRobStart = freeRobStart; G.freeRobStop = freeRobStop;
+      setupFree(G, { ...WH, setWeapon, WEAPONS });
+    }
     makeBody();
     $('target').textContent = '';
     $('lobby').classList.add('hidden'); $('endScr').classList.add('hidden'); $('scoreboard').classList.add('hidden'); $('deathScr').classList.add('hidden');
     $('hud').classList.remove('hidden'); $('topBtns').classList.remove('hidden'); $('touch').classList.toggle('hidden', !isTouch);
     document.body.classList.add('br');
     G.state = 'playing';
+    if (G.free) HUD.centerMsg('自由模式 · 抢劫赚钱，回安全屋存钱 · 天气：' + (WEATHERS[G.weather] || '晴'), 2800); else
     HUD.centerMsg((G.drop ? '派对开始！点「跳伞」选择落点' : '派对吃鸡 · 搜集物资，活到最后') + ' · 天气：' + (WEATHERS[G.weather] || '晴'), 2600);
     return;
   }
@@ -240,6 +250,7 @@ function endMatch() {
   if (document.pointerLockElement) document.exitPointerLock();
   if (G.mode === 'br') {
     const r = brResult(G); const t = $('endTitle'); t.textContent = r.title; t.className = r.win ? 'win' : 'lose';
+    if (G.free) { t.textContent = `自由模式 · 存款 $${(G.wanted?.bank || 0).toLocaleString('en-US')}`; t.className = 'win'; }
     $('endBoard').innerHTML = brBoardHTML(G, ''); $('deathScr').classList.add('hidden');
     $('endScr').classList.remove('hidden'); $('touch').classList.add('hidden'); $('scope').style.display = 'none'; return;
   }
@@ -260,6 +271,7 @@ function hitBoxes(e) {
   _body.min.set(e.pos.x - 0.36, e.pos.y, e.pos.z - 0.36); _body.max.set(e.pos.x + 0.36, e.pos.y + top, e.pos.z + 0.36);
   _head.min.set(e.pos.x - hw, e.pos.y + top, e.pos.z - hw); _head.max.set(e.pos.x + hw, e.pos.y + top + hh, e.pos.z + hw);
 }
+G.hurt = (t, a, att) => damage(t, a, att || { name: "测试", team: "x", isPlayer: false, kills: 0, pos: t.pos }, { name: "测试" }, false, true);
 G.fire = function (shooter, origin, dir, weaponId, dmgScale = 1, muzzle) {
   const w = WEAPONS[weaponId];
   const worldD = G.map.rayWorld(origin, dir, w.range);
@@ -329,6 +341,7 @@ function kill(t, attacker, w, head) {
   }
   if (attacker.isPlayer && G.wanted && !t.isPlayer) { addStars(G, WH, 1, '击杀'); addCash(G, 100); }
   if (attacker.isPlayer) { HUD.hitMarker('kill'); sfx.kill(); HUD.centerMsg(head ? `爆头！击杀 ${t.name}` : `击杀 ${t.name}`, 1100); }
+  if (G.free) { if (t.isPlayer) freeKilled(G, t, WH); return; }
   if (G.mode === 'br') { brKilled(G, t, BRH); return; }
   if (G.scores[attacker.team] >= G.target) endMatch();
 }
@@ -597,6 +610,7 @@ function playerShoot() {
   }
   G.fire(p, origin, _dir.clone(), w.id, 1, muzzle);
   if (G.wanted) shotCops(G, WH, origin, _dir.clone(), w);
+  if (G.free) { freeShot(G, WH, origin, _dir.clone(), w); if (!w.melee) freeNoise(G, p.pos, 45); }
   if (!w.melee) a.mag--;
   P.streak++; P.lastShotT = G.now;
   P.nextShot = G.now + w.rate;
@@ -779,7 +793,8 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyE' && !e.repeat) pickNear();
 });
 addEventListener('keyup', (e) => {
-  if (e.code === 'KeyH' && G.wanted?.rob) robStop(G, WH);
+  if (e.code === 'KeyH' && (G.wanted?.rob || G.freeState?.rob)) robStop(G, WH);
+  if (e.code === 'KeyM' && !e.repeat && G.free && G.state === 'playing') toggleMask(G);
   P.keys[e.code] = false;
   if (e.code === 'Tab') showScoreboard(false);
   if ((e.code === 'KeyC' || e.code === 'ControlLeft') && G.player) G.player.crouch = false;
@@ -810,6 +825,7 @@ function btnDown(btn, el) {
   else if (btn === 'car') toggleCar();
   else if (btn === 'auto') setAuto(!P.auto);
   else if (btn === 'rob') robStart(G);
+  else if (btn === 'mask') toggleMask(G);
   else if (btn === 'eject') ejectOrOpen();
   else if (btn === 'view') toggleView();
   else if (btn === 'bag') toggleBag();
@@ -857,7 +873,7 @@ function touchEnd(e) {
   for (const t of e.changedTouches) {
     const s = T.get(t.identifier); if (!s) continue; T.delete(t.identifier);
     if (s.type === 'joy') { P.joyX = P.joyY = 0; if (P.sprint) { P.runLock = true; HUD.centerMsg && HUD.centerMsg('自动奔跑中，碰摇杆取消', 1200); } P.sprint = false; joyBase.classList.remove('run'); joyBase.classList.add('hidden'); }
-    if (s.type === 'btn') { if (s.btn === 'up') P.liftUp = false; if (s.btn === 'down') P.liftDown = false; if (s.btn === 'rob' && G.wanted?.rob) robStop(G, WH); s.el.classList.remove('pressed'); if (s.btn === 'fire' && ![...T.values()].some(v => v.btn === 'fire')) P.firing = false; }
+    if (s.type === 'btn') { if (s.btn === 'up') P.liftUp = false; if (s.btn === 'down') P.liftDown = false; if (s.btn === 'rob' && (G.wanted?.rob || G.freeState?.rob)) robStop(G, WH); s.el.classList.remove('pressed'); if (s.btn === 'fire' && ![...T.values()].some(v => v.btn === 'fire')) P.firing = false; }
   }
 }
 touchLayer.addEventListener('touchend', touchEnd); touchLayer.addEventListener('touchcancel', touchEnd);
@@ -869,7 +885,7 @@ document.querySelectorAll('#lobby .seg').forEach(seg => seg.addEventListener('cl
   seg.querySelectorAll('button').forEach(x => x.classList.remove('on', 'blue', 'red'));
   b.classList.add('on'); if (seg.dataset.k === 'team') b.classList.add(b.dataset.v);
   const v = b.dataset.v; lobbyOpts[seg.dataset.k] = isNaN(+v) ? v : +v;
-  if (seg.dataset.k === 'mode') document.getElementById('lobby').classList.toggle('brMode', v === 'br');
+  if (seg.dataset.k === 'mode') { document.getElementById('lobby').classList.toggle('brMode', v === 'br'); document.getElementById('lobby').classList.toggle('freeMode', v === 'free'); }
 }));
 $('btnStart').addEventListener('click', () => { unlockAudio(); startWithChar({ ...lobbyOpts }); });
 $('btnWardrobe').addEventListener('click', () => openWardrobe());
@@ -1108,7 +1124,7 @@ function loop(ts) {
     G.now += dt; G.timeLeft -= dt;
     if (G.timeLeft <= 0) { G.timeLeft = 0; endMatch(); }
     if (G.mode !== 'br') { for (const e of G.entities) if (!e.alive && G.now >= e.respawnAt && G.state === 'playing') respawn(e); }
-    else { updateBR(G, dt, BRH); if (G.wanted) updateWanted(G, dt, WH); }
+    else { updateBR(G, dt, BRH); if (G.wanted) updateWanted(G, dt, WH); if (G.free) updateFree(G, dt, WH); }
     if (G.drop) updateDrop(G, dt, scene, DROPH);
     updatePlayer(dt);
     updateCarButton(); updateAirButton(); updateNearList(dt);

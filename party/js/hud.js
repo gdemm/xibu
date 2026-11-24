@@ -1,6 +1,7 @@
 // HUD helpers: scores, timer, ammo, hp, kill feed, hit marker, minimap, scoreboard
 import { SHIP } from './map.js';
 import { brHud, brMinimap } from './br.js';
+import { freeMinimap } from './freeroam.js';
 const $ = (id) => document.getElementById(id);
 const TEAMNAME = { blue: '海鹰队', red: '赤鲨队' };
 
@@ -50,7 +51,8 @@ export function drawMinimap(G, ctx, w, h) {
   ctx.fillStyle = G.map.mmBase || (isl ? 'rgba(80,110,60,.85)' : 'rgba(120,110,95,.75)'); ctx.fillRect(mx(BD.minX), mz(BD.minZ), (BD.maxX - BD.minX) * sx, (BD.maxZ - BD.minZ) * sz);
   for (const r of G.map.minimapRects) { ctx.fillStyle = r.c; ctx.fillRect(mx(r.x0), mz(r.z0), Math.max(1, (r.x1 - r.x0) * sx), Math.max(1, (r.z1 - r.z0) * sz)); }
   if (G.vehicles) { ctx.fillStyle = '#e8eef5'; for (const v of G.vehicles) { const k = v.type === 'bus' || v.type === 'truck' ? 3 : 2; ctx.fillRect(mx(v.pos.x) - k, mz(v.pos.z) - k, k * 2, k * 2); } }
-  if (G.br) brMinimap(G, ctx, mx, mz, sx, sz);
+  if (G.br && !G.free) brMinimap(G, ctx, mx, mz, sx, sz);
+  if (G.free) freeMinimap(G, ctx, mx, mz, sx, sz);
   const me = G.player;
   for (const e of G.entities) {
     if (!e.alive || e === me) continue;

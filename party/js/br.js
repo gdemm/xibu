@@ -262,6 +262,7 @@ export function setupBR(G, scene, h) {
   G.br = { phase: -1, stage: 'wait', t: PHASES[0].wait, c: C0.clone(), r: R0, from: { c: C0.clone(), r: R0 }, next: null, mesh: zone, dps: 1, alive: n, tickT: 0 };
   nextPhase(G);
   G.timeLeft = 1e9;
+  if (G.free) { zone.visible = false; G.br.stage = 'final'; G.br.next = null; G.br.r = 1e5; return; }   // 自由模式: no zone, no plane, no airdrops
   // 派对版: everyone starts on the plane (island map), airdrops arrive during the match
   if (G.map.kind === 'island') { setupDrop(G, scene); G.br.t += G.drop.duration + 10; setupAirdrops(G, G.drop.duration + 10); }
 }
@@ -418,6 +419,7 @@ export function brBoardHTML(G, title) {
 
 export function brHud(G) {
   const B = G.br; let s;
+  if (G.free) return { left: '自由模式', right: '击杀 ' + G.player.kills, mid: G.freeMask ? '已戴面具' : '' };
   if (B.stage === 'final') s = '最终安全区';
   else s = (B.stage === 'wait' ? '安全区将在 ' : '安全区缩小中 ') + Math.max(0, Math.ceil(B.t)) + ' 秒' + (B.stage === 'wait' ? ' 后缩小' : '');
   return { left: '存活 ' + G.entities.filter(e => e.alive).length, right: '击杀 ' + G.player.kills, mid: s };
