@@ -11,7 +11,7 @@ import { Builder, M } from './soldier.js';
 import { makeBow } from './bow.js';
 import { STYLE } from './charstyle.js';          // optional procedural look (null = the KayKit models as shipped)
 import { buildStyled, reshapeRig, makeGy } from './charkit.js';
-import { BOT_CHARS, REG, pickedId } from './roster.js';
+import { BOT_CHARS, REG, pickedLook, skinTexUrl } from './roster.js';
 export { toonRamp, critterMaterial, BODY_COLORS } from './bean.js';
 const { toonRamp, critterMaterial } = BEAN;
 
@@ -32,7 +32,7 @@ const TEAM_TINT = { blue: 0x7fb4ff, red: 0xff8a80 };
 
 // hit boxes (main.js): default = the measured KayKit numbers; a style re-measures its own body
 export const HIT = { top: 0.92, ctop: 0.72, hh: 0.80, chh: 0.84, hw: 0.4 };
-const T = { chars: {}, blasters: {}, clips: {}, mats: {}, gunMat: null, outline: null, gunQ: null, ok: false };
+const T = { chars: {}, looks: {}, blasters: {}, clips: {}, mats: {}, gunMat: null, outline: null, gunQ: null, ok: false };
 
 function toonVC(tint) {
   const k = 'vc' + (tint || '');
@@ -383,19 +383,32 @@ function prepChar(n, sc) {
 async function loadChar(id) {
   const e = REG[id]; if (!e) throw new Error('unknown character ' + id);
   const gl = await LOADER.loadAsync(e.url); const sc = gl.scene; mergeSkinned(sc, e.drop); prepChar(id, sc);
+  sc.traverse(o => { if (o.isSkinnedMesh && o.material.map && !T.chars[id].map) T.chars[id].map = o.material.map; });   // the character's atlas (skins swap it)
+}
+// skins: a pre-baked recolor of the character's own atlas; swapped in for that atlas only (same material count, same draw calls)
+const TEXLOADER = new THREE.TextureLoader(), LOOKING = {};
+function ensureLook(id, look) {
+  const k = id + '|' + look;
+  if (!look || T.looks[k]) return Promise.resolve(true);
+  return LOOKING[k] || (LOOKING[k] = ensureChar(id).then(ok => ok && TEXLOADER.loadAsync(skinTexUrl(id, look)).then(tex => {
+    const a = T.chars[id].map; tex.flipY = false; tex.colorSpace = a ? a.colorSpace : THREE.SRGBColorSpace;
+    if (a) { tex.wrapS = a.wrapS; tex.wrapT = a.wrapT; tex.magFilter = a.magFilter; tex.minFilter = a.minFilter; tex.anisotropy = a.anisotropy; }
+    T.looks[k] = tex; return true;
+  })).catch(err => { console.warn('skin failed to load', k, err); delete LOOKING[k]; return false; }));
 }
 export const hasChar = (id) => !!T.chars[id];
 // lazy load: the match / wardrobe preview awaits this before creating a soldier with that character
-export function ensureChar(id) {
+export function ensureChar(id, look) {
+  if (look) return Promise.all([ensureChar(id), ensureLook(id, look)]).then(r => r[0]);
   if (T.chars[id] || !REG[id]) return Promise.resolve(!!T.chars[id]);
   return LOADING[id] || (LOADING[id] = loadChar(id).then(() => true, (err) => { console.warn('character failed to load', id, err); delete LOADING[id]; return false; }));
 }
 export const loadedChars = () => Object.keys(T.chars);
 async function load() {
   const L = LOADER;
-  const pick = pickedId();
+  const pick = pickedLook();
   const [anims, ...bl] = await Promise.all([L.loadAsync(ASSETS.dir + ASSETS.anims), ...BLASTERS.map(b => L.loadAsync(BASE + 'blaster-' + b + '.glb')),
-    ...CHARS.map(n => ensureChar(n)), ensureChar(pick)]);
+    ...CHARS.map(n => ensureChar(n)), ensureChar(pick.char, pick.look)]);
   for (const n of CHARS) if (!T.chars[n]) throw new Error('bot character missing ' + n);
   const rest = bl.slice(0, BLASTERS.length);
   const byName = Object.fromEntries(anims.animations.map(a => [a.name, a]));
@@ -519,8 +532,11 @@ const clamp = (v, a, b) => v < a ? a : v > b ? b : v, lerp = (a, b, k) => a + (b
 export function createSoldier(skin = 'party', variant) {
   if (!T.ok) return BEAN.createSoldier(skin, variant);
   const team = skin === 'blue' || skin === 'red';
-  let char = variant?.char ?? (skin === 'player' ? pickedId() : nextChar());
+  const PL = skin === 'player' && !variant?.char ? pickedLook() : null;     // the 角色仓库 pick: base + skin (recolor or model)
+  let char = variant?.char ?? (PL ? PL.char : nextChar());
   if (!T.chars[char]) { ensureChar(char); char = CHARS[0]; }     // not loaded yet (callers await ensureChar first)
+  const look = variant?.look ?? (PL && PL.char === char ? PL.look : ''), lookTex = look ? T.looks[char + '|' + look] : null;
+  if (look && !lookTex) ensureLook(char, look);                   // not loaded yet: original atlas this time
   let hat = variant?.hat ?? (skin === 'player' || team ? 'cone' : pick(HATS));
   if (CAPPED.has(char)) hat = 'none';
   const hatColor = variant?.hatColor ?? (skin === 'player' ? 0xff4d6d : team ? TEAM_HAT[skin] : pick(HAT_COLORS));
@@ -535,7 +551,7 @@ export function createSoldier(skin = 'party', variant) {
   model.traverse(o => { if (o.isSkinnedMesh) meshes.push(o); else if (o.isMesh) rigid.push(o); });
   const noOl = new Set(meshes.filter(m => m.material.name === 'GlowVC' || m.material.name === 'DecoVC'));
   const vary = REG[char]?.vary || 0;
-  for (const m of [...meshes, ...rigid]) m.material = m.material.name === 'GlowVC' ? glowVC : m.material.name === 'Glow' ? glowMat : m.material.vertexColors ? toonVC(tint) : toonOf(m.material.map, tint, vary);
+  for (const m of [...meshes, ...rigid]) m.material = m.material.name === 'GlowVC' ? glowVC : m.material.name === 'Glow' ? glowMat : m.material.vertexColors ? toonVC(tint) : toonOf(lookTex && m.material.map === C.map ? lookTex : m.material.map, tint, vary);
   for (const m of meshes) {
     m.computeBoundingSphere(); if (noOl.has(m)) { m.boundingSphere.radius *= 1.7; continue; } m.boundingSphere.radius *= 1.7;     // room for poses (lying down, arms up)
     const ol = new THREE.SkinnedMesh(m.geometry, T.outline); ol.bind(m.skeleton, m.bindMatrix); ol.boundingSphere = m.boundingSphere;
@@ -582,7 +598,7 @@ export function createSoldier(skin = 'party', variant) {
   A.idle.time = Math.random() * T.clips.idle.duration;
 
   g.userData = {
-    gunPivot, skin, char, hat, hatColor, exColor, gearKey: '0|0|0', gearMesh: null, gearOl: null, gun: gunId, root, model, bones, rest, mixer, A, meshes, outlines, extras, gunMesh: gun, bow, hatMesh, muzzle, blob, puffs,
+    gunPivot, skin, char, look: lookTex ? look : '', hat, hatColor, exColor, gearKey: '0|0|0', gearMesh: null, gearOl: null, gun: gunId, root, model, bones, rest, mixer, A, meshes, outlines, extras, gunMesh: gun, bow, hatMesh, muzzle, blob, puffs,
     mesh: meshes[0], phase: Math.random() * 6, moveK: 0, crouchK: 0, aimK: 0, fullK: 0, full: null, kick: 0, t: Math.random() * 10, pitch: 0, lo: false, acc: 0, relK: 0,
     tris: C.tris,
     // motion state (see animateSoldier): measured ground velocity, gait phase, run blend, hip twist for strafing, smoothed yaw / lean,

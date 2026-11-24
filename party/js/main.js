@@ -8,7 +8,7 @@ import { animateDeath, resetSoldier, animateSoldier, soldierTris, createSoldier,
 import { toonRamp, HIT } from './critter.js';
 import { lobbyChars } from './lobbychars.js';
 import { openWardrobe } from './wardrobe.js';
-import { pickedId } from './roster.js';
+import { pickedLook } from './roster.js';
 import { ensureChar } from './critter.js';
 import { playerJump, airStep, updateDrop } from './drop.js';
 import { partyLook, toonify } from './party.js';
@@ -203,7 +203,7 @@ let starting = false;
 async function startWithChar(opts) {
   if (starting) return; starting = true;
   const b = $('btnStart'); const t = b.textContent; b.textContent = '加载中…';
-  try { await ensureChar(pickedId()); } finally { b.textContent = t; starting = false; }
+  try { const L = pickedLook(); await ensureChar(L.char, L.look); } finally { b.textContent = t; starting = false; }
   startMatch(opts);
 }
 G.startWithChar = startWithChar;
@@ -331,7 +331,7 @@ G.solidsNear = (pos) => {
   return out;
 };
 const thirdPerson = () => !!P.inCar || !!G.player?.air || (S.tp && !P.scoped);
-function makeBody() { if (P.body) scene.remove(P.body); P.body = createSoldier(G.mode === 'br' ? 'player' : G.player.team, { char: pickedId() }); P.body.visible = false; scene.add(P.body); $('bView')?.classList.toggle('on', !!S.tp); }
+function makeBody() { if (P.body) scene.remove(P.body); P.body = createSoldier(G.mode === 'br' ? 'player' : G.player.team, { ...pickedLook() }); P.body.visible = false; scene.add(P.body); $('bView')?.classList.toggle('on', !!S.tp); }
 function poseBody(dt, mx, mz, speed, seated) {
   const b = P.body; if (!b) return;
   b.visible = G.player.alive && thirdPerson() && !(P.inCar && (P.inCar.type === 'bus' || P.inCar.type === 'truck' || P.inCar.mesh?.userData.kenney));

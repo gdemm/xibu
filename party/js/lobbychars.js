@@ -1,7 +1,7 @@
 // lobby: a little line-up of the party characters idling on the grass (own small canvas, only renders while the lobby is open)
 import * as THREE from 'three';
 import { createSoldier, animateSoldier, ensureChar } from './critter.js';
-import { pickedId } from './roster.js';
+import { pickedLook } from './roster.js';
 
 export function lobbyChars(lobby) {
   const cv = document.createElement('canvas'); cv.id = 'lobbyChars'; lobby.insertBefore(cv, lobby.children[2] || null);
@@ -28,8 +28,9 @@ export function lobbyChars(lobby) {
   });
   // the wardrobe changed the player's character: swap the front figure once its model is loaded
   async function refresh() {
-    const id = pickedId(); if (!(await ensureChar(id)) || id !== pickedId()) return;
-    const old = chars[0], g = createSoldier('player', { char: id });
+    const L = pickedLook(), same = () => { const n = pickedLook(); return n.char === L.char && n.look === L.look; };
+    if (!(await ensureChar(L.char, L.look)) || !same()) return;
+    const old = chars[0], g = createSoldier('player', { char: L.char, look: L.look });
     g.position.copy(old.position); g.rotation.copy(old.rotation); if (g.userData.blob) g.userData.blob.visible = true;
     scene.remove(old); scene.add(g); chars[0] = g;
   }

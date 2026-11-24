@@ -15,8 +15,9 @@ Kenney 和 Kay Lousberg 都不要求署名，这里仍然注明以示感谢。
 | 文件 | 来源 | 作者 | 许可 |
 |---|---|---|---|
 | assets/chars2/anims2.glb | KayKit「Character Animations 1.1」(https://kaylousberg.itch.io/kaykit-character-animations) Rig_Medium 动作：Ranged_2H_Aiming / Ranged_2H_Reload / Ranged_1H_Aiming / Ranged_1H_Reload / Ranged_2H_Shoot、Idle_A、Death_A、Walking_A、Running_A、Jump_Idle、Running_HoldingRifle、Crouching、Sit_Chair_Idle、Cheering；合并成一个无网格动作文件并改名 | Kay Lousberg (www.kaylousberg.com) | CC0 1.0（assets/chars2/LICENSE-KayKit-CC0.txt） |
-| assets/chars2/*.glb（角色仓库 26 个角色：A 卡通英雄 / B 士兵 / C 软萌公仔 / D 动漫 四版去重，不含 E 科幻） | KayKit「Adventurers 2.0」(https://kaylousberg.itch.io/kaykit-adventurers) 与 KayKit Mystery Monthly 系列角色（收录于 The Complete KayKit Collection v6），经 GitHub 镜像 GeorgeQLe/assets-kaykit-3d-characters 下载；贴图缩到 256px WebP，去掉动画，运行时把各部件合并成一个蒙皮网格；部分去掉了尖帽/雪茄/箭袋等配件 | Kay Lousberg | CC0 1.0 |
+| assets/chars2/*.glb（角色仓库 26 个造型：8 个基础角色 + 18 个作为模型皮肤挂在基础角色下；原 A 卡通英雄 / B 士兵 / C 软萌公仔 / D 动漫 四版去重，不含 E 科幻） | KayKit「Adventurers 2.0」(https://kaylousberg.itch.io/kaykit-adventurers) 与 KayKit Mystery Monthly 系列角色（收录于 The Complete KayKit Collection v6），经 GitHub 镜像 GeorgeQLe/assets-kaykit-3d-characters 下载；贴图缩到 256px WebP，去掉动画，运行时把各部件合并成一个蒙皮网格；部分去掉了尖帽/雪茄/箭袋等配件 | Kay Lousberg | CC0 1.0 |
 | assets/chars2/thumbs/*.webp | 本项目用上面的模型渲染的缩略图 | — | 同上 |
+| assets/chars2/skins/*.webp（换色皮肤：迷彩 / 黑金 / 樱粉 / 冰蓝） | 本项目对上面 8 个基础角色各自的 KayKit 贴图做的调色（只改衣服/帽子/配饰色块，保留皮肤、脸、眼睛、头发和贴纸），预烘焙为 256px 无损 WebP | 本项目（基于 Kay Lousberg 的 CC0 贴图） | CC0 1.0 |
 
 动作：所有角色（含 4 个机器人角色）共用 anims2.glb 的自然持枪动作（双手步枪/单手手枪/持枪奔跑/空手），不再使用旧的 anims.glb；红色圣诞帽女孩（旧 rogue.glb）和骷髅角色已移除。
 所有角色均为 KayKit 通用原创造型，没有任何 Supercell / Riot / 香肠派对 角色。
