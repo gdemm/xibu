@@ -41,4 +41,5 @@ export const sfx = {
   draw() { burst({ dur: 0.35, freq: 420, q: 4, vol: 0.08, type: 'bandpass' }); },
   thunk(vol = 1) { tone(160, 70, 0.08, 0.25 * vol, 'sine'); burst({ dur: 0.05, freq: 900, vol: 0.15 * vol }); },
   step() { burst({ dur: 0.05, freq: 600, vol: 0.06 }); },
+  thunder() { burst({ dur: 1.6, freq: 260, q: 0.5, vol: 0.55, low: 1.4, lowF: 45 }); setTimeout(() => burst({ dur: 1.1, freq: 160, q: 0.5, vol: 0.4, low: 1.2, lowF: 38 }), 260); },
 };

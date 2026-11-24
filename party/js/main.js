@@ -17,6 +17,7 @@ import { spawnVehicles, driveVehicle, flyVehicle, poseVehicle, inFootprint, vehi
 import { autoDrive, resetAuto } from './autodrive.js';
 import { setupWanted, updateWanted, addStars, addCash, shotCops, canJack, jack, robStart, robStop, COP_ENTITY } from './wanted.js';
 import { sfx, unlockAudio } from './audio.js';
+import { pickWeather, setupWeather, updateWeather, WEATHERS, weatherKind } from './weather.js';
 import * as HUD from './hud.js';
 import { initArrows, clearArrows, shootArrow, updateArrows } from './bow.js';
 import { setupBR, updateBR, brKilled, brResult, brBoardHTML, brGoal, cleanup as brCleanup, GEAR_RED, bagCap, gearName, dropBagItem, brNearby, brPickLoot, LV_COLOR } from './br.js';
@@ -43,7 +44,7 @@ try { HUDL = JSON.parse(localStorage.getItem('party_hud_layout') || '{}') || {};
 let hudEdit = false;
 
 // ---------------- settings ----------------
-const DEF = { mpal: 'cycle', quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, smooth: 0.5, showFps: 0, tp: 1, peace: 0 };
+const DEF = { wx: 'random', mpal: 'cycle', quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, smooth: 0.5, showFps: 0, tp: 1, peace: 0 };
 let S = { ...DEF };
 try { S = { ...DEF, ...JSON.parse(localStorage.getItem('partyfps.settings') || '{}') }; } catch (e) {}
 const saveS = () => { try { localStorage.setItem('partyfps.settings', JSON.stringify(S)); } catch (e) {} };
@@ -108,13 +109,14 @@ function buildWorld(kind = 'ship') {
     mk = order[i];
   }
   const MP = MIAMI_PALS[mk] || MIAMI_PALS.dusk;
-  scene.add(mia ? new THREE.HemisphereLight(MP.hs, MP.hg, MP.hi) : new THREE.HemisphereLight(0xeaf6ff, 0x8a7a5a, 1.9));
+  const hemi = mia ? new THREE.HemisphereLight(MP.hs, MP.hg, MP.hi) : new THREE.HemisphereLight(0xeaf6ff, 0x8a7a5a, 1.9); scene.add(hemi);
   const sun = new THREE.DirectionalLight(mia ? MP.sun : 0xfff4dc, mia ? MP.si : 2.0); sun.position.set(-40, mia ? MP.sy : 60, 25); scene.add(sun);
   G.map = kind === 'island' ? buildIsland(scene, S.quality) : kind === 'miami' ? buildMiami(scene, S.quality, MP.sea) : buildMap(scene, S.quality);
-  builtQuality = mia ? null : S.quality + kind;   // 迈阿密 always rebuilds so 轮换 can change the sky
+  builtQuality = null;   // rebuild every match: 迈阿密轮换天色 + 天气 change per match
   scene.fog = kind === 'miami' ? new THREE.Fog(MP.fog, 40, { low: 125, mid: 160, high: 230 }[S.quality]) : new THREE.Fog(0xbfe6ff, 45, { low: 140, mid: 190, high: 260 }[S.quality]);   // 迈阿密: smaller, denser city -> shorter view, pink haze
   camera.far = scene.fog.far + 25; camera.updateProjectionMatrix();     // nothing past the fog is drawn (the bigger island stays cheap)
   G.sky = partyLook(scene, S.quality, mia ? 'island' : kind, mia ? MP.sky : null);
+  G.weather = setupWeather(scene, pickWeather(S.wx), { hemi, sun, sky: G.sky, quality: S.quality, isTouch }).kind;   // 天气: per match
   tracers.length = 0;
   const tm = new THREE.LineBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.9 });
   for (let i = 0; i < 24; i++) {
@@ -197,7 +199,7 @@ function startMatch(opts) {
     $('hud').classList.remove('hidden'); $('topBtns').classList.remove('hidden'); $('touch').classList.toggle('hidden', !isTouch);
     document.body.classList.add('br');
     G.state = 'playing';
-    HUD.centerMsg(G.drop ? '派对开始！点「跳伞」选择落点' : '派对吃鸡 · 搜集物资，活到最后', 2600);
+    HUD.centerMsg((G.drop ? '派对开始！点「跳伞」选择落点' : '派对吃鸡 · 搜集物资，活到最后') + ' · 天气：' + (WEATHERS[G.weather] || '晴'), 2600);
     return;
   }
   document.body.classList.remove('br'); G.wanted = null; setupWanted(G);
@@ -1048,7 +1050,7 @@ function syncSettingsUI() {
 }
 document.querySelectorAll('#settings .seg').forEach(seg => seg.addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return; const k = seg.dataset.s, v = b.dataset.v;
-  S[k] = (k === 'quality' || k === 'mpal') ? v : +v; G.quality = S.quality; G.peace = !!+S.peace; saveS(); syncSettingsUI(); if (k === 'quality') applyPixelRatio();
+  S[k] = (k === 'quality' || k === 'mpal' || k === 'wx') ? v : +v; G.quality = S.quality; G.peace = !!+S.peace; saveS(); syncSettingsUI(); if (k === 'quality') applyPixelRatio();
 }));
 $('sens').addEventListener('input', () => { S.sens = +$('sens').value; saveS(); syncSettingsUI(); });
 $('smooth')?.addEventListener('input', () => { S.smooth = +$('smooth').value; saveS(); syncSettingsUI(); });
@@ -1135,6 +1137,7 @@ function loop(ts) {
     if (P.body) setSoldierGear(P.body, G.player.armor | 0, G.player.helmet | 0, G.bagLv | 0);
     for (const b of G.bots) setSoldierGear(b.mesh, b.armor | 0, b.helmet | 0, 0);
   }
+  updateWeather(dt, camera, sfx);
   if (G.sky) {
     G.sky.position.copy(camera.position);
     const cl = G.sky.userData.clouds;   // 帧率: skip cloud quadrants outside the view (side planes only: clouds sit past the far plane)
