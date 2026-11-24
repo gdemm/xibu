@@ -24,6 +24,6 @@ Kenney 和 Kay Lousberg 都不要求署名，这里仍然注明以示感谢。
 ## 港口岛扩图 / 载具 / 场景道具素材（2026-11）
 | 文件 | 来源 | 作者 | 许可 |
 |---|---|---|---|
-| assets/props/props.bin + props.json（吉普=SUV、卡车=皮卡，路边车辆残骸、轮胎、路锥、油桶、木箱、栅栏、岩石、帐篷、路牌、篝火、木头、工作台、宝箱、室内家具等） | Kenney「Car Kit」「Survival Kit」「Furniture Kit」「Weapon Pack」(https://kenney.nl/assets)；离线烘焙成一个顶点着色的压缩文件（量化坐标、int8 法线、rgb8 颜色） | Kenney (www.kenney.nl) | CC0 1.0（assets/chars/LICENSE-Kenney.txt） |
+| assets/props/props.bin + props.json（吉普=SUV、卡车=皮卡，路边车辆残骸、轮胎、路锥、油桶、木箱、栅栏、岩石、帐篷、路牌、篝火、木头、工作台、宝箱、室内家具等） | Kenney「Car Kit」「Survival Kit」「Furniture Kit」「Weapon Pack」(https://kenney.nl/assets)；离线烘焙成一个顶点着色的压缩文件（量化坐标、int8 法线、rgb8 颜色）；车辆另存一份约 15% 面数的简化版（*_lo，远处显示，同样来自 Kenney Car Kit） | Kenney (www.kenney.nl) | CC0 1.0（assets/chars/LICENSE-Kenney.txt） |
 
 摩托、自行车、大巴、直升机仍是本项目程序生成的原创造型；物资地面光圈也是代码生成的。

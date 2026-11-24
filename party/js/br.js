@@ -94,14 +94,15 @@ function lootGeo(k) {
 let RING = null; const _rm = new THREE.Matrix4(), _rc = new THREE.Color(), _rw = new THREE.Color(0xffffff);
 function lootRings(G, scene) {
   if (!RING) {
-    const g = new THREE.RingGeometry(0.62, 0.86, 32); g.rotateX(-Math.PI / 2);
+    const g = new THREE.RingGeometry(0.62, 0.86, 14); g.rotateX(-Math.PI / 2);
     RING = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.8, depthWrite: false }), 1024);
     RING.instanceMatrix.setUsage(THREE.DynamicDrawUsage); RING.frustumCulled = false; RING.renderOrder = 1;
   }
   if (RING.parent !== scene) scene.add(RING);
-  const pulse = 1 + 0.1 * Math.sin(G.now * 3.2); let n = 0;
+  const pulse = 1 + 0.1 * Math.sin(G.now * 3.2); let n = 0; const pp = G.player?.pos;
   for (const l of G.loot) {
     if (l.taken || !l.m.parent || n >= 1024) continue;
+    if (pp) { const dx = l.m.position.x - pp.x, dz = l.m.position.z - pp.z; if (dx * dx + dz * dz > 3600) continue; }   // rings only within 60 m (帧率)
     const s = (l.def.lv >= 3 || l.def.k === 'sniper' ? 1.15 : 1) * pulse;
     _rm.makeScale(s, 1, s).setPosition(l.m.position.x, 0.04, l.m.position.z); RING.setMatrixAt(n, _rm);
     RING.setColorAt(n, _rc.set(l.def.c).lerp(_rw, 0.25)); n++;
@@ -261,8 +262,11 @@ export function updateBR(G, dt, h) {
   h.$('dmg').classList.toggle('zone', outside);
   // loot pickup
   lootRings(G, h.scene);
+  const cp = h.camera ? h.camera.position : G.player?.pos;
   for (const l of G.loot) {
-    if (l.taken || (l.noPick && G.now < l.noPick)) continue;
+    if (l.taken) continue;
+    if (cp) { const dx = l.m.position.x - cp.x, dz = l.m.position.z - cp.z; l.m.visible = dx * dx + dz * dz < 3600; }   // items drawn within 60 m, like their rings (帧率)
+    if (l.noPick && G.now < l.noPick) continue;
     l.m.rotation.y += dt * 1.2;
     for (const e of G.entities) {
       if (!e.alive || e.air) continue;

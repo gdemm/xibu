@@ -28,10 +28,17 @@ class Batch {
     const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2); let o = 0;
     for (const g of this.geos) { pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); if (g.attributes.uv) uv.set(g.attributes.uv.array, o * 2); o += g.attributes.position.count; g.dispose(); }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    geo.computeBoundingSphere(); scene.add(new THREE.Mesh(geo, this.mat)); this.geos = [];
+    geo.computeBoundingSphere(); const bm = new THREE.Mesh(geo, this.mat); bm.name = 'batch'; scene.add(bm); this.geos = [];
   }
 }
 
+// hide meshes whose bounding sphere is farther than their userData.lodD from the camera (a few dozen checks per frame)
+function lodUpdate(list, cam) {
+  for (const m of list) {
+    const s = m.geometry.boundingSphere, r = m.userData.lodD + s.radius, dx = s.center.x - cam.x, dz = s.center.z - cam.z;
+    m.visible = dx * dx + dz * dz < r * r;
+  }
+}
 export function buildIsland(scene, quality) {
   seed = 7;
   const solids = [], minimapRects = [];
@@ -69,11 +76,11 @@ export function buildIsland(scene, quality) {
   // ---------- sea, sky, ground ----------
   scene.background = new THREE.Color(0x9cc6de);
   const seaGeo = new THREE.PlaneGeometry(1400, 1400, 1, 1); seaGeo.rotateX(-Math.PI / 2);
-  const sea = new THREE.Mesh(seaGeo, new THREE.MeshLambertMaterial({ color: 0x29b6e0 })); sea.position.y = -1.2; scene.add(sea);
+  const sea = new THREE.Mesh(seaGeo, new THREE.MeshLambertMaterial({ color: 0x29b6e0 })); sea.position.y = -1.2; sea.renderOrder = 4; scene.add(sea);   // 帧率: big ground layers draw after everything that covers them (early-z skips hidden pixels)
   T.sand.repeat.set(IC.w / 4.7, IC.d / 4.7); T.grass.repeat.set(IC.w / 5.6, IC.d / 5.6);
-  const beach = new THREE.Mesh(new THREE.BoxGeometry(IC.w + 24, 1.2, IC.d + 24), new THREE.MeshLambertMaterial({ map: T.sand })); beach.position.set(IC.x, -0.62, IC.z); scene.add(beach);
+  const beach = new THREE.Mesh(new THREE.BoxGeometry(IC.w + 24, 1.2, IC.d + 24), new THREE.MeshLambertMaterial({ map: T.sand })); beach.position.set(IC.x, -0.62, IC.z); beach.renderOrder = 3; scene.add(beach);
   const grassG = new THREE.PlaneGeometry(IC.w - 12, IC.d - 12); grassG.rotateX(-Math.PI / 2); grassG.translate(IC.x, 0, IC.z);
-  const grass = new THREE.Mesh(grassG, new THREE.MeshLambertMaterial({ map: T.grass })); grass.position.y = 0.005; scene.add(grass);
+  const grass = new THREE.Mesh(grassG, new THREE.MeshLambertMaterial({ map: T.grass })); grass.position.y = 0.005; grass.renderOrder = 2; scene.add(grass);
   // edge: low sea wall keeps players on the island (bullets pass over)
   { const B = ISLAND, x0 = B.minX - 12, x1 = B.maxX + 12, z0 = B.minZ - 12, z1 = B.maxZ + 12;
     solid(x0, 0, z0 + 1 - 2, x1, 1.1, z0 + 1, MAT.concrete); solid(x0, 0, z1 - 1, x1, 1.1, z1 - 1 + 2, MAT.concrete);
@@ -151,7 +158,8 @@ export function buildIsland(scene, quality) {
   const OUT = outerRegions({ scene, solid, deco, building, road, treeAt, rockAt, containerStack, blocked, onRoad, inIsle, MAT, contMats, minimapRects, BLD, FENCES, ROADS, rand, rr, quality });
 
   for (const b of batches.values()) b.build(scene);
-  const decoStats = decorateIsland(scene, { solids, HALF, B: ISLAND, BLD, TREES, FENCES, ROADS, quality });
+  const LODS = [];   // 2026-11 帧率: meshes hidden beyond their userData.lodD (small detail only near the camera)
+  const decoStats = decorateIsland(scene, { solids, HALF, B: ISLAND, BLD, TREES, FENCES, ROADS, quality, lods: LODS });
   decoStats.props = OUT.stats;
 
   // ---------- nav graph: 4 m grid + door / room nodes ----------
@@ -228,7 +236,7 @@ export function buildIsland(scene, quality) {
   const nearCache = new Map();
   function near(p) { const cx = Math.floor(p.x / CG), cz = Math.floor(p.z / CG), k = cx + ',' + cz; let a = nearCache.get(k); if (a) return a; const set = new Set(); for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) for (const i of cells.get((cx + ox) + ',' + (cz + oz)) || []) set.add(solids[i]); a = [...set]; nearCache.set(k, a); return a; }
   const spawns = { blue: [], red: [] };
-  return { solids, nodes, covers, spawns, minimapRects, findPath, nearestNode, rayWorld, hasLOS, update() {}, walkY: 0, bounds: ISLAND, center: new THREE.Vector2(IC.x, IC.z), kind: 'island', near, decoStats, lod: OUT.lod };
+  return { solids, nodes, covers, spawns, minimapRects, findPath, nearestNode, rayWorld, hasLOS, update() {}, walkY: 0, bounds: ISLAND, center: new THREE.Vector2(IC.x, IC.z), kind: 'island', near, decoStats, lod: (cam) => { OUT.lod(cam); lodUpdate(LODS, cam); } };
 }
 
 // ======================================================================================================
@@ -239,11 +247,14 @@ export function buildIsland(scene, quality) {
 // ======================================================================================================
 function outerRegions(o) {
   const { scene, solid, deco, building, road, treeAt, rockAt, containerStack, blocked, onRoad, inIsle, MAT, minimapRects, BLD, FENCES, rand, rr } = o;
-  const PS = new PropSet(64), IN = new PropSet(48, o.quality === 'high' ? 70 : 45);
+  // 2026-11 帧率: big props (cars, tents, rocks, tractors) hidden beyond DB, small clutter (barrels, tyres, cones, boxes, fences) beyond DS
+  const DB = { low: 110, mid: 130, high: 220 }[o.quality] || 130, DS = { low: 55, mid: 70, high: 110 }[o.quality] || 70;
+  const PS = new PropSet(48, DB, 'props', { low: 30, mid: 40, high: 70 }[o.quality] || 40), PSS = new PropSet(40, DS, 'props-s'), IN = new PropSet(40, o.quality === 'high' ? 70 : 45, 'indoor');
+  const SMALL = new Set(['barrel', 'barrel_open', 'tire', 'cone', 'box', 'box_large', 'box_open', 'chest', 'bucket', 'logs', 'log', 'signpost', 'campfire', 'canvas', 'workbench', 'fence']);
   const QK = o.quality === 'low' ? 0.45 : o.quality === 'mid' ? 0.65 : 1;   // phones (mid/low): fewer extra trees / rocks in the new strips, interiors drawn closer
   const props = hasProps();
   // a prop with collision: footprint = its rotated bounding box (axis-aligned), h = height used for the solid
-  const put = (k, x, z, ry = 0, s = 1, { set = PS, solidH = null, tint = null, pad = 0, mm = null, y = 0 } = {}) => {
+  const put = (k, x, z, ry = 0, s = 1, { set = SMALL.has(k) ? PSS : PS, solidH = null, tint = null, pad = 0, mm = null, y = 0 } = {}) => {
     if (!props) return false;
     const sz = propSize(k), sc = Array.isArray(s) ? s : [s, s, s], w = sz.x * sc[0], d = sz.z * sc[2], c = Math.abs(Math.cos(ry)), si = Math.abs(Math.sin(ry));
     const hx = (c * w + si * d) / 2, hz = (si * w + c * d) / 2;
@@ -363,7 +374,7 @@ function outerRegions(o) {
   const track = (ax, az, bx, bz) => { const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 2.2); for (let i = 0; i <= n; i++) { const t = i / n; blob(ax + (bx - ax) * t + rr(-0.4, 0.4), az + (bz - az) * t + rr(-0.4, 0.4), 1.7, 0xa88a5c, 7, 0.0125); } };
   track(-100, -206, -100, -236); track(-60, -200, -60, -175); track(-170, 60, -188, 60); track(4, -230, 20, -230); track(-92, 46, -95, 92); track(36, -100, 60, -114);
   if (GP.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(GP, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(GN, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(GC, 3)); g.computeBoundingSphere();
-    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 })); m.renderOrder = 0; scene.add(m); }
-  const a = PS.build(scene), b = IN.build(scene);
-  return { stats: { propCalls: a.calls, propTris: a.tris, indoorCalls: b.calls, indoorTris: b.tris, groundTris: GP.length / 9 }, lod: (cam) => IN.lod(cam) };
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 })); m.renderOrder = 0; m.name = 'groundvar'; scene.add(m); }
+  const a = PS.build(scene), a2 = PSS.build(scene), b = IN.build(scene); a.calls += a2.calls; a.tris += a2.tris;
+  return { stats: { propCalls: a.calls, propTris: a.tris, indoorCalls: b.calls, indoorTris: b.tris, groundTris: GP.length / 9 }, lod: (cam) => { PS.lod(cam); PSS.lod(cam); IN.lod(cam); } };
 }

@@ -42,7 +42,28 @@ function kenneyMesh(type, color) {
   const c = new THREE.Color(0xffffff).lerp(new THREE.Color(color), 0.35), key = type + c.getHex();
   const m = new THREE.Mesh(geo, KMAT[key] || (KMAT[key] = new THREE.MeshLambertMaterial({ vertexColors: true, color: c })));
   m.scale.setScalar(s); if (K.flip) m.rotation.y = Math.PI;     // Kenney cars face +Z, ours drive toward -Z
-  const g = new THREE.Group(); g.add(m); g.userData.wheels = []; g.userData.kenney = true; return g;
+  const g = new THREE.Group(); g.add(m); g.userData.wheels = []; g.userData.kenney = true;
+  // 2026-11 帧率: a ~15% simplified copy drawn beyond ~40 m (main.js swaps them)
+  const lg = PROPS[K.k + '_lo']; if (lg) { const lo = new THREE.Mesh(lg, m.material); lo.scale.copy(m.scale); lo.rotation.copy(m.rotation); lo.visible = false; g.add(lo); g.userData.hi = m; g.userData.lo = lo; }
+  return g;
+}
+// 2026-11 帧率: parked procedural vehicles are 8-20 parts each (one draw call per part). Beyond ~40 m main.js shows instead one merged,
+// vertex-coloured copy of the opaque parts (1 draw call); the real parts (spinning wheels, rotor) come back up close.
+const FARMAT = new THREE.MeshLambertMaterial({ vertexColors: true });
+const _hsl = {}; function boost(c) { c.getHSL(_hsl); c.setHSL(_hsl.h, Math.min(1, _hsl.s * 1.35 + 0.08), Math.min(0.92, _hsl.l * 1.08 + 0.02)); return c; }
+function farLod(g) {
+  g.updateMatrixWorld(true); const inv = g.matrixWorld.clone().invert(), M = new THREE.Matrix4(), P = [], N = [], C = [];
+  g.traverse(o => {
+    if (!o.isMesh || o.material.transparent) return;
+    const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); geo.applyMatrix4(M.multiplyMatrices(inv, o.matrixWorld));
+    const c = boost(o.material.color.clone()), pa = geo.attributes.position, na = geo.attributes.normal;   // same colour boost as party.js toonify
+    for (let i = 0; i < pa.count; i++) { P.push(pa.getX(i), pa.getY(i), pa.getZ(i)); N.push(na.getX(i), na.getY(i), na.getZ(i)); C.push(c.r, c.g, c.b); }
+    geo.dispose();
+  });
+  if (!P.length) return;
+  const hi = new THREE.Group(); while (g.children.length) hi.add(g.children[0]); g.add(hi);
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); geo.computeBoundingSphere();
+  const lo = new THREE.Mesh(geo, FARMAT); lo.visible = false; g.add(lo); g.userData.hi = hi; g.userData.lo = lo;
 }
 function vehicleMesh(type, color) {
   if (KENNEY[type] && hasProps()) { const k = kenneyMesh(type, color); if (k) return k; }
@@ -88,6 +109,7 @@ function vehicleMesh(type, color) {
     for (const z of [-1.1, 1.3]) for (const x of [-1.05, 1.05]) wheel(0.55, 0.4, x, 0.55, z);
   }
   g.userData.wheels = wheels;
+  farLod(g);
   return g;
 }
 

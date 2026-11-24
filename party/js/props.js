@@ -32,9 +32,16 @@ export function propSize(k) { const b = PROPS[k]?.boundingBox; return b ? b.getS
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
 // merged placements, bucketed into square chunks
 export class PropSet {
-  constructor(chunk = 64, maxD = 0) { this.chunk = chunk; this.maxD = maxD; this.cells = new Map(); this.tris = 0; this.meshes = []; }
+  constructor(chunk = 64, maxD = 0, name = 'props', nearD = 0) { this.chunk = chunk; this.maxD = maxD; this.name = name; this.nearD = nearD; this.pairs = []; this.cells = new Map(); this.tris = 0; this.meshes = []; }
   // place prop k at (x, y, z), yaw ry, uniform or [sx, sy, sz] scale; tint multiplies the baked colours (e.g. a burnt wreck)
+  // 2026-11 帧率: with nearD set, a prop that has a baked '<k>_lo' (the cars) goes in twice - full detail near the camera,
+  // the ~15% simplified copy beyond nearD (same chunk, so exactly one of the two shows)
   add(k, x, y, z, ry = 0, s = 1, tint = null, rx = 0, rz = 0) {
+    if (this.nearD && PROPS[k + '_lo'] && !this._lo) {
+      this._lo = 1; const hc = this.cells; this.cells = this.hiCells || (this.hiCells = new Map());
+      this.add(k, x, y, z, ry, s, tint, rx, rz); this.cells = this.loCells || (this.loCells = new Map()); this.add(k + '_lo', x, y, z, ry, s, tint, rx, rz);
+      this.cells = hc; this._lo = 0; this.tris -= PROPS[k + '_lo'].index.count / 3; return true;
+    }
     const g = PROPS[k]; if (!g) return false;
     const sc = Array.isArray(s) ? s : [s, s, s];
     _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, rz, 'YXZ')), _s.set(sc[0], sc[1], sc[2]));
@@ -52,20 +59,30 @@ export class PropSet {
     c.v += P.count; this.tris += I.count / 3;
     return true;
   }
+  mk(scene, c) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(c.p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(c.n, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c.c, 3));
+    g.setIndex(c.v > 65535 ? new THREE.Uint32BufferAttribute(c.i, 1) : new THREE.Uint16BufferAttribute(c.i, 1)); g.computeBoundingSphere();
+    const m = new THREE.Mesh(g, propMat); m.name = this.name; m.matrixAutoUpdate = false; m.updateMatrix(); scene.add(m); return m;
+  }
   build(scene) {
+    if (this.hiCells) for (const [key, c] of this.hiCells) { const hi = this.mk(scene, c), lc = this.loCells.get(key), lo = lc ? this.mk(scene, lc) : null; if (lo) lo.name = this.name + '-lo'; this.pairs.push([hi, lo]); }
     for (const c of this.cells.values()) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(c.p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(c.n, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c.c, 3));
       g.setIndex(c.v > 65535 ? new THREE.Uint32BufferAttribute(c.i, 1) : new THREE.Uint16BufferAttribute(c.i, 1)); g.computeBoundingSphere();
-      const m = new THREE.Mesh(g, propMat); m.matrixAutoUpdate = false; m.updateMatrix(); scene.add(m); this.meshes.push(m);
+      const m = new THREE.Mesh(g, propMat); m.name = this.name; m.matrixAutoUpdate = false; m.updateMatrix(); scene.add(m); this.meshes.push(m);
     }
     this.cells.clear();
-    return { calls: this.meshes.length, tris: Math.round(this.tris) };
+    return { calls: this.meshes.length + this.pairs.length * 2, tris: Math.round(this.tris) };
   }
   // hide chunks farther than maxD from the camera (cheap: a handful of meshes, called once per frame)
   lod(cam) {
     if (!this.maxD) return;
-    const d2 = this.maxD * this.maxD;
-    for (const m of this.meshes) { const s = m.geometry.boundingSphere, dx = s.center.x - cam.x, dz = s.center.z - cam.z; m.visible = dx * dx + dz * dz < d2 + s.radius * s.radius * 2; }
+    for (const [hi, lo] of this.pairs) {
+      const sp = hi.geometry.boundingSphere, dx = sp.center.x - cam.x, dz = sp.center.z - cam.z, d2 = dx * dx + dz * dz, rn = this.nearD + sp.radius, rf = this.maxD + sp.radius;
+      hi.visible = d2 < rn * rn; if (lo) lo.visible = !hi.visible && d2 < rf * rf;
+    }
+    for (const m of this.meshes) { const s = m.geometry.boundingSphere, r = this.maxD + s.radius, dx = s.center.x - cam.x, dz = s.center.z - cam.z; m.visible = dx * dx + dz * dz < r * r; }
   }
 }
