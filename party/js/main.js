@@ -417,7 +417,7 @@ function chaseCam(x, y, z, dist, side, up) {
 }
 function nearestCar() {
   const p = G.player; let best = null, bd = 1e9;
-  for (const v of G.vehicles || []) { if (v.dead || (v.driver && !canJack(v))) continue; if (!inFootprint(v, p.pos.x, p.pos.z, 2.2)) continue; const d = v.pos.distanceTo(p.pos); if (d < bd) { bd = d; best = v; } }
+  for (const v of G.vehicles || []) { if (v.dead || (v.driver && !canJack(v))) continue; if (!inFootprint(v, p.pos.x, p.pos.z, v.T.water ? 4.4 : 2.2)) continue; const d = v.pos.distanceTo(p.pos); if (d < bd) { bd = d; best = v; } }
   return best;
 }
 function toggleCar() {
@@ -434,6 +434,12 @@ function leaveCar(force) {
   const floorY = v.T.fly ? G.solidsNear(v.pos).reduce((m, b) => (v.pos.x > b.min.x - 0.5 && v.pos.x < b.max.x + 0.5 && v.pos.z > b.min.z - 0.5 && v.pos.z < b.max.z + 0.5 && b.max.y <= (v.alt || 0) + 0.3) ? Math.max(m, b.max.y) : m, 0) : 0;
   if (force && v.T.fly) { v.alt = floorY; v.speed = 0; poseVehicle(v, 0); }
   if (v.T.fly && (v.alt || 0) - floorY > 2.5) { HUD.centerMsg('太高了，先降落再下机', 1200); return; }
+  if (v.T.water) {   // boats: step ashore over the sea wall; refuse far out at sea
+    const B = G.map.bounds, m = 10.6, lx = Math.max(B.minX - m, Math.min(B.maxX + m, v.pos.x)), lz = Math.max(B.minZ - m, Math.min(B.maxZ + m, v.pos.z));
+    if (!force && Math.hypot(lx - v.pos.x, lz - v.pos.z) > 9) { HUD.centerMsg('离岸太远，先开到岸边', 1200); return; }
+    v.speed = 0; P.inCar = null; v.driver = null; if (P.auto) setAuto(false);
+    G.player.pos.set(lx, 0, lz); G.player.vel.set(0, 0, 0); G.player.onGround = true; return;
+  }
   P.inCar = null; v.driver = null; P.liftUp = P.liftDown = false; if (P.auto) setAuto(false);
   // free = no wall/prop in the body's height at that spot; support = ground or a roof right under the feet (so you can get out on a rooftop)
   const fr = (x, z, y = 0) => G.solidsNear({ x, z }).every(b => !(x + 0.5 > b.min.x && x - 0.5 < b.max.x && z + 0.5 > b.min.z && z - 0.5 < b.max.z && b.max.y > y + 0.3 && b.min.y < y + 1.75)) && !inFootprint(v, x, z, 0.5);

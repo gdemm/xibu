@@ -190,6 +190,12 @@ export function setupFree(G, h) {
   }
   G.onCivJack = (G2, h2, v) => civJack(G2, h2, v);
 
+  // ---- 游艇码头: drivable speed-yachts + jet skis moored along the north sea wall ----
+  { const ZN = G.map.bounds.minZ - 12, bs = [['yacht', -120], ['yacht', -100], ['yacht', -80], ['jetski', -60], ['jetski', -40]];
+    for (const c of spawnVehicles(scene, { kind: 'island', vehicleSpots: bs.map(([t, x]) => [t, x, ZN - (t === 'yacht' ? 5.3 : 3.1), 0]) })) {
+      h.toonify?.(c.mesh); c.alt = -0.9; poseVehicle(c, 0); c.boat = true; G.vehicles.push(c);
+    } }
+
   // ---- armoured cash truck (auto-drives the road loop) ----
   const sp = { x: 24, z: -70, yaw: 0 };
   const [v] = spawnVehicles(scene, { kind: 'island', vehicleSpots: [['armored', sp.x, sp.z, sp.yaw]] });

@@ -16,6 +16,8 @@ export const VTYPES = {
   convert: { name: '敞篷车', len: 2.2, wid: 0.98, max: 27, acc: 12, turn: 1.9, cam: 6.5, seatY: 1.6, hitK: 1 },
   police:  { name: '警车', len: 2.3, wid: 1.0, max: 29, acc: 13, turn: 1.9, cam: 7, seatY: 1.65, hitK: 1.1, closed: true },
   pickup:  { name: '皮卡', len: 2.5, wid: 1.05, max: 23, acc: 10, turn: 1.7, cam: 7.5, seatY: 1.9, hitK: 1.2, closed: true },
+  yacht:   { name: '快艇', len: 3.4, wid: 1.2, max: 26, acc: 9, turn: 1.3, cam: 10, seatY: 1.9, hitK: 0, water: true },
+  jetski:  { name: '摩托艇', len: 1.3, wid: 0.5, max: 30, acc: 16, turn: 2.4, cam: 5.5, seatY: 1.6, hitK: 0, water: true },
   armored: { name: '运钞车', len: 2.5, wid: 1.2, max: 17, acc: 7, turn: 1.5, cam: 8.5, seatY: 2.2, hitK: 1.5, closed: true },
 };
 // parked at the roadside (road edge + half width + gap), facing along the road
@@ -30,7 +32,7 @@ const SPOTS = [
   ['jeep', -120, -198.4, Math.PI / 2], ['jeep', 168.4, 40, 0], ['jeep', 150, 5.6, Math.PI / 2], ['moto', 60, -207.6, Math.PI / 2], ['moto', -168.4, 100, 0],
   ['moto', 168.4, -150, 0], ['bike', 140, -198.6, Math.PI / 2], ['bike', -4.9, -180, 0], ['truck', -168.1, -100, 0], ['heli', -100, -172, 0], ['bus', -150, 5.9, -Math.PI / 2],
 ];
-const COLORS = { coupe: [0xff4fa3, 0x2fe0d0, 0xffe14d, 0xb46bff], muscle: [0xff7a1a, 0x7dff4a, 0x3a86ff, 0xffffff], convert: [0xffb3c7, 0x9fe3d6, 0xfff0a8, 0xc9b6ff], police: [0xffffff], pickup: [0xff6b6b, 0x5fd3c8, 0xf4f1e8], jeep: [0x5b6b3a, 0x3b6fb6, 0xc0392b], moto: [0x111111, 0xc0392b, 0x2e6fb6], bike: [0x2e8b57, 0xd4a017, 0x3b6fb6, 0xe67e22], bus: [0xe1b12c, 0x3b7fc4], heli: [0x2f6e8f, 0xd35400], truck: [0x8a2f24, 0x2f5f8a, 0x51633a], armored: [0xe8eef5] };
+const COLORS = { coupe: [0xff4fa3, 0x2fe0d0, 0xffe14d, 0xb46bff], muscle: [0xff7a1a, 0x7dff4a, 0x3a86ff, 0xffffff], convert: [0xffb3c7, 0x9fe3d6, 0xfff0a8, 0xc9b6ff], police: [0xffffff], pickup: [0xff6b6b, 0x5fd3c8, 0xf4f1e8], jeep: [0x5b6b3a, 0x3b6fb6, 0xc0392b], moto: [0x111111, 0xc0392b, 0x2e6fb6], bike: [0x2e8b57, 0xd4a017, 0x3b6fb6, 0xe67e22], bus: [0xe1b12c, 0x3b7fc4], heli: [0x2f6e8f, 0xd35400], truck: [0x8a2f24, 0x2f5f8a, 0x51633a], armored: [0xe8eef5], yacht: [0x1f5fbf, 0xff4fa3, 0x16b3a8], jetski: [0xffe14d, 0xff4fa3, 0x2fe0d0] };
 
 const MAT = {}; const mat = (c, o) => MAT[c + (o || '')] || (MAT[c + (o || '')] = new THREE.MeshLambertMaterial(o ? { color: c, transparent: true, opacity: o } : { color: c }));
 function builder(g) {
@@ -77,7 +79,15 @@ function vehicleMesh(type, color) {
   if (KENNEY[type] && hasProps()) { const k = kenneyMesh(type, color); if (k) return k; }
   const g = new THREE.Group(), { box, wheel, wheels } = builder(g);
   const DARK = 0x2a2c30, METAL = 0x9aa0a6, GLASS = 0x8fb8d8;
-  if (type === 'jeep') {
+  if (type === 'yacht') {   // white speed-yacht: V hull, coloured stripe, cabin + tinted glass, flybridge rail
+    box(2.3, 0.9, 6.0, 0, 0.45, 0.3, 0xfafafa); box(1.5, 0.7, 1.2, 0, 0.55, -3.1, 0xfafafa); box(0.8, 0.5, 0.6, 0, 0.6, -3.9, 0xfafafa);
+    box(2.34, 0.22, 6.04, 0, 0.35, 0.3, color); box(1.9, 0.08, 4.6, 0, 0.94, 0.6, 0xc8a070);
+    box(1.7, 0.75, 2.0, 0, 1.35, 0.4, 0xffffff); box(1.72, 0.45, 1.6, 0, 1.4, 0.2, 0x2a4a6a); box(1.8, 0.08, 2.4, 0, 1.76, 0.4, 0xffffff);
+    box(0.06, 0.4, 2.2, -0.85, 1.98, 0.4, METAL); box(0.06, 0.4, 2.2, 0.85, 1.98, 0.4, METAL); box(0.5, 0.35, 0.4, 0.4, 1.2, -0.7, DARK);
+  } else if (type === 'jetski') {   // stand-up jet ski
+    box(0.9, 0.5, 2.5, 0, 0.35, 0.1, color); box(0.6, 0.3, 0.8, 0, 0.55, -1.05, color); box(0.55, 0.22, 1.0, 0, 0.72, 0.4, DARK);
+    box(0.08, 0.5, 0.08, 0, 0.9, -0.45, METAL); box(0.75, 0.06, 0.06, 0, 1.15, -0.45, METAL); box(0.92, 0.1, 2.52, 0, 0.12, 0.1, 0xfafafa);
+  } else if (type === 'jeep') {
     box(2.0, 0.55, 3.8, 0, 0.75, 0, color); box(1.9, 0.35, 1.2, 0, 1.15, -1.25, color);
     box(1.8, 0.6, 0.06, 0, 1.6, -0.5, GLASS, 0.5);
     box(0.12, 0.9, 0.12, -0.85, 1.5, 0.6, METAL); box(0.12, 0.9, 0.12, 0.85, 1.5, 0.6, METAL); box(1.82, 0.12, 0.12, 0, 1.95, 0.6, METAL);
@@ -154,6 +164,16 @@ export function spawnVehicles(scene, map) {
   });
 }
 
+// 2026-11 free mode boats: water = outside the Miami sea wall, not on the downtown island / piers / cruise liner
+export function isWater(map, x, z) {
+  const B = map.bounds; if (!B) return false; const m = 13.6;
+  if (x > B.minX - m && x < B.maxX + m && z > B.minZ - m && z < B.maxZ + m) return false;
+  if (Math.abs(x) > 300 || Math.abs(z) > 300) return false;
+  if (x < -185 && Math.abs(z) < 167) return false;
+  if (Math.abs(x - (B.maxX + 120)) < 12.5 && Math.abs(z + 40) < 61) return false;
+  const ZN = B.minZ - 12; if (z < ZN - 0.5 && z > ZN - 28) for (let k = 0; k < 6; k++) if (Math.abs(x - (-130 + k * 20)) < 1.4) return false;
+  return true;
+}
 export function driveVehicle(v, dt, throttle, steer, map, others = []) {
   const T = v.T;
   if (throttle) { const braking = Math.sign(throttle) !== Math.sign(v.speed) && Math.abs(v.speed) > 0.5; v.speed += throttle * (braking ? T.acc * 2 : T.acc) * dt; }
@@ -165,6 +185,12 @@ export function driveVehicle(v, dt, throttle, steer, map, others = []) {
   const fx = -Math.sin(v.yaw), fz = -Math.cos(v.yaw);
   const nx = v.pos.x + fx * v.speed * dt, nz = v.pos.z + fz * v.speed * dt;
   let hit = 0;
+  if (T.water) {
+    const ok = [-1, 0, 1].every(t => isWater(map, nx + fx * T.len * t, nz + fz * T.len * t) && isWater(map, nx + fz * T.wid * t, nz - fx * T.wid * t));
+    if (ok) { v.pos.x = nx; v.pos.z = nz; } else { hit = Math.abs(v.speed) * 0.3; v.speed *= -0.3; }
+    v.alt = -0.9 + Math.sin(performance.now() / 420 + v.pos.x) * 0.06; v.lean = (v.lean || 0) * 0.9 - steer * Math.min(1, Math.abs(v.speed) / 10) * 0.012;
+    return hit;
+  }
   if (collides(v, nx, nz, map, others)) { hit = Math.abs(v.speed); v.speed *= -0.25; }
   else { v.pos.x = nx; v.pos.z = nz; }
   const B = map.bounds; v.pos.x = Math.max(B.minX - 8, Math.min(B.maxX + 8, v.pos.x)); v.pos.z = Math.max(B.minZ - 8, Math.min(B.maxZ + 8, v.pos.z));
@@ -218,7 +244,7 @@ export function poseVehicle(v, dt) {
 // axis-aligned box around a vehicle so people can't walk through it
 export function vehicleBox(v) {
   const T = v.T, c = Math.abs(Math.cos(v.yaw)), s = Math.abs(Math.sin(v.yaw));
-  const hx = T.wid * c + T.len * s, hz = T.wid * s + T.len * c, h = { jeep: 1.6, moto: 1.1, bike: 1.0, bus: 3.1, truck: 2.6, heli: 2.6, armored: 3.0 }[v.type];
+  const hx = T.wid * c + T.len * s, hz = T.wid * s + T.len * c, h = { jeep: 1.6, moto: 1.1, bike: 1.0, bus: 3.1, truck: 2.6, heli: 2.6, armored: 3.0, yacht: 2.2, jetski: 1.2 }[v.type] || 1.6;
   if (!v.box) v.box = new THREE.Box3(); const y0 = v.alt || 0;
   v.box.min.set(v.pos.x - hx, y0, v.pos.z - hz); v.box.max.set(v.pos.x + hx, y0 + h, v.pos.z + hz);
   return v.box;
