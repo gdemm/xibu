@@ -5,7 +5,7 @@ import { critterMaterial } from './critter.js';
 
 const ALT = 75, PLANE_SPEED = 26, FALL_V = 22, CHUTE_V = 5.5, FALL_H = 22, CHUTE_H = 14, AUTO_OPEN = 30;
 const rnd = (a, b) => a + Math.random() * (b - a);
-const HALF = 132;
+const HALF = 132;     // (old square island; the route / clamp below use G.map.bounds)
 
 // ---------------- meshes ----------------
 let PLANE_GEO = null, PROP_GEO = null, CHUTE_GEO = null, CRATE_GEO = null, LID_GEO = null;
@@ -79,9 +79,10 @@ function pushOut(e, b) {
 
 // ---------------- plane & parachute ----------------
 export function setupDrop(G, scene) {
+  const BD = G.map.bounds, C = new THREE.Vector3((BD.minX + BD.maxX) / 2, 0, (BD.minZ + BD.maxZ) / 2), R = Math.hypot(BD.maxX - BD.minX, BD.maxZ - BD.minZ) / 2;
   const ang = Math.random() * Math.PI * 2, dir = new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang));
-  const side = new THREE.Vector3(-dir.z, 0, dir.x), off = rnd(-45, 45);
-  const a = dir.clone().multiplyScalar(-195).addScaledVector(side, off).setY(ALT), b = dir.clone().multiplyScalar(195).addScaledVector(side, off).setY(ALT);
+  const side = new THREE.Vector3(-dir.z, 0, dir.x), off = rnd(-0.22, 0.22) * R;
+  const a = C.clone().addScaledVector(dir, -R - 18).addScaledVector(side, off).setY(ALT), b = C.clone().addScaledVector(dir, R + 18).addScaledVector(side, off).setY(ALT);
   const mesh = new THREE.Group(); mesh.add(new THREE.Mesh(planeGeo(), critterMaterial()));
   const props = [];
   for (const s of [-1, 1]) { const p = new THREE.Mesh(propGeo(), critterMaterial()); p.position.set(s * 4.2, -0.5, -2.75); mesh.add(p); props.push(p); }
@@ -90,7 +91,7 @@ export function setupDrop(G, scene) {
   G.drop = { a, b, dir, len, k: 0, pos: a.clone(), mesh, props, yaw: Math.atan2(-dir.x, -dir.z), duration: len / PLANE_SPEED, over: false, chutes: [] };
   mesh.position.copy(a); mesh.rotation.set(0, G.drop.yaw, 0);
   // fraction of the line that lies over the island
-  const inside = (k) => { const p = a.clone().lerp(b, k); return Math.abs(p.x) < HALF - 10 && Math.abs(p.z) < HALF - 10; };
+  const inside = (k) => { const p = a.clone().lerp(b, k); return p.x > BD.minX + 12 && p.x < BD.maxX - 12 && p.z > BD.minZ + 12 && p.z < BD.maxZ - 12; };
   // the jump window ends where the route leaves the island: everyone still aboard is ejected there
   let kEnd = 0.95; for (let t = 0.95; t > 0.5; t -= 0.01) if (inside(t)) { kEnd = t; break; }
   let kStart = 0.05; for (let t = 0.05; t < 0.5; t += 0.01) if (inside(t)) { kStart = t; break; }
@@ -126,7 +127,7 @@ export function airStep(G, e, dt, mx, mz) {
   e.vel.x += (mx * hs - e.vel.x) * Math.min(1, dt * 2); e.vel.z += (mz * hs - e.vel.z) * Math.min(1, dt * 2);
   e.vel.y += (-vs - e.vel.y) * Math.min(1, dt * (fall ? 1.5 : 3));
   e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt; e.pos.y += e.vel.y * dt;
-  e.pos.x = Math.max(-HALF, Math.min(HALF, e.pos.x)); e.pos.z = Math.max(-HALF, Math.min(HALF, e.pos.z));
+  const BD = G.map.bounds; e.pos.x = Math.max(BD.minX + 8, Math.min(BD.maxX - 8, e.pos.x)); e.pos.z = Math.max(BD.minZ + 8, Math.min(BD.maxZ - 8, e.pos.z));
   const gr = groundAt(G, e.pos.x, e.pos.z, e.pos.y + 0.5);
   if (gr.nudge && e.pos.y < gr.nudge.max.y + 0.5) pushOut(e, gr.nudge);
   if (fall && e.pos.y - gr.top < (e.isPlayer ? AUTO_OPEN : e.openAt)) openChute(e);

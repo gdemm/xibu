@@ -1,5 +1,6 @@
 // 载具: 吉普 / 摩托 / 自行车 / 大巴 / 卡车, parked on the island roads. Player-only driving.
 import * as THREE from 'three';
+import { PROPS, propSize, hasProps } from './props.js';
 
 // len/wid: footprint half sizes; max: top speed m/s; acc; turn; cam: chase distance; seatY: driver eye height
 export const VTYPES = {
@@ -18,6 +19,9 @@ const SPOTS = [
   ['bus', 5.9, 112, Math.PI], ['bus', -100, -5.9, -Math.PI / 2],
   ['heli', -24, 18, 0], ['heli', 60, -30, Math.PI / 2],
   ['truck', 37.9, -52, 0], ['truck', 96, 5.9, -Math.PI / 2], ['truck', 70, -5.9, Math.PI / 2],
+  // 2026-11 扩图: the new ring / coast roads
+  ['jeep', -120, -198.4, Math.PI / 2], ['jeep', 168.4, 40, 0], ['jeep', 150, 5.6, Math.PI / 2], ['moto', 60, -207.6, Math.PI / 2], ['moto', -168.4, 100, 0],
+  ['moto', 168.4, -150, 0], ['bike', 140, -198.6, Math.PI / 2], ['bike', -4.9, -180, 0], ['truck', -168.1, -100, 0], ['heli', -100, -172, 0], ['bus', -150, 5.9, -Math.PI / 2],
 ];
 const COLORS = { jeep: [0x5b6b3a, 0x3b6fb6, 0xc0392b], moto: [0x111111, 0xc0392b, 0x2e6fb6], bike: [0x2e8b57, 0xd4a017, 0x3b6fb6, 0xe67e22], bus: [0xe1b12c, 0x3b7fc4], heli: [0x2f6e8f, 0xd35400], truck: [0x8a2f24, 0x2f5f8a, 0x51633a] };
 
@@ -28,7 +32,41 @@ function builder(g) {
   const wheel = (r, t, x, y, z) => { const geo = new THREE.CylinderGeometry(r, r, t, 12); geo.rotateZ(Math.PI / 2); const w = new THREE.Mesh(geo, mat(0x1d1f22)); w.position.set(x, y, z); g.add(w); wheels.push({ w, r }); return w; };
   return { box, wheel, wheels };
 }
+// 2026-11: jeep / truck use the Kenney Car Kit (CC0) SUV and truck, scaled to the same footprint (collision unchanged);
+// moto / bike / bus / heli keep their procedural meshes (no CC0 match in the kit). Baked models have no spinning wheels.
+const KENNEY = { jeep: { k: 'car_suv', flip: true }, truck: { k: 'car_truck', flip: true } };
+const KMAT = {};
+function kenneyMesh(type, color) {
+  const K = KENNEY[type], geo = PROPS[K.k]; if (!geo) return null;
+  const T = VTYPES[type], sz = propSize(K.k), s = Math.min((T.len * 2) / sz.z, (T.wid * 2) / sz.x) * 1.04;
+  const c = new THREE.Color(0xffffff).lerp(new THREE.Color(color), 0.35), key = type + c.getHex();
+  const m = new THREE.Mesh(geo, KMAT[key] || (KMAT[key] = new THREE.MeshLambertMaterial({ vertexColors: true, color: c })));
+  m.scale.setScalar(s); if (K.flip) m.rotation.y = Math.PI;     // Kenney cars face +Z, ours drive toward -Z
+  const g = new THREE.Group(); g.add(m); g.userData.wheels = []; g.userData.kenney = true;
+  // 2026-11 帧率: a ~15% simplified copy drawn beyond ~40 m (main.js swaps them)
+  const lg = PROPS[K.k + '_lo']; if (lg) { const lo = new THREE.Mesh(lg, m.material); lo.scale.copy(m.scale); lo.rotation.copy(m.rotation); lo.visible = false; g.add(lo); g.userData.hi = m; g.userData.lo = lo; }
+  return g;
+}
+// 2026-11 帧率: parked procedural vehicles are 8-20 parts each (one draw call per part). Beyond ~40 m main.js shows instead one merged,
+// vertex-coloured copy of the opaque parts (1 draw call); the real parts (spinning wheels, rotor) come back up close.
+const FARMAT = new THREE.MeshLambertMaterial({ vertexColors: true });
+const _hsl = {}; function boost(c) { c.getHSL(_hsl); c.setHSL(_hsl.h, Math.min(1, _hsl.s * 1.35 + 0.08), Math.min(0.92, _hsl.l * 1.08 + 0.02)); return c; }
+function farLod(g) {
+  g.updateMatrixWorld(true); const inv = g.matrixWorld.clone().invert(), M = new THREE.Matrix4(), P = [], N = [], C = [];
+  g.traverse(o => {
+    if (!o.isMesh || o.material.transparent) return;
+    const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); geo.applyMatrix4(M.multiplyMatrices(inv, o.matrixWorld));
+    const c = boost(o.material.color.clone()), pa = geo.attributes.position, na = geo.attributes.normal;   // same colour boost as party.js toonify
+    for (let i = 0; i < pa.count; i++) { P.push(pa.getX(i), pa.getY(i), pa.getZ(i)); N.push(na.getX(i), na.getY(i), na.getZ(i)); C.push(c.r, c.g, c.b); }
+    geo.dispose();
+  });
+  if (!P.length) return;
+  const hi = new THREE.Group(); while (g.children.length) hi.add(g.children[0]); g.add(hi);
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); geo.computeBoundingSphere();
+  const lo = new THREE.Mesh(geo, FARMAT); lo.visible = false; g.add(lo); g.userData.hi = hi; g.userData.lo = lo;
+}
 function vehicleMesh(type, color) {
+  if (KENNEY[type] && hasProps()) { const k = kenneyMesh(type, color); if (k) return k; }
   const g = new THREE.Group(), { box, wheel, wheels } = builder(g);
   const DARK = 0x2a2c30, METAL = 0x9aa0a6, GLASS = 0x8fb8d8;
   if (type === 'jeep') {
@@ -71,6 +109,7 @@ function vehicleMesh(type, color) {
     for (const z of [-1.1, 1.3]) for (const x of [-1.05, 1.05]) wheel(0.55, 0.4, x, 0.55, z);
   }
   g.userData.wheels = wheels;
+  farLod(g);
   return g;
 }
 

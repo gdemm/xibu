@@ -38,14 +38,14 @@ class Bucket {
   }
   get tris() { return this.p.length / 9; }
 }
-class Grid {   // buckets keyed by 70 m cells
-  constructor(half, n = 4) { this.half = half; this.n = n; this.cells = new Map(); }
+class Grid {   // buckets keyed by ~70 m cells around (cx, cz)
+  constructor(half, n = 4, cx = 0, cz = 0, lodD = 0) { this.half = half; this.n = n; this.cx = cx; this.cz = cz; this.lodD = lodD; this.cells = new Map(); }
   at(x, z) {
     const n = this.n, s = (this.half * 2) / n;
-    const i = Math.max(0, Math.min(n - 1, Math.floor((x + this.half) / s))), j = Math.max(0, Math.min(n - 1, Math.floor((z + this.half) / s)));
+    const i = Math.max(0, Math.min(n - 1, Math.floor((x - this.cx + this.half) / s))), j = Math.max(0, Math.min(n - 1, Math.floor((z - this.cz + this.half) / s)));
     const k = i * n + j; let b = this.cells.get(k); if (!b) this.cells.set(k, b = new Bucket()); return b;
   }
-  build(scene, mat) { let tris = 0, calls = 0; for (const b of this.cells.values()) { tris += b.tris; const m = b.mesh(mat); if (m) { scene.add(m); calls++; } } return { tris, calls }; }
+  build(scene, mat, name = '', lods = null) { let tris = 0, calls = 0; for (const b of this.cells.values()) { tris += b.tris; const m = b.mesh(mat); if (m) { m.name = name; if (this.lodD && lods) { m.userData.lodD = this.lodD; lods.push(m); } scene.add(m); calls++; } } return { tris, calls }; }
 }
 
 // ---------- unit geometries ----------
@@ -82,28 +82,37 @@ const BARREL_COLS = [0xe8463c, 0x2f7fe0, 0x35b06a, 0xf2b33a];
 const SHUTTER_COLS = [0x3f8fd6, 0x2ea86a, 0xe0574f, 0x8a63d2];
 const UMB_COLS = [[0xff4d6d, 0xffffff], [0x2ec4b6, 0xffffff], [0xffbe0b, 0xff6b35], [0x3a86ff, 0xffe14d]];
 
-export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS, quality }) {
+export function decorateIsland(scene, { solids, HALF: HALF0, B: BD, BLD, TREES, FENCES, ROADS, quality, lods = null }) {
+  // bounds: the island may be asymmetric (2026-11 扩图); scatter ranges use bounds, buckets cover it with a 6x6 grid
+  BD = BD || { minX: -HALF0, maxX: HALF0, minZ: -HALF0, maxZ: HALF0 };
+  const HALF = Math.max(BD.maxX - BD.minX, BD.maxZ - BD.minZ) / 2, CX = (BD.minX + BD.maxX) / 2, CZ = (BD.minZ + BD.maxZ) / 2;
+  const RX = (m) => rr(BD.minX + m, BD.maxX - m), RZ = (m) => rr(BD.minZ + m, BD.maxZ - m);
+  const areaK = ((BD.maxX - BD.minX) * (BD.maxZ - BD.minZ)) / (280 * 280);
   seed = 4242;
   const q = quality === 'low' ? 0.35 : quality === 'mid' ? 0.75 : 1;
-  const solid = new Grid(HALF + 20), grass = new Grid(HALF + 20), paint = new Bucket();
-  const S = (x, z) => solid.at(x, z), Gr = (x, z) => grass.at(x, z);
+  // 2026-11 帧率: three distance tiers, each in its own grid of small cells (frustum culling works per cell):
+  //   trees  -> 'solid' (drawn to the fog), building trims / fences / lamps / bushes / pebbles / umbrellas -> 'det' (hidden beyond DD),
+  //   grass tufts / flower stems -> 'grass' (hidden beyond DG). Only the cells near the camera carry the small stuff.
+  const DD = { low: 60, mid: 72, high: 130 }[quality] || 72, DG = { low: 40, mid: 50, high: 80 }[quality] || 50;
+  const solid = new Grid(HALF + 20, 4, CX, CZ), det = new Grid(HALF + 20, 10, CX, CZ, DD), detG = new Grid(HALF + 20, 10, CX, CZ, DD), grass = new Grid(HALF + 20, 10, CX, CZ, DG), paint = new Bucket();
+  const S = (x, z) => det.at(x, z), T = (x, z) => solid.at(x, z), Gr = (x, z) => grass.at(x, z);
   const blockedAt = (x, z, r) => solids.some(b => b.max.y > 0.05 && x + r > b.min.x && x - r < b.max.x && z + r > b.min.z && z - r < b.max.z);
   const onRoad = (x, z, pad = 0.6) => ROADS.some(([x0, z0, x1, z1]) => x > x0 - pad && x < x1 + pad && z > z0 - pad && z < z1 + pad);
-  const inField = (x, z) => Math.abs(x) < HALF - 13 && Math.abs(z) < HALF - 13;          // the grass plane (sand beyond)
-  const stat = {}; const tot = () => { let n = 0; for (const g of [solid, grass]) for (const b of g.cells.values()) n += b.tris; return n; }; let last = 0; const mark = (k) => { const n = tot(); stat[k] = Math.round(n - last); last = n; };
+  const inField = (x, z) => x > BD.minX + 7 && x < BD.maxX - 7 && z > BD.minZ + 7 && z < BD.maxZ - 7;          // the grass plane (sand beyond)
+  const stat = {}; const tot = () => { let n = 0; for (const g of [solid, det, detG, grass]) for (const b of g.cells.values()) n += b.tris; return n; }; let last = 0; const mark = (k) => { const n = tot(); stat[k] = Math.round(n - last); last = n; };
 
   // ---------- trees: two-tier pines and clustered round crowns, varied size / colour ----------
   for (const t of TREES) {
     const k = rr(0.8, 1.2), y = 0;
     if (t.cone) {
       const c = LEAF_COLS[(rnd() * LEAF_COLS.length) | 0], c2 = new THREE.Color(c).multiplyScalar(0.78).getHex();
-      S(t.x, t.z).add(CONE7, mat4(t.x, y + 4.2 * k, t.z, 0, rnd() * 6, 0, 2.4 * k, 3.6 * k, 2.4 * k), c2);
-      S(t.x, t.z).add(CONE7, mat4(t.x, y + 6.0 * k, t.z, 0, rnd() * 6, 0, 1.75 * k, 3.0 * k, 1.75 * k), c);
-      S(t.x, t.z).add(CONE7, mat4(t.x, y + 7.4 * k, t.z, 0, rnd() * 6, 0, 1.0 * k, 1.8 * k, 1.0 * k), new THREE.Color(c).lerp(new THREE.Color(0xffffff), 0.12).getHex());
+      T(t.x, t.z).add(CONE7, mat4(t.x, y + 4.2 * k, t.z, 0, rnd() * 6, 0, 2.4 * k, 3.6 * k, 2.4 * k), c2);
+      T(t.x, t.z).add(CONE7, mat4(t.x, y + 6.0 * k, t.z, 0, rnd() * 6, 0, 1.75 * k, 3.0 * k, 1.75 * k), c);
+      T(t.x, t.z).add(CONE7, mat4(t.x, y + 7.4 * k, t.z, 0, rnd() * 6, 0, 1.0 * k, 1.8 * k, 1.0 * k), new THREE.Color(c).lerp(new THREE.Color(0xffffff), 0.12).getHex());
     } else {
       const pal = rnd() < 0.12 ? AUTUMN : ROUND_COLS, c = pal[(rnd() * pal.length) | 0];
-      S(t.x, t.z).add(ICO, mat4(t.x, 4.4 * k, t.z, rnd(), rnd() * 6, 0, 2.3 * k, 2.0 * k, 2.3 * k), c);
-      for (let i = 0; i < 2; i++) { const a = rnd() * 6.28, d = 1.3 * k; S(t.x, t.z).add(ICO, mat4(t.x + Math.cos(a) * d, (3.9 + rnd() * 1.2) * k, t.z + Math.sin(a) * d, rnd(), rnd() * 6, 0, 1.3 * k, 1.2 * k, 1.3 * k), new THREE.Color(c).multiplyScalar(0.85 + rnd() * 0.25).getHex()); }
+      T(t.x, t.z).add(ICO, mat4(t.x, 4.4 * k, t.z, rnd(), rnd() * 6, 0, 2.3 * k, 2.0 * k, 2.3 * k), c);
+      for (let i = 0; i < 2; i++) { const a = rnd() * 6.28, d = 1.3 * k; T(t.x, t.z).add(ICO, mat4(t.x + Math.cos(a) * d, (3.9 + rnd() * 1.2) * k, t.z + Math.sin(a) * d, rnd(), rnd() * 6, 0, 1.3 * k, 1.2 * k, 1.3 * k), new THREE.Color(c).multiplyScalar(0.85 + rnd() * 0.25).getHex()); }
     }
     // roots / base tufts
     for (let i = 0; i < 3 * q; i++) { const a = rnd() * 6.28, d = rr(0.5, 1.0); Gr(t.x, t.z).add(TUFT, mat4(t.x + Math.cos(a) * d, 0, t.z + Math.sin(a) * d, 0, rnd() * 6, 0, 0.3, rr(0.25, 0.4), 0.3), 0x3f8f2e, 0x8fd65a); }
@@ -111,10 +120,10 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
 
   mark('trees');
   // ---------- ground scatter: tufts, flowers, pebbles, bushes ----------
-  const nTuft = Math.round(2600 * q), nFlower = Math.round(110 * q), nPebble = Math.round(220 * q);
+  const sK = Math.min(1.6, areaK), nTuft = Math.round(2600 * q * sK), nFlower = Math.round(110 * q * areaK), nPebble = Math.round(220 * q * sK);
   let placed = 0;
   for (let i = 0; i < nTuft * 2 && placed < nTuft; i++) {
-    const x = rr(-HALF + 10, HALF - 10), z = rr(-HALF + 10, HALF - 10);
+    const x = RX(10), z = RZ(10);
     if (onRoad(x, z) || blockedAt(x, z, 0.3)) continue;
     const h = rr(0.26, 0.46), w = rr(0.32, 0.46);
     const sand = !inField(x, z);
@@ -123,7 +132,7 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
   }
   stat.tufts = placed;
   for (let i = 0; i < nFlower; i++) {   // little patches of 3-6 flowers of one colour
-    const cx = rr(-HALF + 14, HALF - 14), cz = rr(-HALF + 14, HALF - 14); if (onRoad(cx, cz, 2) || blockedAt(cx, cz, 1.5)) continue;
+    const cx = RX(14), cz = RZ(14); if (onRoad(cx, cz, 2) || blockedAt(cx, cz, 1.5)) continue;
     const col = FLOWER_COLS[(rnd() * FLOWER_COLS.length) | 0], n = 3 + ((rnd() * 4) | 0);
     for (let k = 0; k < n; k++) {
       const x = cx + rr(-0.9, 0.9), z = cz + rr(-0.9, 0.9), h = rr(0.22, 0.38);
@@ -133,7 +142,7 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
     }
   }
   for (let i = 0; i < nPebble; i++) {
-    const x = rr(-HALF + 4, HALF - 4), z = rr(-HALF + 4, HALF - 4); if (onRoad(x, z, 0.2) || blockedAt(x, z, 0.4)) continue;
+    const x = RX(4), z = RZ(4); if (onRoad(x, z, 0.2) || blockedAt(x, z, 0.4)) continue;
     const s = rr(0.08, 0.22), g = 0x9a958c + (((rnd() * 3) | 0) * 0x080808);
     S(x, z).add(PEBBLE, mat4(x, s * 0.25, z, rnd(), rnd() * 6, rnd(), s * rr(1, 1.6), s * 0.6, s), g);
   }
@@ -255,20 +264,20 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
   seed = 7007;   // each section has its own sequence, so quality (scatter counts) never moves buildings / props
   // ---------- beach: umbrellas + towels; foam line on the water ----------
   for (let i = 0; i < 10; i++) {
-    const side = (rnd() * 4) | 0, a = rr(-HALF + 20, HALF - 20), d = rr(HALF - 8, HALF + 6);
-    const x = side === 0 ? a : side === 1 ? a : side === 2 ? d : -d, z = side === 0 ? d : side === 1 ? -d : a;
+    const side = (rnd() * 4) | 0, a = side < 2 ? RX(20) : RZ(20), d = rr(-8, 6);
+    const x = side < 2 ? a : side === 2 ? BD.maxX + d : BD.minX - d, z = side === 0 ? BD.maxZ + d : side === 1 ? BD.minZ - d : a;
     if (blockedAt(x, z, 2.2) || onRoad(x, z, 2)) continue;
     const [c1, c2] = UMB_COLS[(rnd() * UMB_COLS.length) | 0], B = S(x, z);
     (stat.umbrellas || (stat.umbrellas = [])).push([Math.round(x), Math.round(z)]);
     B.add(CYL8, mat4(x, 1.15, z, 0, 0, -0.12, 0.04, 2.3, 0.04), 0xf4efe6);
-    for (let k = 0; k < 8; k++) Gr(x, z).add(WEDGES[k], mat4(x + 0.14, 2.35, z, 0, 0, 0, 1.25, 0.5, 1.25), k % 2 ? c1 : c2);
+    for (let k = 0; k < 8; k++) detG.at(x, z).add(WEDGES[k], mat4(x + 0.14, 2.35, z, 0, 0, 0, 1.25, 0.5, 1.25), k % 2 ? c1 : c2);
     B.add(PETALS, mat4(x + 0.14, 2.62, z, 0, 0, 0, 0.07, 0.07, 0.07), 0xffffff);
     const ry = rnd() * 3; B.add(BOX, mat4(x + Math.cos(ry) * 1.2, 0.015, z + Math.sin(ry) * 1.2, 0, -ry, 0, 1.8, 0.02, 0.8), c1);
   }
-  const foam = new Bucket(), F = HALF + 12;
+  const foam = new Bucket(), W = BD.maxX - BD.minX + 24, D = BD.maxZ - BD.minZ + 24;
   for (const s of [-1, 1]) {
-    foam.add(PLANE, mat4(0, -1.14, s * (F + 2.2), 0, 0, 0, F * 2 + 9, 1, 4.4), 0xffffff);
-    foam.add(PLANE, mat4(s * (F + 2.2), -1.14, 0, 0, 0, 0, 4.4, 1, F * 2 - 0.2), 0xffffff);
+    foam.add(PLANE, mat4(CX, -1.14, CZ + s * (D / 2 + 2.2), 0, 0, 0, W + 9, 1, 4.4), 0xffffff);
+    foam.add(PLANE, mat4(CX + s * (W / 2 + 2.2), -1.14, CZ, 0, 0, 0, 4.4, 1, D - 0.2), 0xffffff);
   }
 
   mark('beach');
@@ -285,9 +294,9 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
       .replace('#include <color_fragment>', '#include <color_fragment>\n{ vec2 fw = fwidth(vPW.xz); float px = max(max(fw.x, fw.y), 1e-4); float cov = clamp(0.3 / (3.0 * px), 0.0, 1.0); cov = cov * cov * (3.0 - 2.0 * cov); diffuseColor.rgb = mix(vec3(0.149, 0.162, 0.216), diffuseColor.rgb, cov); }');
   };
   const foamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false });
-  const a = solid.build(scene, solidMat), b = grass.build(scene, grassMat);
+  const a = solid.build(scene, solidMat, 'deco-solid'), b = grass.build(scene, grassMat, 'deco-grass', lods), d1 = det.build(scene, solidMat, 'deco-det', lods), d2 = detG.build(scene, grassMat, 'deco-det', lods);
   const pm = paint.mesh(paintMat); if (pm) { pm.renderOrder = 1; scene.add(pm); }
   const fm = foam.mesh(foamMat); if (fm) scene.add(fm);
-  stat.solidTris = Math.round(a.tris); stat.grassTris = Math.round(b.tris); stat.paintTris = Math.round(paint.tris); stat.meshes = a.calls + b.calls + (pm ? 1 : 0) + (fm ? 1 : 0);
+  stat.solidTris = Math.round(a.tris); stat.detTris = Math.round(d1.tris + d2.tris); stat.grassTris = Math.round(b.tris); stat.paintTris = Math.round(paint.tris); stat.meshes = a.calls + b.calls + d1.calls + d2.calls + (pm ? 1 : 0) + (fm ? 1 : 0);
   return stat;
 }

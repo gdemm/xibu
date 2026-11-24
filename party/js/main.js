@@ -90,6 +90,7 @@ function buildWorld(kind = 'ship') {
   G.map = kind === 'island' ? buildIsland(scene, S.quality) : buildMap(scene, S.quality);
   builtQuality = S.quality + kind;
   scene.fog = new THREE.Fog(0xbfe6ff, 45, { low: 140, mid: 190, high: 260 }[S.quality]);
+  camera.far = scene.fog.far + 25; camera.updateProjectionMatrix();     // nothing past the fog is drawn (the bigger island stays cheap)
   G.sky = partyLook(scene, S.quality, kind);
   tracers.length = 0;
   const tm = new THREE.LineBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.9 });
@@ -307,7 +308,7 @@ function kill(t, attacker, w, head) {
 }
 BRH = {
   makeEntity, makeBot: (n, t, skin) => makeBot(n, t, skin), setWeapon, HUD, WEAPONS, sfx, $, endMatch,
-  damage: (t, a, att, w, head, zone) => damage(t, a, att, w, head, zone), scene,
+  damage: (t, a, att, w, head, zone) => damage(t, a, att, w, head, zone), scene, camera,
   resetBot: (e) => { resetSoldier(e.mesh); e.mesh.visible = true; e.mesh.rotation.set(0, e.yaw, 0); e.mesh.position.copy(e.pos); e.aiState = 'patrol'; e.path = null; e.target = null; e.burstLeft = 4; e.lastSeen.copy(e.pos); },
 };
 G.brGoal = brGoal;
@@ -333,7 +334,7 @@ const thirdPerson = () => !!P.inCar || !!G.player?.air || (S.tp && !P.scoped);
 function makeBody() { if (P.body) scene.remove(P.body); P.body = createSoldier(G.mode === 'br' ? 'player' : G.player.team, { char: pickedId() }); P.body.visible = false; scene.add(P.body); $('bView')?.classList.toggle('on', !!S.tp); }
 function poseBody(dt, mx, mz, speed, seated) {
   const b = P.body; if (!b) return;
-  b.visible = G.player.alive && thirdPerson() && !(P.inCar && (P.inCar.type === 'bus' || P.inCar.type === 'truck'));
+  b.visible = G.player.alive && thirdPerson() && !(P.inCar && (P.inCar.type === 'bus' || P.inCar.type === 'truck' || P.inCar.mesh?.userData.kenney));
   if (!b.visible) return;
   b.position.copy(G.player.pos); b.rotation.set(0, G.player.yaw, 0);
   if (seated) { const v = P.inCar; b.rotation.set(0, v.yaw, v.lean, 'YXZ'); b.position.y += { jeep: 0.55, moto: 0.45, bike: 0.5 }[v.type] || 0.5; if (v.type === 'jeep') { b.position.x += Math.cos(v.yaw) * -0.45; b.position.z += -Math.sin(v.yaw) * -0.45; } }
@@ -790,7 +791,7 @@ function touchEnd(e) {
 touchLayer.addEventListener('touchend', touchEnd); touchLayer.addEventListener('touchcancel', touchEnd);
 
 // ---------------- UI wiring ----------------
-const lobbyOpts = { mode: 'br', team: 'blue', size: 5, target: 30, diff: 'normal', brSize: 16, brMap: 'island' };
+const lobbyOpts = { mode: 'br', team: 'blue', size: 5, target: 30, diff: 'normal', brSize: 24, brMap: 'island' };
 document.querySelectorAll('#lobby .seg').forEach(seg => seg.addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   seg.querySelectorAll('button').forEach(x => x.classList.remove('on', 'blue', 'red'));
@@ -1016,6 +1017,7 @@ lobbyChars($('lobby'));
 const _hvT = new THREE.Vector3();
 const mm = $('minimap'), mmCtx = mm.getContext('2d');
 let last = performance.now(), lastFrame = 0, frames = 0, fpsT = 0, mmT = 0;
+const _fr = new THREE.Frustum(), _frM = new THREE.Matrix4();
 function loop(ts) {
   requestAnimationFrame(loop);
   const minGap = 1000 / S.fps - 1.5;
@@ -1044,7 +1046,14 @@ function loop(ts) {
   if (G.state === 'showcase') G.showcaseTick(dt);
   for (const tr of tracers) if (tr.l.visible) { tr.t -= dt; tr.l.material.opacity = Math.max(0, tr.t / 0.07); if (tr.t <= 0) tr.l.visible = false; }
   for (const s of sparks) if (s.m.visible) { s.t -= dt; s.m.scale.setScalar(1 + (0.12 - s.t) * 6); s.m.material.opacity = Math.max(0, s.t / 0.12); if (s.t <= 0) s.m.visible = false; }
-  G.map.update(G.now);
+  G.map.update(G.now); G.map.lod?.(camera.position);
+  if (G.vehicles?.length) {   // 2026-11 扩图: parked vehicles far in the fog are skipped (26 on the bigger island; most are many-part meshes)
+    const vd = { low: 90, mid: 105, high: 180 }[S.quality] || 105, vd2 = vd * vd, cx = camera.position.x, cz = camera.position.z;
+    for (const v of G.vehicles) {
+      const dx = v.pos.x - cx, dz = v.pos.z - cz, d2 = dx * dx + dz * dz; v.mesh.visible = !!v.driver || d2 < vd2;
+      const u = v.mesh.userData; if (u.lo) { const near = !!v.driver || d2 < 1600; u.hi.visible = near; u.lo.visible = !near; }   // simplified Kenney car beyond 40 m
+    }
+  }
   if (G.state === 'playing') {
     HUD.updateHud(G);
     mmT -= dt; if (mmT <= 0) { mmT = 0.1; HUD.drawMinimap(G, mmCtx, mm.width, mm.height); }
@@ -1054,7 +1063,12 @@ function loop(ts) {
     if (P.body) setSoldierGear(P.body, G.player.armor | 0, G.player.helmet | 0, G.bagLv | 0);
     for (const b of G.bots) setSoldierGear(b.mesh, b.armor | 0, b.helmet | 0, 0);
   }
-  if (G.sky) G.sky.position.copy(camera.position);
+  if (G.sky) {
+    G.sky.position.copy(camera.position);
+    const cl = G.sky.userData.clouds;   // 帧率: skip cloud quadrants outside the view (side planes only: clouds sit past the far plane)
+    if (cl) { camera.updateMatrixWorld(); _frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _fr.setFromProjectionMatrix(_frM);
+      for (const m of cl) { const sp = m.geometry.boundingSphere; let vis = true; for (let i = 0; i < 4; i++) if (_fr.planes[i].distanceToPoint(sp.center) < -sp.radius) { vis = false; break; } m.visible = vis; } }
+  }
   renderer.clear();
   // depth precision: high in the air (plane / parachute) the 0.05 near plane makes roads and ground flicker
   { const hy = camera.position.y, nn = hy > 12 ? Math.min(2, hy * 0.02) : 0.05; if (Math.abs(camera.near - nn) > 0.005) { camera.near = nn; camera.updateProjectionMatrix(); } }
