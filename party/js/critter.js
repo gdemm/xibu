@@ -465,7 +465,10 @@ async function load() {
   }
   T.ok = true;
 }
-try { await load(); } catch (e) { console.warn('character GLBs failed, using bean critters', e); }
+// a flaky phone network can drop one GLB: retry twice before falling back to bean critters
+for (let i = 0; i < 3 && !T.ok; i++) { try { await load(); } catch (e) { console.warn('character GLBs failed (try ' + (i + 1) + ')', e); if (i < 2) await new Promise(r => setTimeout(r, 800 * (i + 1))); } }
+if (!T.ok) console.warn('character GLBs failed, using bean critters');
+export const charsReady = () => T.ok;
 
 // ---------- hats (vertex-coloured, shared critter toon material), built in metres, attached to the head bone ----------
 export const HATS = ['cone', 'propeller', 'bow', 'sprout', 'crown', 'cone', 'none'];

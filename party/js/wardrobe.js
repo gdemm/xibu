@@ -1,17 +1,17 @@
 // 角色仓库 (wardrobe): pick the player's character from the 6 base looks, then one of its 5 skins (原版 + 4 recolors), delete ones you don't want (long-press, or 编辑 + ✕),
 // restore deleted ones. Choice and deletions live in localStorage (roster.js). The 3D preview loads only the shown model.
 import * as THREE from 'three';
-import { createSoldier, animateSoldier, ensureChar } from './critter.js';
+import { createSoldier, animateSoldier, ensureChar, charsReady } from './critter.js';
 import { WARDROBE, SKINS, visibleWardrobe, pickedId, setPicked, pickedSkin, setSkin, skinsOf, skinThumbOf, resolveLook, deleteChar, deletedIds, restoreAll, REG } from './roster.js';
 
 let longFired = false, dlgAt = 0, el = null, grid, skinRow, prevCv, prevName, btnEdit, btnRestore, dlg, toastEl, editing = false;
-let R = null, scene, cam, fig = null, figId = '', raf = 0, last = 0, spin = 0, toastT = 0;
+let R = null, scene, cam, fig = null, figId = '', shownKey = '', raf = 0, last = 0, spin = 0, toastT = 0;
 
 function build() {
   el = document.createElement('div'); el.id = 'wardrobe'; el.className = 'hidden';
   el.innerHTML = `<div class="wdHead"><button class="wdBack" id="wdBack">‹ 返回</button><h2>角色仓库</h2>
       <button class="wdBtn" id="wdEdit">编辑</button><button class="wdBtn" id="wdRestore">恢复已删除</button></div>
-    <div class="wdBody"><div class="wdPrev"><canvas id="wdCanvas"></canvas><div class="wdName" id="wdName"></div><div class="wdHint">点选角色 · 长按删除</div></div>
+    <div class="wdBody"><div class="wdPrev"><canvas id="wdCanvas"></canvas><img id="wdImg" alt="" draggable="false" style="position:absolute;inset:12% 10% 10%;width:80%;height:78%;object-fit:contain;display:none"><div class="wdName" id="wdName"></div><div class="wdHint">点选角色 · 长按删除</div></div>
       <div class="wdRight"><div class="wdGrid" id="wdGrid"></div>
         <div class="wdSkinBox"><div class="wdSkinT">皮<br>肤</div><div class="wdSkins" id="wdSkins"></div></div></div></div>
     <div class="wdDlg hidden" id="wdDlg"><div class="wdBox"><p id="wdMsg"></p><div class="wdRow"><button id="wdNo">取消</button><button id="wdYes" class="danger">删除</button></div></div></div>
@@ -73,13 +73,20 @@ function render() {
   skinRow.innerHTML = all.map(k => `<button class="wdSkin${k.id === look ? ' on' : ''}${k.model ? ' model' : ''}" data-look="${k.id}"><img src="${skinThumbOf(pick, k.id)}" alt="" draggable="false" loading="lazy"><span>${k.name}</span></button>`).join('');
   prevName.textContent = REG[pick].name + (look ? ' · ' + all.find(k => k.id === look).name : '');
   const on = skinRow.querySelector('.on'); if (on) { const l = on.offsetLeft - skinRow.offsetLeft; if (l < skinRow.scrollLeft || l + on.offsetWidth > skinRow.scrollLeft + skinRow.clientWidth) skinRow.scrollLeft = l - 8; }
-  const L = resolveLook(pick, look); showFig(L.char, L.look);
+  const L = resolveLook(pick, look);
+  // 2D picture of exactly the chosen skin until its 3D model is on screen (and for good if 3D is unavailable)
+  const img = el.querySelector('#wdImg'), src = skinThumbOf(pick, look);
+  if (!img.src.endsWith(src.slice(1))) img.src = src;
+  const showing = shownKey === L.char + '|' + L.look;
+  img.style.display = showing ? 'none' : 'block'; prevCv.style.visibility = showing ? '' : 'hidden';
+  showFig(L.char, L.look);
 }
 async function showFig(id, look) {
   const key = id + '|' + look; if (figId === key) return; figId = key;
-  if (!R) return;
+  if (!R || !charsReady()) return;
   const ok = await ensureChar(id, look); if (!ok || figId !== key) return;
   if (fig) scene.remove(fig);
+  shownKey = key; const img = el.querySelector('#wdImg'); img.style.display = 'none'; prevCv.style.visibility = '';
   fig = createSoldier('player', { char: id, look, gun: 'h' }); fig.rotation.y = Math.PI + 0.35; if (fig.userData.blob) fig.userData.blob.visible = true; scene.add(fig);
 }
 function initGL() {
@@ -105,7 +112,7 @@ function frame(now) {
 export function openWardrobe() {
   if (!el) build();
   if (!R) initGL();
-  editing = false; figId = ''; el.classList.remove('hidden'); document.body.classList.add('wardrobeOpen');
+  editing = false; figId = ''; shownKey = ''; el.classList.remove('hidden'); document.body.classList.add('wardrobeOpen');
   render(); if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
 }
 export function closeWardrobe() { close(); }
