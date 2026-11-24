@@ -19,8 +19,11 @@ select,.btn{font:inherit;font-size:14px;border:0;border-radius:10px;padding:7px 
 .btn.on{background:#ffd76a;box-shadow:0 2px 0 #d9a92c}
 .btn.hot{background:#ff8f6b;color:#fff;box-shadow:0 2px 0 #c9603f}
 #prog{font-size:13px;margin-left:auto;color:#8a705a}
-#wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative}
-canvas#board{touch-action:none;border-radius:14px;box-shadow:0 4px 0 #c9b6a0,0 6px 18px rgba(0,0,0,.12);background:#f4f4f2}
+#wrap{flex:1;min-height:0;position:relative;overflow:hidden;touch-action:none;border-radius:14px}
+#zoom{position:absolute;right:6px;bottom:6px;display:flex;flex-direction:column;gap:6px;z-index:2}
+#zoom button{width:40px;height:40px;border:0;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 2px 0 #e6d3bd;font-size:20px;color:#4a3a2e}
+#zhint{position:absolute;left:8px;bottom:8px;font-size:11px;color:#a08a74;background:rgba(255,255,255,.8);padding:2px 8px;border-radius:10px;z-index:2;pointer-events:none}
+canvas#board{position:absolute;left:0;top:0;touch-action:none;border-radius:14px;box-shadow:0 4px 0 #c9b6a0,0 6px 18px rgba(0,0,0,.12);background:#f4f4f2}
 #tools{display:flex;gap:6px;padding:6px 0;justify-content:space-between}
 #tools .btn{flex:1;padding:6px 0;font-size:12px;display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.1;white-space:nowrap;min-width:0}
 #tools .btn b{font-size:18px;font-weight:normal}
@@ -59,7 +62,7 @@ canvas#board{touch-action:none;border-radius:14px;box-shadow:0 4px 0 #c9b6a0,0 6
     <button class="btn" id="bAuto">▶ 自动拼</button>
     <span id="prog"></span>
   </div>
-  <div id="wrap"><canvas id="board"></canvas></div>
+  <div id="wrap"><canvas id="board"></canvas><div id="zoom"><button id="zin">＋</button><button id="zout">－</button><button id="zfit" style="font-size:15px">⊡</button></div><div id="zhint">双指拖动/缩放</div></div>
   <div id="tools">
     <button class="btn on" data-t="pen"><b>🫘</b>放豆</button>
     <button class="btn" data-t="erase"><b>🧽</b>拿掉</button>
@@ -194,11 +197,17 @@ const PATS=[
 const $=s=>document.querySelector(s), cv=$('#board'), ctx=cv.getContext('2d');
 let smart=true, auto=null, N=29, grid=[], target=null, mode='free', tool='pen', cur=5, undo=[], cell=10, curPat=-1;
 const toast=t=>{const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),1500)};
-function newGrid(n){N=n;grid=new Array(n*n).fill(-1);undo=[];}
+function newGrid(n){N=n;zoomN=-1;grid=new Array(n*n).fill(-1);undo=[];}
 function save(){try{localStorage.setItem('bead.v1',JSON.stringify({N,grid,target,mode,curPat,cur}))}catch(e){}}
 function load(){try{const s=JSON.parse(localStorage.getItem('bead.v1'));if(s&&s.grid&&s.grid.length===s.N*s.N){({N,grid,target,mode,curPat,cur}=s);return true}}catch(e){}return false}
 function patGrid(i){const p=PATS[i];if(p.g)return p.g.slice();const n=16,g=new Array(n*n).fill(-1);p.rows.forEach((r,y)=>{for(let x=0;x<n;x++){const c=r[x];if(c&&c!=='.'&&p.map[c]!=null)g[y*n+x]=p.map[c]}});return g}
-function layout(){const w=$('#wrap'),s=Math.floor(Math.min(w.clientWidth,w.clientHeight)-4),dpr=devicePixelRatio||1;cell=s/N;cv.style.width=cv.style.height=s+'px';cv.width=cv.height=Math.round(s*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);draw()}
+let Z=1,OX=0,OY=0,FIT=300,zoomN=-1;
+function autoZoom(){const w=$('#wrap');FIT=Math.floor(Math.min(w.clientWidth,w.clientHeight)-4);Z=Math.max(1,Math.min(5,26*N/FIT));zoomN=N;const sz=FIT*Z;OX=(w.clientWidth-sz)/2;OY=(w.clientHeight-sz)/2;if(sz>w.clientWidth){const f=target?firstTodo():-1;if(f>=0){OX=w.clientWidth/2-((f%N)+.5)*sz/N;OY=w.clientHeight/2-(((f/N)|0)+.5)*sz/N}}}
+function firstTodo(){return target?target.findIndex((t,i)=>t>=0&&grid[i]!==t):-1}
+function clampPos(){const w=$('#wrap'),sz=FIT*Z,W=w.clientWidth,H=w.clientHeight;OX=sz<=W?(W-sz)/2:Math.min(0,Math.max(W-sz,OX));OY=sz<=H?(H-sz)/2:Math.min(0,Math.max(H-sz,OY))}
+function place(){clampPos();const sz=FIT*Z;cv.style.width=cv.style.height=sz+'px';cv.style.left=OX+'px';cv.style.top=OY+'px'}
+function layout(){const w=$('#wrap');if(zoomN!==N)autoZoom();else FIT=Math.floor(Math.min(w.clientWidth,w.clientHeight)-4);place();const sz=FIT*Z,dpr=Math.min(2,devicePixelRatio||1),px=Math.min(4096,Math.round(sz*dpr));cell=sz/N;cv.width=cv.height=px;ctx.setTransform(px/sz,0,0,px/sz,0,0);draw()}
+function zoomAt(nz,cx,cy){const r=$('#wrap').getBoundingClientRect();cx-=r.left;cy-=r.top;const px=(cx-OX)/(FIT*Z),py=(cy-OY)/(FIT*Z);Z=Math.max(1,Math.min(6,nz));OX=cx-px*FIT*Z;OY=cy-py*FIT*Z}
 function bead(x,y,col,r,ghost){const cx=(x+.5)*cell,cy=(y+.5)*cell,R=cell*.46;ctx.beginPath();ctx.arc(cx,cy,R,0,7);ctx.fillStyle=col;ctx.globalAlpha=ghost?.28:1;ctx.fill();ctx.globalAlpha=1;
  if(!ghost){ctx.lineWidth=Math.max(1,cell*.06);ctx.strokeStyle='rgba(0,0,0,.18)';ctx.stroke();ctx.beginPath();ctx.arc(cx,cy,R*.36,0,7);ctx.fillStyle='rgba(255,255,255,.75)';ctx.fill();ctx.beginPath();ctx.arc(cx-R*.35,cy-R*.4,R*.18,0,7);ctx.fillStyle='rgba(255,255,255,.55)';ctx.fill()}}
 function draw(){const s=cell*N;ctx.clearRect(0,0,s,s);ctx.fillStyle='#f4f4f2';ctx.fillRect(0,0,s,s);
@@ -224,12 +233,26 @@ function at(e){const r=cv.getBoundingClientRect();const x=Math.floor((e.clientX-
 function apply(i){if(i<0)return false;if(tool==='pen'){const c=(smart&&target&&target[i]>=0)?target[i]:cur;if(smart&&target&&target[i]<0)return false;if(grid[i]===c)return false;grid[i]=c}else if(tool==='erase'){if(grid[i]<0)return false;grid[i]=-1}else return false;return true}
 function fill(i){const from=grid[i],to=cur;if(from===to)return;const st=[i];while(st.length){const j=st.pop();if(grid[j]!==from)continue;grid[j]=to;const x=j%N,y=(j/N)|0;if(x>0)st.push(j-1);if(x<N-1)st.push(j+1);if(y>0)st.push(j-N);if(y<N-1)st.push(j+N)}}
 let down=false,last=-1;
-cv.addEventListener('pointerdown',e=>{const i=at(e);if(i<0)return;cv.setPointerCapture(e.pointerId);
+const PT=new Map();let gest=null,stroke=null;
+const W$=$('#wrap');
+W$.addEventListener('pointerdown',e=>{if(e.target.closest('#zoom'))return;try{W$.setPointerCapture(e.pointerId)}catch(_){}PT.set(e.pointerId,{x:e.clientX,y:e.clientY});
+ if(PT.size===2){ // 第二根手指：取消刚开始的这一笔，进入拖动/缩放
+  if(down&&stroke){grid=stroke;undo.pop();draw()}down=false;stroke=null;
+  const [p,q]=[...PT.values()];gest={d:Math.hypot(p.x-q.x,p.y-q.y)||1,z:Z,mx:(p.x+q.x)/2,my:(p.y+q.y)/2,ox:OX,oy:OY};return}
+ if(PT.size>2)return;
+ const i=at(e);if(i<0)return;
  if(tool==='pick'){const v=grid[i]>=0?grid[i]:(target?target[i]:-1);if(v>=0){cur=v;setTool('pen');toast('取色：'+(v+1)+' '+PAL[v][0])}status();return}
  pushUndo();if(tool==='fill'){fill(i);draw();save();return}
- down=true;last=i;if(!apply(i))undo.pop();else{draw();buzz()}});
-cv.addEventListener('pointermove',e=>{if(!down)return;const i=at(e);if(i===last)return;last=i;if(apply(i)){draw();buzz()}});
-const up=()=>{if(down){down=false;save()}};cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+ stroke=undo[undo.length-1];down=true;last=i;if(apply(i)){draw();buzz()}});
+W$.addEventListener('pointermove',e=>{if(!PT.has(e.pointerId))return;PT.set(e.pointerId,{x:e.clientX,y:e.clientY});
+ if(gest&&PT.size>=2){const [p,q]=[...PT.values()];const d=Math.hypot(p.x-q.x,p.y-q.y),mx=(p.x+q.x)/2,my=(p.y+q.y)/2;
+  OX=gest.ox;OY=gest.oy;Z=gest.z;zoomAt(gest.z*d/gest.d,gest.mx,gest.my);OX+=mx-gest.mx;OY+=my-gest.my;place();return}
+ if(!down)return;const i=at(e);if(i===last)return;last=i;if(apply(i)){draw();buzz()}});
+const up=e=>{PT.delete(e.pointerId);if(gest){if(PT.size<2){gest=null;layout()}return}if(down){down=false;if(stroke&&stroke.every((v,k)=>v===grid[k]))undo.pop();stroke=null;save()}};
+W$.addEventListener('pointerup',up);W$.addEventListener('pointercancel',up);
+$('#zin').onclick=()=>{const r=W$.getBoundingClientRect();zoomAt(Z*1.4,r.left+r.width/2,r.top+r.height/2);layout()};
+$('#zout').onclick=()=>{const r=W$.getBoundingClientRect();zoomAt(Z/1.4,r.left+r.width/2,r.top+r.height/2);layout()};
+$('#zfit').onclick=()=>{Z=1;layout()};
 function buzz(){if(navigator.vibrate)try{navigator.vibrate(6)}catch(e){}}
 document.querySelectorAll('#tools [data-t]').forEach(b=>b.onclick=()=>setTool(b.dataset.t));
 $('#undo').onclick=()=>{if(undo.length){grid=undo.pop();status.done=false;draw();save()}};
