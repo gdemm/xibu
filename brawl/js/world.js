@@ -185,17 +185,26 @@ export function buildWorld(scene, classic = false, mapId = 0) {
       if (D) return R - Math.hypot(dx + R, dy + R);
       return -H2;
     }
+    const allN = (mask, i, j) => { for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) if (!mask(i + a, j + b)) return false; return true; };
     const near = (mask, i, j) => { for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) if (mask(i + a, j + b)) return true; return false; };
     const GC = TH.ground.map(p => p.map(hx)), RIM = TH.rim.map(c => c && hx(c));
     const PW = TH.pw.map(hx), VW = TH.vw.map(hx), SH = hx(TH.shore), BE = hx(TH.beach);
     const F1 = new Float32Array(N * N), F2 = new Float32Array(N * N); for (let q = 0; q < N * N; q++) if (type[q] !== T.WATER) { if (biome[q] === 1) F1[q] = 1; else if (biome[q] === 2) F2[q] = 1; }
-    const img = g.createImageData(NP, NP), D8 = img.data;
+    const img = g.createImageData(NP, NP), U32 = new Uint32Array(img.data.buffer), cl = (x) => x < 0 ? 0 : x > 255 ? 255 : x | 0, pack = (r, gg, b) => (0xff000000 | (cl(b) << 16) | (cl(gg) << 8) | cl(r)) >>> 0;
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-      const q = idx(i, j), nW = near(W8, i, j), n1 = near(B1, i, j), n2 = near(B2, i, j), par = (i + j) & 1, b0 = biome[q], tv = (rand() - 0.5) * 6;
+      const q = idx(i, j), nW = near(W8, i, j), aW = nW && allN(W8, i, j), n1 = !aW && near(B1, i, j), n2 = !aW && near(B2, i, j), par = (i + j) & 1, b0 = biome[q], tv = (rand() - 0.5) * 6;
       const vd = isVoid(i, j) || (nW && !W8(i, j) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => inb(i + a, j + b) && type[idx(i + a, j + b)] === T.WATER && isVoid(i + a, j + b)));
+      const o0 = j * P * NP + i * P;
+      const fb = nW ? -1 : !n1 && !n2 ? 0 : n2 && allN(B2, i, j) ? 2 : !n2 && allN(B1, i, j) ? 1 : -1;
+      if (aW || fb >= 0) { // fast path: whole tile is open water or plain ground -> one packed colour per row
+        let c, k = 1; if (aW) c = (vd ? VW : PW)[0]; else { const b = fb === 0 ? (b0 === 0 ? 0 : b0) : fb; c = GC[b][par]; k = 1 + tv / 255 * 2; }
+        const val = pack(c[0] * k, c[1] * k, c[2] * k); for (let v = 0; v < P; v++) U32.fill(val, o0 + v * NP, o0 + v * NP + P);
+        if (aW) { const sp = (vd ? VW : PW)[2], sv = pack(sp[0], sp[1], sp[2]); for (let v = 0; v < P; v++) for (let u = 0; u < P; u++) if ((u * 3 + v * 7 + i * 5 + j * 11) % 37 === 0) U32[o0 + v * NP + u] = sv; }
+        continue;
+      }
       for (let v = 0; v < P; v++) for (let u = 0; u < P; u++) {
         let c, k = 1;
-        const dW = nW ? sd(W8, i, j, u, v) : -H2;
+        const dW = aW ? H2 : nW ? sd(W8, i, j, u, v) : -H2;
         if (dW > 0) { // water: deep centre, lighter shallows, foam lip
           const pal = vd ? VW : PW; c = dW > 7 ? pal[0] : dW > 3 ? pal[1] : dW > 1.3 ? pal[2] : pal[3];
           if (dW > 7 && ((u * 3 + v * 7 + i * 5 + j * 11) % 37 === 0)) c = pal[2];
@@ -212,7 +221,7 @@ export function buildWorld(scene, classic = false, mapId = 0) {
           if (b && d < 0.11 && RIM[b]) c = RIM[b];
           if (dW > -3.2 && !vd) c = SH; else if (vd && dW > -6) c = dW > -2 ? TH.vcliff ? hx(TH.vcliff) : BE : BE;
         }
-        const o = ((j * P + v) * NP + i * P + u) * 4; D8[o] = c[0] * k; D8[o + 1] = c[1] * k; D8[o + 2] = c[2] * k; D8[o + 3] = 255;
+        U32[o0 + v * NP + u] = pack(c[0] * k, c[1] * k, c[2] * k);
       }
     }
     g.putImageData(img, 0, 0);
