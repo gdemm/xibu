@@ -38,11 +38,11 @@ class Bucket {
   }
   get tris() { return this.p.length / 9; }
 }
-class Grid {   // buckets keyed by 70 m cells
-  constructor(half, n = 4) { this.half = half; this.n = n; this.cells = new Map(); }
+class Grid {   // buckets keyed by ~70 m cells around (cx, cz)
+  constructor(half, n = 4, cx = 0, cz = 0) { this.half = half; this.n = n; this.cx = cx; this.cz = cz; this.cells = new Map(); }
   at(x, z) {
     const n = this.n, s = (this.half * 2) / n;
-    const i = Math.max(0, Math.min(n - 1, Math.floor((x + this.half) / s))), j = Math.max(0, Math.min(n - 1, Math.floor((z + this.half) / s)));
+    const i = Math.max(0, Math.min(n - 1, Math.floor((x - this.cx + this.half) / s))), j = Math.max(0, Math.min(n - 1, Math.floor((z - this.cz + this.half) / s)));
     const k = i * n + j; let b = this.cells.get(k); if (!b) this.cells.set(k, b = new Bucket()); return b;
   }
   build(scene, mat) { let tris = 0, calls = 0; for (const b of this.cells.values()) { tris += b.tris; const m = b.mesh(mat); if (m) { scene.add(m); calls++; } } return { tris, calls }; }
@@ -82,14 +82,19 @@ const BARREL_COLS = [0xe8463c, 0x2f7fe0, 0x35b06a, 0xf2b33a];
 const SHUTTER_COLS = [0x3f8fd6, 0x2ea86a, 0xe0574f, 0x8a63d2];
 const UMB_COLS = [[0xff4d6d, 0xffffff], [0x2ec4b6, 0xffffff], [0xffbe0b, 0xff6b35], [0x3a86ff, 0xffe14d]];
 
-export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS, quality }) {
+export function decorateIsland(scene, { solids, HALF: HALF0, B: BD, BLD, TREES, FENCES, ROADS, quality }) {
+  // bounds: the island may be asymmetric (2026-11 扩图); scatter ranges use bounds, buckets cover it with a 6x6 grid
+  BD = BD || { minX: -HALF0, maxX: HALF0, minZ: -HALF0, maxZ: HALF0 };
+  const HALF = Math.max(BD.maxX - BD.minX, BD.maxZ - BD.minZ) / 2, CX = (BD.minX + BD.maxX) / 2, CZ = (BD.minZ + BD.maxZ) / 2;
+  const RX = (m) => rr(BD.minX + m, BD.maxX - m), RZ = (m) => rr(BD.minZ + m, BD.maxZ - m);
+  const areaK = ((BD.maxX - BD.minX) * (BD.maxZ - BD.minZ)) / (280 * 280);
   seed = 4242;
   const q = quality === 'low' ? 0.35 : quality === 'mid' ? 0.75 : 1;
-  const solid = new Grid(HALF + 20), grass = new Grid(HALF + 20), paint = new Bucket();
+  const solid = new Grid(HALF + 20, 6, CX, CZ), grass = new Grid(HALF + 20, 6, CX, CZ), paint = new Bucket();
   const S = (x, z) => solid.at(x, z), Gr = (x, z) => grass.at(x, z);
   const blockedAt = (x, z, r) => solids.some(b => b.max.y > 0.05 && x + r > b.min.x && x - r < b.max.x && z + r > b.min.z && z - r < b.max.z);
   const onRoad = (x, z, pad = 0.6) => ROADS.some(([x0, z0, x1, z1]) => x > x0 - pad && x < x1 + pad && z > z0 - pad && z < z1 + pad);
-  const inField = (x, z) => Math.abs(x) < HALF - 13 && Math.abs(z) < HALF - 13;          // the grass plane (sand beyond)
+  const inField = (x, z) => x > BD.minX + 7 && x < BD.maxX - 7 && z > BD.minZ + 7 && z < BD.maxZ - 7;          // the grass plane (sand beyond)
   const stat = {}; const tot = () => { let n = 0; for (const g of [solid, grass]) for (const b of g.cells.values()) n += b.tris; return n; }; let last = 0; const mark = (k) => { const n = tot(); stat[k] = Math.round(n - last); last = n; };
 
   // ---------- trees: two-tier pines and clustered round crowns, varied size / colour ----------
@@ -111,10 +116,10 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
 
   mark('trees');
   // ---------- ground scatter: tufts, flowers, pebbles, bushes ----------
-  const nTuft = Math.round(2600 * q), nFlower = Math.round(110 * q), nPebble = Math.round(220 * q);
+  const sK = Math.min(1.6, areaK), nTuft = Math.round(2600 * q * sK), nFlower = Math.round(110 * q * areaK), nPebble = Math.round(220 * q * sK);
   let placed = 0;
   for (let i = 0; i < nTuft * 2 && placed < nTuft; i++) {
-    const x = rr(-HALF + 10, HALF - 10), z = rr(-HALF + 10, HALF - 10);
+    const x = RX(10), z = RZ(10);
     if (onRoad(x, z) || blockedAt(x, z, 0.3)) continue;
     const h = rr(0.26, 0.46), w = rr(0.32, 0.46);
     const sand = !inField(x, z);
@@ -123,7 +128,7 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
   }
   stat.tufts = placed;
   for (let i = 0; i < nFlower; i++) {   // little patches of 3-6 flowers of one colour
-    const cx = rr(-HALF + 14, HALF - 14), cz = rr(-HALF + 14, HALF - 14); if (onRoad(cx, cz, 2) || blockedAt(cx, cz, 1.5)) continue;
+    const cx = RX(14), cz = RZ(14); if (onRoad(cx, cz, 2) || blockedAt(cx, cz, 1.5)) continue;
     const col = FLOWER_COLS[(rnd() * FLOWER_COLS.length) | 0], n = 3 + ((rnd() * 4) | 0);
     for (let k = 0; k < n; k++) {
       const x = cx + rr(-0.9, 0.9), z = cz + rr(-0.9, 0.9), h = rr(0.22, 0.38);
@@ -133,7 +138,7 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
     }
   }
   for (let i = 0; i < nPebble; i++) {
-    const x = rr(-HALF + 4, HALF - 4), z = rr(-HALF + 4, HALF - 4); if (onRoad(x, z, 0.2) || blockedAt(x, z, 0.4)) continue;
+    const x = RX(4), z = RZ(4); if (onRoad(x, z, 0.2) || blockedAt(x, z, 0.4)) continue;
     const s = rr(0.08, 0.22), g = 0x9a958c + (((rnd() * 3) | 0) * 0x080808);
     S(x, z).add(PEBBLE, mat4(x, s * 0.25, z, rnd(), rnd() * 6, rnd(), s * rr(1, 1.6), s * 0.6, s), g);
   }
@@ -255,8 +260,8 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
   seed = 7007;   // each section has its own sequence, so quality (scatter counts) never moves buildings / props
   // ---------- beach: umbrellas + towels; foam line on the water ----------
   for (let i = 0; i < 10; i++) {
-    const side = (rnd() * 4) | 0, a = rr(-HALF + 20, HALF - 20), d = rr(HALF - 8, HALF + 6);
-    const x = side === 0 ? a : side === 1 ? a : side === 2 ? d : -d, z = side === 0 ? d : side === 1 ? -d : a;
+    const side = (rnd() * 4) | 0, a = side < 2 ? RX(20) : RZ(20), d = rr(-8, 6);
+    const x = side < 2 ? a : side === 2 ? BD.maxX + d : BD.minX - d, z = side === 0 ? BD.maxZ + d : side === 1 ? BD.minZ - d : a;
     if (blockedAt(x, z, 2.2) || onRoad(x, z, 2)) continue;
     const [c1, c2] = UMB_COLS[(rnd() * UMB_COLS.length) | 0], B = S(x, z);
     (stat.umbrellas || (stat.umbrellas = [])).push([Math.round(x), Math.round(z)]);
@@ -265,10 +270,10 @@ export function decorateIsland(scene, { solids, HALF, BLD, TREES, FENCES, ROADS,
     B.add(PETALS, mat4(x + 0.14, 2.62, z, 0, 0, 0, 0.07, 0.07, 0.07), 0xffffff);
     const ry = rnd() * 3; B.add(BOX, mat4(x + Math.cos(ry) * 1.2, 0.015, z + Math.sin(ry) * 1.2, 0, -ry, 0, 1.8, 0.02, 0.8), c1);
   }
-  const foam = new Bucket(), F = HALF + 12;
+  const foam = new Bucket(), W = BD.maxX - BD.minX + 24, D = BD.maxZ - BD.minZ + 24;
   for (const s of [-1, 1]) {
-    foam.add(PLANE, mat4(0, -1.14, s * (F + 2.2), 0, 0, 0, F * 2 + 9, 1, 4.4), 0xffffff);
-    foam.add(PLANE, mat4(s * (F + 2.2), -1.14, 0, 0, 0, 0, 4.4, 1, F * 2 - 0.2), 0xffffff);
+    foam.add(PLANE, mat4(CX, -1.14, CZ + s * (D / 2 + 2.2), 0, 0, 0, W + 9, 1, 4.4), 0xffffff);
+    foam.add(PLANE, mat4(CX + s * (W / 2 + 2.2), -1.14, CZ, 0, 0, 0, 4.4, 1, D - 0.2), 0xffffff);
   }
 
   mark('beach');

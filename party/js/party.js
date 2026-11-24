@@ -44,13 +44,15 @@ export function partyLook(scene, quality, kind) {
   const sky = new THREE.Mesh(new THREE.SphereGeometry(320, 24, 12), new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: { top: { value: new THREE.Color(0x3fa9ff) }, mid: { value: new THREE.Color(0x9fdcff) }, bot: { value: new THREE.Color(0xd9f3ff) } },
-    vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w * 0.99999; }',
     fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 bot; varying vec3 vP; void main(){ float h = normalize(vP).y; vec3 c = h > 0.0 ? mix(mid, top, smoothstep(0.0, 0.6, h)) : mix(mid, bot, smoothstep(0.0, -0.2, h)); gl_FragColor = vec4(c, 1.0); }',
   }));
   sky.renderOrder = -10; sky.frustumCulled = false; scene.add(sky);
   if (kind === 'island') {
     const clouds = new THREE.Mesh(cloudGeo(), new THREE.MeshToonMaterial({ color: 0xffffff, emissive: 0xb8d8f0, emissiveIntensity: 0.45, gradientMap: toonRamp(), fog: false }));
-    scene.add(clouds);
+    // the camera far plane now ends just past the fog: clamp the far clouds onto it instead of clipping them
+    clouds.material.onBeforeCompile = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n gl_Position.z = min(gl_Position.z, gl_Position.w * 0.99998);'); };
+    clouds.frustumCulled = false; scene.add(clouds);
   }
   return sky;
 }

@@ -20,3 +20,10 @@ Kenney 和 Kay Lousberg 都不要求署名，这里仍然注明以示感谢。
 
 动作：所有角色（含 4 个机器人角色）共用 anims2.glb 的自然持枪动作（双手步枪/单手手枪/持枪奔跑/空手），不再使用旧的 anims.glb；红色圣诞帽女孩（旧 rogue.glb）和骷髅角色已移除。
 所有角色均为 KayKit 通用原创造型，没有任何 Supercell / Riot / 香肠派对 角色。
+
+## 港口岛扩图 / 载具 / 场景道具素材（2026-11）
+| 文件 | 来源 | 作者 | 许可 |
+|---|---|---|---|
+| assets/props/props.bin + props.json（吉普=SUV、卡车=皮卡，路边车辆残骸、轮胎、路锥、油桶、木箱、栅栏、岩石、帐篷、路牌、篝火、木头、工作台、宝箱、室内家具等） | Kenney「Car Kit」「Survival Kit」「Furniture Kit」「Weapon Pack」(https://kenney.nl/assets)；离线烘焙成一个顶点着色的压缩文件（量化坐标、int8 法线、rgb8 颜色） | Kenney (www.kenney.nl) | CC0 1.0（assets/chars/LICENSE-Kenney.txt） |
+
+摩托、自行车、大巴、直升机仍是本项目程序生成的原创造型；物资地面光圈也是代码生成的。

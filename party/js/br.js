@@ -7,11 +7,12 @@ import { setupDrop, setupAirdrops, updateAirdrops, airdropGoal, airdropMinimap, 
 
 const NAMES = ['老K', '铁牙', '阿狼', '火锅', '刀疤', '石头', '阿飞', '老周', '小林', '阿杰', '大鱼', '海狗', '黑桃', '钢盔', '螺丝', '锚哥', '浪子', '船长', '水手', '灯塔'];
 // zone phases: wait (s) then shrink (s) to radius r; dps outside
+// 2026-11: the island is ~2x the area (392 x 392 m): first circles ~1.4x wider, a little more time to rotate (vehicles help)
 const PHASES_ISLAND = [
-  { wait: 60, shrink: 40, r: 120, dps: 2 },
-  { wait: 45, shrink: 30, r: 70, dps: 4 },
-  { wait: 40, shrink: 25, r: 38, dps: 7 },
-  { wait: 30, shrink: 20, r: 18, dps: 10 },
+  { wait: 70, shrink: 50, r: 165, dps: 2 },
+  { wait: 50, shrink: 40, r: 98, dps: 4 },
+  { wait: 42, shrink: 30, r: 52, dps: 7 },
+  { wait: 32, shrink: 22, r: 24, dps: 10 },
   { wait: 25, shrink: 15, r: 7, dps: 15 },
   { wait: 20, shrink: 15, r: 1.5, dps: 25 },
 ];
@@ -88,6 +89,24 @@ function lootGeo(k) {
   const g = mergeGeometries(P); g.computeVertexNormals();
   g.scale(1.25, 1.25, 1.25);
   return (LOOT_GEO[k] = g);
+}
+// 2026-11 物资光圈: one instanced, glowing ground ring under every item on the ground (1 draw call for all loot), tinted by item colour
+let RING = null; const _rm = new THREE.Matrix4(), _rc = new THREE.Color(), _rw = new THREE.Color(0xffffff);
+function lootRings(G, scene) {
+  if (!RING) {
+    const g = new THREE.RingGeometry(0.62, 0.86, 32); g.rotateX(-Math.PI / 2);
+    RING = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.8, depthWrite: false }), 1024);
+    RING.instanceMatrix.setUsage(THREE.DynamicDrawUsage); RING.frustumCulled = false; RING.renderOrder = 1;
+  }
+  if (RING.parent !== scene) scene.add(RING);
+  const pulse = 1 + 0.1 * Math.sin(G.now * 3.2); let n = 0;
+  for (const l of G.loot) {
+    if (l.taken || !l.m.parent || n >= 1024) continue;
+    const s = (l.def.lv >= 3 || l.def.k === 'sniper' ? 1.15 : 1) * pulse;
+    _rm.makeScale(s, 1, s).setPosition(l.m.position.x, 0.04, l.m.position.z); RING.setMatrixAt(n, _rm);
+    RING.setColorAt(n, _rc.set(l.def.c).lerp(_rw, 0.25)); n++;
+  }
+  RING.count = n; RING.instanceMatrix.needsUpdate = true; if (RING.instanceColor) RING.instanceColor.needsUpdate = true;
 }
 const rnd = (a, b) => a + Math.random() * (b - a);
 let LOOT_ID = 0;
@@ -178,9 +197,10 @@ export function setupBR(G, scene, h) {
   const zg = new THREE.CylinderGeometry(1, 1, 24, 64, 1, true);
   const zm = new THREE.MeshBasicMaterial({ color: 0x3a8cff, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false, fog: false });
   const zone = new THREE.Mesh(zg, zm); zone.position.y = 10; zone.frustumCulled = false; scene.add(zone);
-  const R0 = G.map.kind === 'island' ? 205 : 70;
+  const R0 = G.map.kind === 'island' ? Math.ceil(Math.hypot(G.map.bounds.maxX - G.map.bounds.minX, G.map.bounds.maxZ - G.map.bounds.minZ) / 2) + 6 : 70;
+  const C0 = G.map.center ? G.map.center.clone() : new THREE.Vector2(0, 0);
   zone.scale.set(R0, G.map.kind === 'island' ? 3 : 1, R0);
-  G.br = { phase: -1, stage: 'wait', t: PHASES[0].wait, c: new THREE.Vector2(0, 0), r: R0, from: { c: new THREE.Vector2(0, 0), r: R0 }, next: null, mesh: zone, dps: 1, alive: n, tickT: 0 };
+  G.br = { phase: -1, stage: 'wait', t: PHASES[0].wait, c: C0.clone(), r: R0, from: { c: C0.clone(), r: R0 }, next: null, mesh: zone, dps: 1, alive: n, tickT: 0 };
   nextPhase(G);
   G.timeLeft = 1e9;
   // 派对版: everyone starts on the plane (island map), airdrops arrive during the match
@@ -240,6 +260,7 @@ export function updateBR(G, dt, h) {
   const outside = G.player.alive && !G.player.air && brOutside(G, G.player);
   h.$('dmg').classList.toggle('zone', outside);
   // loot pickup
+  lootRings(G, h.scene);
   for (const l of G.loot) {
     if (l.taken || (l.noPick && G.now < l.noPick)) continue;
     l.m.rotation.y += dt * 1.2;
@@ -348,6 +369,7 @@ export function cleanup(G, scene) {
   cleanupDrop(G, scene);
   for (const l of G.loot || []) { scene.remove(l.m); l.m.material.dispose(); }
   G.loot = []; G.bag = []; G.bagLv = 0; G.bagMsgT = 0;
+  if (RING) { RING.count = 0; if (RING.parent) RING.parent.remove(RING); }
   if (G.br?.mesh) scene.remove(G.br.mesh);
   G.br = null;
 }
