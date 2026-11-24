@@ -93,13 +93,14 @@ const tracers = [];
 function buildWorld(kind = 'ship') {
   // clear old world
   for (let i = scene.children.length - 1; i >= 0; i--) { const o = scene.children[i]; scene.remove(o); o.traverse?.(c => { c.geometry?.dispose?.(); }); }
-  scene.add(new THREE.HemisphereLight(0xeaf6ff, 0x8a7a5a, 1.9));
-  const sun = new THREE.DirectionalLight(0xfff4dc, 2.0); sun.position.set(-40, 60, 25); scene.add(sun);
+  const mia = kind === 'miami';   // 迈阿密: GTA6-style golden-hour grade (warm sun, magenta/orange sky, teal sea)
+  scene.add(mia ? new THREE.HemisphereLight(0xffe2d2, 0x6a5a8a, 1.8) : new THREE.HemisphereLight(0xeaf6ff, 0x8a7a5a, 1.9));
+  const sun = new THREE.DirectionalLight(mia ? 0xffc08a : 0xfff4dc, mia ? 2.3 : 2.0); sun.position.set(-40, mia ? 38 : 60, 25); scene.add(sun);
   G.map = kind === 'island' ? buildIsland(scene, S.quality) : kind === 'miami' ? buildMiami(scene, S.quality) : buildMap(scene, S.quality);
   builtQuality = S.quality + kind;
-  scene.fog = kind === 'miami' ? new THREE.Fog(0xffd9ec, 40, { low: 125, mid: 160, high: 230 }[S.quality]) : new THREE.Fog(0xbfe6ff, 45, { low: 140, mid: 190, high: 260 }[S.quality]);   // 迈阿密: smaller, denser city -> shorter view, pink haze
+  scene.fog = kind === 'miami' ? new THREE.Fog(0xff9e8c, 40, { low: 125, mid: 160, high: 230 }[S.quality]) : new THREE.Fog(0xbfe6ff, 45, { low: 140, mid: 190, high: 260 }[S.quality]);   // 迈阿密: smaller, denser city -> shorter view, pink haze
   camera.far = scene.fog.far + 25; camera.updateProjectionMatrix();     // nothing past the fog is drawn (the bigger island stays cheap)
-  G.sky = partyLook(scene, S.quality, kind === 'miami' ? 'island' : kind);
+  G.sky = partyLook(scene, S.quality, mia ? 'island' : kind, mia ? { top: 0x3d2c9e, mid: 0xff7a9a, bot: 0xffb46e, cloud: 0xffd2c2, cloudE: 0xff8a7a } : null);
   tracers.length = 0;
   const tm = new THREE.LineBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.9 });
   for (let i = 0; i < 24; i++) {

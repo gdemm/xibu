@@ -15,7 +15,7 @@ const MC = { x: 0, z: 0, w: 300, d: 260 };
 let seed = 11; const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647; const rr = (a, b) => a + rand() * (b - a);
 const pick = (a) => a[(rand() * a.length) | 0];
 
-const PASTEL = [0xffb3c7, 0x9fe3d6, 0xffe0a3, 0xc9b6ff, 0xa8d8ff, 0xffc9a8, 0xb9f0b0, 0xfff1f5];
+const PASTEL = [0xff8fb4, 0x52dcc8, 0xffcc6e, 0xb194ff, 0x6fc4ff, 0xffa078, 0x8ae89a, 0xfff1f5];
 const NEON = [0xff2bd6, 0x28e8ff, 0xff7a1a, 0x7dff4a, 0xffe600, 0xb04bff];
 // roads [x0, z0, x1, z1] (8 m wide); 海滨大道 / 柯林斯大道 / 西街 + three cross streets
 const ROADS = [
@@ -59,9 +59,9 @@ export function buildMiami(scene, quality) {
   };
 
   // ---------- sea, sand, city ground ----------
-  scene.background = new THREE.Color(0x9cd6ee);
+  scene.background = new THREE.Color(0xff7a9a);
   const seaGeo = new THREE.PlaneGeometry(1400, 1400); seaGeo.rotateX(-Math.PI / 2);
-  const sea = new THREE.Mesh(seaGeo, new THREE.MeshLambertMaterial({ color: 0x22c4e0 })); sea.position.y = -1.2; sea.renderOrder = 4; scene.add(sea);
+  const sea = new THREE.Mesh(seaGeo, new THREE.MeshLambertMaterial({ color: 0x0fb8c6 })); sea.position.y = -1.2; sea.renderOrder = 4; scene.add(sea);
   const T = {
     sand: canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#f6e2b0'; g.fillRect(0, 0, w, h); noise(g, w, h, 0.12, 1400); }, 1, 1),
     pave: canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#e9dfd2'; g.fillRect(0, 0, w, h); g.strokeStyle = 'rgba(0,0,0,.08)'; g.lineWidth = 2; for (let i = 0; i <= w; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, h); g.stroke(); g.beginPath(); g.moveTo(0, i); g.lineTo(w, i); g.stroke(); } noise(g, w, h, 0.08, 600); }, 1, 1),
@@ -194,7 +194,7 @@ export function buildMiami(scene, quality) {
     for (let i = 0; i < 4; i++) { const seg = h / 4, k = (i + 1) / 4, tx = x + Math.cos(la) * lean * h * k * k, tz = z + Math.sin(la) * lean * h * k * k;
       const mx = (px + tx) / 2, mz = (pz + tz) / 2, r = 0.26 - i * 0.03;
       bk.add(TRUNK, mat4(mx, py + seg / 2, mz, 0, 0, 0, r, seg * 1.02, r), i % 2 ? 0x9a7a52 : 0x86683f); px = tx; pz = tz; py += seg; }
-    for (let k = 0; k < 6; k++) { const a = k / 6 * 6.28 + rand() * 0.3; leaf.at(x, z).add(FROND, mat4(px + Math.cos(a) * 1.4, py - 0.35, pz + Math.sin(a) * 1.4, 0, -a, -0.45, 3.0, 1, 1), k % 2 ? 0x3fb24a : 0x52c856); }
+    for (let k = 0; k < 6; k++) { const a = k / 6 * 6.28 + rand() * 0.3; leaf.at(x, z).add(FROND, mat4(px + Math.cos(a) * 1.4, py - 0.35, pz + Math.sin(a) * 1.4, 0, -a, -0.45, 3.0, 1, 1), k % 2 ? 0x1f9e4e : 0x33b85a); }
     minimapRects.push({ x0: x - 1, z0: z - 1, x1: x + 1, z1: z + 1, c: '#3e8f3a' });
   };
   for (let z = -124; z <= 124; z += 11) { palm(98.5, z); palm(80.5 + 1.2, z + 5); }

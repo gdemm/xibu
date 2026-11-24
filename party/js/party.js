@@ -40,19 +40,19 @@ function cloudGeo() {
   return CLOUD;
 }
 
-export function partyLook(scene, quality, kind) {
+export function partyLook(scene, quality, kind, pal) {
   toonify(scene);
-  scene.background = new THREE.Color(0x8fd3ff);
+  scene.background = new THREE.Color(pal?.mid ?? 0x8fd3ff);
   // gradient sky dome that follows the camera
   const sky = new THREE.Mesh(new THREE.SphereGeometry(320, 24, 12), new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { top: { value: new THREE.Color(0x3fa9ff) }, mid: { value: new THREE.Color(0x9fdcff) }, bot: { value: new THREE.Color(0xd9f3ff) } },
+    uniforms: { top: { value: new THREE.Color(pal?.top ?? 0x3fa9ff) }, mid: { value: new THREE.Color(pal?.mid ?? 0x9fdcff) }, bot: { value: new THREE.Color(pal?.bot ?? 0xd9f3ff) } },
     vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w * 0.99999; }',
     fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 bot; varying vec3 vP; void main(){ float h = normalize(vP).y; vec3 c = h > 0.0 ? mix(mid, top, smoothstep(0.0, 0.6, h)) : mix(mid, bot, smoothstep(0.0, -0.2, h)); gl_FragColor = vec4(c, 1.0); }',
   }));
   sky.renderOrder = 10; sky.frustumCulled = false; scene.add(sky);   // 帧率: drawn after the opaque scene at the far plane, so only the pixels nothing covers are shaded
   if (kind === 'island') {
-    const cmat = new THREE.MeshToonMaterial({ color: 0xffffff, emissive: 0xb8d8f0, emissiveIntensity: 0.45, gradientMap: toonRamp(), fog: false });
+    const cmat = new THREE.MeshToonMaterial({ color: pal?.cloud ?? 0xffffff, emissive: pal?.cloudE ?? 0xb8d8f0, emissiveIntensity: 0.45, gradientMap: toonRamp(), fog: false });
     // the camera far plane now ends just past the fog: clamp the far clouds onto it instead of clipping them
     cmat.onBeforeCompile = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n gl_Position.z = min(gl_Position.z, gl_Position.w * 0.99998);'); };
     sky.userData.clouds = cloudGeo().map(g => { const m = new THREE.Mesh(g, cmat); m.frustumCulled = false; scene.add(m); return m; });
