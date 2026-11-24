@@ -26,6 +26,11 @@ const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in wind
 let landReady = false;
 const LAND = createLand({ key: 'party_forceLand', cls: 'forceLand', hintSel: '#rotateHint', isTouch,
   onChange: () => { if (landReady) { onResize(); syncFullBtns(); } } });
+// 直接全屏模式 (user 2026-11-24): no 横屏/全屏 buttons; always landscape, fullscreen requested on the first tap
+LAND.enter();
+{ let first = true;
+  const autoFull = () => { if (LAND.isFull()) return; if (!first && !isTouch) return; first = false; LAND.enter(); };
+  for (const t of ['pointerup', 'touchend', 'click']) addEventListener(t, autoFull, true); }
 const forceLandPortrait = () => LAND.rotated();
 const viewSize = () => forceLandPortrait() ? [innerHeight, innerWidth] : [innerWidth, innerHeight];
 const gameXY = (cx, cy) => forceLandPortrait() ? { x: cy, y: innerWidth - cx } : { x: cx, y: cy };
