@@ -43,7 +43,7 @@ try { HUDL = JSON.parse(localStorage.getItem('party_hud_layout') || '{}') || {};
 let hudEdit = false;
 
 // ---------------- settings ----------------
-const DEF = { mpal: 'dusk', quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, smooth: 0.5, showFps: 0, tp: 1, peace: 0 };
+const DEF = { mpal: 'cycle', quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, smooth: 0.5, showFps: 0, tp: 1, peace: 0 };
 let S = { ...DEF };
 try { S = { ...DEF, ...JSON.parse(localStorage.getItem('partyfps.settings') || '{}') }; } catch (e) {}
 const saveS = () => { try { localStorage.setItem('partyfps.settings', JSON.stringify(S)); } catch (e) {} };
@@ -101,11 +101,17 @@ function buildWorld(kind = 'ship') {
   // clear old world
   for (let i = scene.children.length - 1; i >= 0; i--) { const o = scene.children[i]; scene.remove(o); o.traverse?.(c => { c.geometry?.dispose?.(); }); }
   const mia = kind === 'miami';   // 迈阿密: GTA6-style golden-hour grade (warm sun, magenta/orange sky, teal sea)
-  const MP = MIAMI_PALS[S.mpal] || MIAMI_PALS.dusk;
+  let mk = S.mpal;
+  if (mia && (mk === 'cycle' || !MIAMI_PALS[mk])) {   // 轮换: each Miami match takes the next sky in turn
+    const order = ['dusk', 'noon', 'dawn', 'night']; let i = -1; try { i = +localStorage.getItem('party_mpal_i'); } catch (e) {}
+    i = ((Number.isFinite(i) ? i : -1) + 1) % order.length; try { localStorage.setItem('party_mpal_i', i); } catch (e) {}
+    mk = order[i];
+  }
+  const MP = MIAMI_PALS[mk] || MIAMI_PALS.dusk;
   scene.add(mia ? new THREE.HemisphereLight(MP.hs, MP.hg, MP.hi) : new THREE.HemisphereLight(0xeaf6ff, 0x8a7a5a, 1.9));
   const sun = new THREE.DirectionalLight(mia ? MP.sun : 0xfff4dc, mia ? MP.si : 2.0); sun.position.set(-40, mia ? MP.sy : 60, 25); scene.add(sun);
   G.map = kind === 'island' ? buildIsland(scene, S.quality) : kind === 'miami' ? buildMiami(scene, S.quality, MP.sea) : buildMap(scene, S.quality);
-  builtQuality = S.quality + kind + (mia ? S.mpal : '');
+  builtQuality = mia ? null : S.quality + kind;   // 迈阿密 always rebuilds so 轮换 can change the sky
   scene.fog = kind === 'miami' ? new THREE.Fog(MP.fog, 40, { low: 125, mid: 160, high: 230 }[S.quality]) : new THREE.Fog(0xbfe6ff, 45, { low: 140, mid: 190, high: 260 }[S.quality]);   // 迈阿密: smaller, denser city -> shorter view, pink haze
   camera.far = scene.fog.far + 25; camera.updateProjectionMatrix();     // nothing past the fog is drawn (the bigger island stays cheap)
   G.sky = partyLook(scene, S.quality, mia ? 'island' : kind, mia ? MP.sky : null);
@@ -171,7 +177,7 @@ function startMatch(opts) {
   opts = { team: 'blue', size: 5, target: 30, diff: 'normal', ...(opts || {}) };
   G.opts = opts;
   const mapKind = opts.mode === 'br' && opts.brMap !== 'ship' ? (opts.brMap === 'miami' ? 'miami' : 'island') : 'ship';
-  if (!G.map || builtQuality !== S.quality + mapKind + (mapKind === 'miami' ? S.mpal : '')) buildWorld(mapKind);
+  if (!G.map || builtQuality !== S.quality + mapKind) buildWorld(mapKind);
   const mmEl = $('minimap'); if (mapKind !== 'ship') { mmEl.width = mmEl.height = 300; mmEl.classList.add('sq'); } else { mmEl.width = 400; mmEl.height = 104; mmEl.classList.remove('sq'); }
   document.body.classList.toggle('brIsland', mapKind !== 'ship'); document.body.classList.toggle('miami', mapKind === 'miami');
   for (const b of G.bots) scene.remove(b.mesh);
