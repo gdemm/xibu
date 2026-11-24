@@ -89,8 +89,8 @@ export function shotCops(G, h, origin, dir, w) {
   }
 }
 // a stopped police car can be stolen: the officer is pulled out (called from main.js nearestCar / toggleCar)
-export function canJack(v) { return v.driver === COP && Math.abs(v.speed) < 3 && !v.dead; }
-export function jack(G, h, v) { G.wanted.cops = G.wanted.cops.filter(c => c !== v); v.cop = null; v.siren = false; v.driver = null; resetAuto(v); raise(G, h, 1, '抢警车', v.pos); }
+export function canJack(v) { if (v.civ) return Math.abs(v.speed) < 6 && !v.dead; return v.driver === COP && Math.abs(v.speed) < 3 && !v.dead; }
+export function jack(G, h, v) { if (v.civ) { G.onCivJack?.(G, h, v); return; } G.wanted.cops = G.wanted.cops.filter(c => c !== v); v.cop = null; v.siren = false; v.driver = null; resetAuto(v); raise(G, h, 1, '抢警车', v.pos); }
 
 // ---------- shops ----------
 export function nearShop(G) {

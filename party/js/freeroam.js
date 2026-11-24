@@ -8,11 +8,13 @@ import { spawnVehicles, driveVehicle, poseVehicle, vehicleBox, inFootprint } fro
 import { autoDrive, resetAuto } from './autodrive.js';
 import { spawnLootDef } from './br.js';
 import { centerMsg } from './hud.js';
+import { createPeds, dressPed, posePed, flushPeds, disposePeds } from './peds.js';
 
 const $ = (id) => document.getElementById(id);
-const ROB_R = 2.8, PED_N = 20, ARMOR_HP = 200;
+const ROB_R = 2.8, PED_N = 28, CIV_N = 8, ARMOR_HP = 200;
 const PASTEL = [0xff8fb4, 0x52dcc8, 0xffcc6e, 0xb194ff, 0x6fc4ff, 0xffa078, 0x8ae89a, 0xfff1f5];
 const CLERK = { name: '店员', team: 'police', isPlayer: false, kills: 0, pos: new THREE.Vector3() };
+const CIV = { name: '司机', team: 'civ', isPlayer: false, kills: 0, pos: new THREE.Vector3() };
 const GUARD = { name: '押运员', team: 'police', isPlayer: false, kills: 0, pos: new THREE.Vector3() };
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _ray = new THREE.Ray(), _hit = new THREE.Vector3();
 const _box = new THREE.Box3(), _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _col = new THREE.Color();
@@ -75,8 +77,9 @@ export function freeCleanup(G, scene) {
   for (const l of F.locs || []) { if (l.ring) { scene.remove(l.ring); l.ring.geometry?.dispose?.(); l.ring.material?.dispose?.(); } if (l.sp) { scene.remove(l.sp); l.sp.material?.map?.dispose?.(); l.sp.material?.dispose?.(); } }
   for (const c of F.cams || []) if (c.m) { scene.remove(c.m); }
   for (const b of F.bags || []) if (b.m) scene.remove(b.m);
-  if (F.bodyMesh) { scene.remove(F.bodyMesh); F.bodyMesh.geometry?.dispose?.(); F.bodyMesh.material?.dispose?.(); F.bodyMesh.dispose?.(); }
-  if (F.headMesh) { scene.remove(F.headMesh); F.headMesh.geometry?.dispose?.(); F.headMesh.material?.dispose?.(); F.headMesh.dispose?.(); }
+  disposePeds(F.pedMesh, scene);
+  for (const v of F.traffic || []) { const i = G.vehicles?.indexOf(v); if (i != null && i >= 0) G.vehicles.splice(i, 1); scene.remove(v.mesh); }
+  if (G.onCivJack) G.onCivJack = null;
   if (F.armored) { const i = G.vehicles?.indexOf(F.armored); if (i != null && i >= 0) G.vehicles.splice(i, 1); scene.remove(F.armored.mesh); }
   hideJewel();
   G.freeState = null;
@@ -86,7 +89,7 @@ export function freeCleanup(G, scene) {
 export function setupFree(G, h) {
   const scene = h.scene;
   freeCleanup(G, scene);
-  const F = G.freeState = { locs: [], peds: [], cams: [], bags: [], rob: null, armored: null, hudT: 0, clothCd: 0, sprayCd: 0, safeT: 0, lastArmorDest: null };
+  const F = G.freeState = { locs: [], peds: [], traffic: [], pedPicks: null, cams: [], bags: [], rob: null, armored: null, hudT: 0, clothCd: 0, sprayCd: 0, safeT: 0, lastArmorDest: null };
   G.freeMask = false;
   const bm = $('bMask'); if (bm) bm.classList.remove('on');
   bindUI();
@@ -131,13 +134,8 @@ export function setupFree(G, h) {
   const nodes = (map.nodes || []).filter(n => n.n.length && !n.inside);
   let picks = nodes.filter(n => (map.roads || []).some(([x0, z0, x1, z1]) => segDist(n.p.x, n.p.z, x0, z0, x1, z1) < 13));
   if (picks.length < 40) picks = nodes;
-  const bodyGeo = new THREE.BoxGeometry(0.46, 1.22, 0.32); bodyGeo.translate(0, 0.9, 0);
-  const headGeo = new THREE.SphereGeometry(0.205, 8, 6); headGeo.translate(0, 1.7, 0);
-  F.bodyMesh = new THREE.InstancedMesh(bodyGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), PED_N);
-  F.headMesh = new THREE.InstancedMesh(headGeo, new THREE.MeshLambertMaterial({ color: 0xffd2a8 }), PED_N);
-  F.bodyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); F.headMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  F.bodyMesh.frustumCulled = false; F.headMesh.frustumCulled = false;
-  scene.add(F.bodyMesh); scene.add(F.headMesh);
+  F.pedPicks = picks.length ? picks : nodes;
+  F.pedMesh = createPeds(scene, PED_N);
   for (let i = 0; i < PED_N; i++) {
     const nd = picks[(Math.random() * picks.length) | 0] || nodes[0];
     const nidx = nodes.indexOf(nd) >= 0 ? map.nodes.indexOf(nd) : 0;
@@ -146,13 +144,36 @@ export function setupFree(G, h) {
     const ped = {
       pos, yaw: Math.random() * 6.28, node: nidx, prev: -1, tgt: { x: pos.x, z: pos.z }, alive: true,
       walk: Math.random() * 6, fleeT: 0, threat: new THREE.Vector3(), reportT: 0, reported: false,
-      color: PASTEL[i % PASTEL.length],
+      idleT: 0, phone: false, moving: false, deadT: 0,
     };
     pickNeighbor(G, ped);
-    F.bodyMesh.setColorAt(i, _col.set(ped.color));
+    dressPed(F.pedMesh, i, ped);
     F.peds.push(ped);
   }
-  if (F.bodyMesh.instanceColor) F.bodyMesh.instanceColor.needsUpdate = true;
+  // a few small groups standing and chatting on the pavement
+  for (let g = 0; g < 3; g++) {
+    const a0 = F.peds[g * 3], n = 2 + (g % 2);
+    a0.idleT = 9999; a0.group = true;
+    for (let k = 1; k < n; k++) {
+      const q = F.peds[g * 3 + k], ang = (k / n) * Math.PI * 2;
+      q.pos.set(a0.pos.x + Math.sin(ang) * 0.95, 0, a0.pos.z + Math.cos(ang) * 0.95);
+      if (!walkable(map, q.pos.x, q.pos.z, 0.3)) q.pos.copy(a0.pos).add(new THREE.Vector3(0.9, 0, 0));
+      q.idleT = 9999; q.group = true;
+    }
+    for (let k = 0; k < n; k++) { const q = F.peds[g * 3 + k]; q.yaw = Math.atan2(a0.pos.x + 0.3 - q.pos.x, a0.pos.z + 0.3 - q.pos.z); }
+    if (g === 1) F.peds[g * 3 + 1].phone = true;
+  }
+
+  // ---- street traffic: civilian cars driving the road net ----
+  const CT = ['coupe', 'muscle', 'convert', 'pickup'];
+  const spots = [];
+  for (let i = 0; i < CIV_N; i++) { const sp = roadPoint(G, G.player?.pos || { x: safe.x, z: safe.z }, 18); spots.push([CT[i % CT.length], sp.x, sp.z, sp.yaw]); }
+  for (const c of spawnVehicles(scene, { kind: 'island', vehicleSpots: spots })) {
+    h.toonify?.(c.mesh);
+    c.driver = CIV; c.civ = true; c.civDest = null;
+    G.vehicles.push(c); F.traffic.push(c);
+  }
+  G.onCivJack = (G2, h2, v) => civJack(G2, h2, v);
 
   // ---- armoured cash truck (auto-drives the road loop) ----
   const sp = { x: 24, z: -70, yaw: 0 };
@@ -194,41 +215,111 @@ function scare(G, pos, radius) {
 export function freeNoise(G, pos, radius = 45) { scare(G, pos, radius); }
 function killPed(G, h, ped, why) {
   if (!ped.alive) return;
-  ped.alive = false; ped.reportT = 0;
+  ped.alive = false; ped.reportT = 0; ped.deadT = 20; ped.phone = false;
   h.addSpark?.(new THREE.Vector3(ped.pos.x, 1.0, ped.pos.z), 0xff3a3a);
   crime(G, h, 1, why || '打死路人', ped.pos);
   scare(G, ped.pos, 22);
 }
+function respawnPed(G, p) {
+  const F = G.freeState, picks = F.pedPicks || [], pp = G.player?.pos;
+  for (let t = 0; t < 30; t++) {
+    const nd = picks[(Math.random() * picks.length) | 0]; if (!nd) break;
+    if (pp && Math.hypot(nd.p.x - pp.x, nd.p.z - pp.z) < 55) continue;
+    p.pos.set(nd.p.x, 0, nd.p.z); p.node = G.map.nodes.indexOf(nd); p.prev = -1; break;
+  }
+  p.alive = true; p.deadT = 0; p.fleeT = 0; p.reported = false; p.reportT = 0; p.idleT = 0; p.group = false; p.phone = false;
+  pickNeighbor(G, p);
+}
 function updatePeds(G, dt, h) {
-  const F = G.freeState; if (!F?.bodyMesh) return;
+  const F = G.freeState, PM = F?.pedMesh; if (!PM) return;
+  const pp = G.player?.pos;
+  F.pedFrame = (F.pedFrame || 0) + 1;
   for (let i = 0; i < F.peds.length; i++) {
     const p = F.peds[i];
-    if (!p.alive) { _m.makeScale(0, 0, 0); F.bodyMesh.setMatrixAt(i, _m); F.headMesh.setMatrixAt(i, _m); continue; }
+    const far = pp ? (p.pos.x - pp.x) ** 2 + (p.pos.z - pp.z) ** 2 > 4900 : false;
+    if (!p.alive) {
+      if (p.deadT > 0) { p.deadT -= dt; if (p.deadT <= 0) respawnPed(G, p); }
+      posePed(PM, i, p, far); continue;
+    }
     if (p.reportT > 0) {
       p.reportT -= dt;
-      if (p.reportT <= 0 && !p.reported) { p.reported = true; if (G.player?.alive) crime(G, h, 1, '路人报警', p.pos, true); }
+      if (p.reportT <= 0 && !p.reported) { p.reported = true; p.phone = true; if (G.player?.alive) crime(G, h, 1, '路人报警', p.pos, true); }
     }
     let speed = 0, tx = p.tgt.x, tz = p.tgt.z;
     if (p.fleeT > 0) {
-      p.fleeT -= dt;
+      p.fleeT -= dt; p.idleT = 0; p.group = false;
       const dx = p.pos.x - p.threat.x, dz = p.pos.z - p.threat.z, d = Math.hypot(dx, dz) || 1;
-      speed = 3.3; tx = p.pos.x + dx / d * 5; tz = p.pos.z + dz / d * 5;
+      speed = 4.2; tx = p.pos.x + dx / d * 5; tz = p.pos.z + dz / d * 5;
+      if (p.fleeT <= 0) p.phone = false;
+    } else if (p.idleT > 0) {
+      p.idleT -= dt;
     } else {
-      speed = 1.15;
-      if (Math.hypot(tx - p.pos.x, tz - p.pos.z) < 0.6) { pickNeighbor(G, p); tx = p.tgt.x; tz = p.tgt.z; }
+      speed = 1.2;
+      if (Math.hypot(tx - p.pos.x, tz - p.pos.z) < 0.6) {
+        pickNeighbor(G, p); tx = p.tgt.x; tz = p.tgt.z;
+        if (p.look?.talker && Math.random() < 0.3) { p.idleT = 6 + Math.random() * 8; p.phone = Math.random() < 0.6; }
+        else p.phone = false;
+      }
     }
+    p.moving = false;
     if (speed) {
       const dx = tx - p.pos.x, dz = tz - p.pos.z, d = Math.hypot(dx, dz) || 1;
       const step = Math.min(d, speed * dt), nx = p.pos.x + dx / d * step, nz = p.pos.z + dz / d * step;
-      if (walkable(G.map, nx, nz, 0.34)) { p.pos.x = nx; p.pos.z = nz; p.yaw = Math.atan2(dx, dz); }
+      if (walkable(G.map, nx, nz, 0.34)) { p.pos.x = nx; p.pos.z = nz; p.yaw = Math.atan2(dx, dz); p.moving = true; }
       else if (p.fleeT > 0) pickNeighbor(G, p);
     }
-    p.walk += dt * speed * 2.4;
-    const by = Math.abs(Math.sin(p.walk)) * 0.04;
-    _m.makeRotationY(p.yaw); _m.setPosition(p.pos.x, by, p.pos.z);
-    F.bodyMesh.setMatrixAt(i, _m); F.headMesh.setMatrixAt(i, _m);
+    p.walk += dt * speed * 2.6;
+    if (far && (F.pedFrame + i) % 4) continue;   // distant: refresh the instance only every 4th frame
+    posePed(PM, i, p, far);
   }
-  F.bodyMesh.instanceMatrix.needsUpdate = true; F.headMesh.instanceMatrix.needsUpdate = true;
+  flushPeds(PM);
+}
+
+// ---------------- street traffic ----------------
+function civJack(G, h, v) {
+  const F = G.freeState; if (!F) return;
+  v.civ = false; v.driver = null; resetAuto(v);
+  const i = F.traffic.indexOf(v); if (i >= 0) F.traffic.splice(i, 1);
+  // the driver jumps out and runs: reuse a dead or the farthest pedestrian slot
+  const pp = G.player.pos;
+  let slot = F.peds.find(q => !q.alive);
+  if (!slot) { let bd = -1; for (const q of F.peds) { const d = Math.hypot(q.pos.x - pp.x, q.pos.z - pp.z); if (d > bd) { bd = d; slot = q; } } }
+  if (slot) {
+    const sx = Math.cos(v.yaw) * 1.6, sz = -Math.sin(v.yaw) * 1.6;
+    slot.alive = true; slot.deadT = 0; slot.group = false; slot.idleT = 0; slot.phone = false;
+    slot.pos.set(v.pos.x + sx, 0, v.pos.z + sz);
+    slot.fleeT = 5; slot.threat.set(pp.x, 0, pp.z); slot.reported = false; slot.reportT = 2.5;
+  }
+  crime(G, h, 1, '抢车', v.pos);
+}
+function updateTraffic(G, dt, h) {
+  const F = G.freeState, pp = G.player?.pos; if (!F?.traffic?.length) return;
+  for (const v of F.traffic) {
+    if (v.dead || !v.civ) continue;
+    // keep the streets busy: far-away cars hop to a road 60-90 m from the player, out of sight
+    if (pp && Math.hypot(v.pos.x - pp.x, v.pos.z - pp.z) > 120) {
+      for (let t = 0; t < 12; t++) {
+        const sp = roadPoint(G, pp, 60);
+        if (Math.hypot(sp.x - pp.x, sp.z - pp.z) > 90) continue;
+        if (G.vehicles.some(o => o !== v && Math.hypot(o.pos.x - sp.x, o.pos.z - sp.z) < 6)) continue;
+        v.pos.set(sp.x, 0, sp.z); v.yaw = sp.yaw + (Math.random() < 0.5 ? Math.PI : 0); v.speed = 0; v.civDest = null; resetAuto(v); poseVehicle(v, 0);
+        break;
+      }
+    }
+    if (!v.civDest || Math.hypot(v.civDest.x - v.pos.x, v.civDest.z - v.pos.z) < 14) { const sp = roadPoint(G, v.pos, 50); v.civDest = { x: sp.x, z: sp.z }; }
+    const r = autoDrive(v, dt, G.map, G.vehicles, v.civDest, { cruise: 9, arrive: 10 });
+    let thr = r.thr;
+    // brake for people in front (pedestrians and the player on foot)
+    const fx = -Math.sin(v.yaw), fz = -Math.cos(v.yaw), reach = v.T.len + 4;
+    const blocked = (x, z) => { const dx = x - v.pos.x, dz = z - v.pos.z, al = dx * fx + dz * fz; return al > 0 && al < reach && Math.abs(dx * -fz + dz * fx) < v.T.wid + 0.6; };
+    let stop = pp && !h.inCar?.() && G.player.alive && blocked(pp.x, pp.z);
+    if (!stop) for (const q of F.peds) if (q.alive && blocked(q.pos.x, q.pos.z)) { stop = true; break; }
+    if (stop) { thr = v.speed > 0.3 ? -1 : 0; if (!v.honkT || G.now > v.honkT) { v.honkT = G.now + 3; } }
+    driveVehicle(v, dt, thr, r.st, G.map, G.vehicles);
+    poseVehicle(v, dt);
+    // cars that are not stopped still hurt careless pedestrians
+    if (Math.abs(v.speed) > 5) for (const q of F.peds) if (q.alive && inFootprint(v, q.pos.x, q.pos.z, 0.3)) { q.alive = false; q.deadT = 20; scare(G, q.pos, 18); }
+  }
 }
 
 // ---------------- crime / witnesses ----------------
@@ -485,6 +576,7 @@ export function updateFree(G, dt, h) {
   updatePeds(G, dt, h);
   updateRob(G, dt, h);
   updateArmored(G, dt, h);
+  updateTraffic(G, dt, h);
   updateLocations(G, dt, h);
   // pedestrians run over by the player's car
   if (h.inCar?.() && Math.abs(h.inCar().speed) > 4 && G.now > (F.runT || 0)) {
@@ -527,6 +619,8 @@ export function freeMinimap(G, ctx, mx, mz, sx, sz) {
     ctx.strokeStyle = '#2a5bd7'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, y - 3, 6, 6);
   }
   for (const ped of F.peds) if (ped.alive) dot(ped.pos.x, ped.pos.z, '#ffffff', 1.3);
+  ctx.fillStyle = '#9aa0a8';
+  for (const c of F.traffic || []) if (c.civ && !c.dead) ctx.fillRect(mx(c.pos.x) - 2, mz(c.pos.z) - 2, 4, 4);
   if (G.wanted?.stars > 0 && G.wanted.hasSeen) dot(G.wanted.lastSeen.x, G.wanted.lastSeen.y, '#ff2bd6', 2);
   ctx.restore();
 }

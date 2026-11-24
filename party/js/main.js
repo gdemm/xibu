@@ -413,7 +413,7 @@ function toggleCar() {
   if (G.state !== 'playing' || !G.player?.alive) return;
   if (P.inCar) { leaveCar(); return; }
   const v = nearestCar(); if (!v) return;
-  if (v.driver) { jack(G, WH, v); HUD.centerMsg('抢车！把警察拽了下来', 1200); }
+  if (v.driver) { const civ = v.civ; jack(G, WH, v); HUD.centerMsg(civ ? '抢车！把司机拽了下来' : '抢车！把警察拽了下来', 1200); }
   P.inCar = v; v.driver = G.player; P.scoped = false; P.firing = false; G.reloading = false; G.player.crouch = false;
   G.player.yaw = v.yaw; G.player.pitch = -0.18; HUD.centerMsg(v.T.name + (v.T.fly ? ' · 按住「升」「降」控制高度，摇杆前进转向' : ' · 摇杆前后油门刹车，左右转向'), 2000);
 }
