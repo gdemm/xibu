@@ -33,7 +33,7 @@ const LAND = createLand({ key: 'party_forceLand', cls: 'forceLand', hintSel: '#r
 // 直接全屏模式 (user 2026-11-24): no 横屏/全屏 buttons; always landscape, fullscreen requested on the first tap
 LAND.enter();
 { let first = true;
-  const autoFull = () => { if (LAND.isFull()) return; if (!first && !isTouch) return; first = false; LAND.enter(); };
+  const autoFull = () => { if (LAND.isFull() || window.__noAutoFull) return; if (!first && !isTouch) return; first = false; LAND.enter(); };
   for (const t of ['pointerup', 'touchend', 'click']) addEventListener(t, autoFull, true); }
 const forceLandPortrait = () => LAND.rotated();
 const viewSize = () => forceLandPortrait() ? [innerHeight, innerWidth] : [innerWidth, innerHeight];
@@ -1062,7 +1062,11 @@ const openSettings = () => {
   $('btnQuit').classList.toggle('hidden', !play); $('btnExitFull').classList.toggle('hidden', !isFull());
   $('settings').classList.remove('hidden'); if (document.pointerLockElement) document.exitPointerLock();
 };
-const exitFull = () => LAND.exit();
+const exitFull = () => {   // 退出: leave real fullscreen only (game stays landscape) and stop re-entering it on the next tap
+  window.__noAutoFull = true;
+  try { if (document.fullscreenElement) document.exitFullscreen()?.catch?.(() => {}); else if (document.webkitFullscreenElement) document.webkitExitFullscreen?.(); } catch (e) {}
+  try { screen.orientation?.unlock?.(); } catch (e) {}
+};
 function syncFullBtns() { const f = isFull(); $('tExit').classList.toggle('hidden', !f); $('tFull').classList.toggle('hidden', f && !LAND.isOn()); $('btnExitFull').classList.toggle('hidden', !f); }
 let wasFull = false;
 function onFullChange() {

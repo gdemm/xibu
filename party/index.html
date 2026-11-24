@@ -194,7 +194,7 @@ body.br #topbar .b,body.br #topbar .r{font-size:15px;min-width:0;white-space:now
 #dmg.zone{opacity:.5!important;background:radial-gradient(ellipse at center,transparent 40%,rgba(40,110,255,.65))}
 @keyframes rot{0%,20%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
 @media (max-height:380px){.brand h1{font-size:38px}.opts{gap:6px;padding:10px 14px}.seg button{padding:5px 4px}}
-#rotateHint,body.landJs.needRot #rotateHint,#lFull,#lExit,#tFull,#tExit,#btnFull,#btnFull2,#btnExitFull{display:none!important}
+#rotateHint,body.landJs.needRot #rotateHint,#lFull,#tFull,#btnFull,#btnFull2{display:none!important}
 #btnFull:active,#btnFull2:active,#tFull:active{transform:scale(.94)}
 #btnFull,#btnFull2,#tFull{transition:transform .08s}
 @media (orientation:portrait){
@@ -272,7 +272,7 @@ body.forceLand .wdGrid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr))}
 <body class="forceLand">
 <canvas id="gl"></canvas>
 
-<div id="lobby" class="brMode"><div id="lobbyTop"><button id="lFull" title="横屏/全屏">⤢</button><button id="lExit" title="退出横屏/全屏">✕</button></div>
+<div id="lobby" class="brMode"><div id="lobbyTop"><button id="lFull" title="横屏/全屏">⤢</button><button id="lExit" title="退出全屏">✕</button></div>
   <div class="bgSea"></div><div class="bgShip"></div>
   <div class="lobbyCard">
     <div class="brand">
