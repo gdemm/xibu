@@ -33,7 +33,12 @@ export const WARDROBE = [
 // recolor skins: our own palette remaps of the base character's KayKit atlas (pre-baked 256px lossless WebP, assets/chars2/skins/)
 export const SKINS = [
   { id: '', name: '原版' }, { id: 'camo', name: '迷彩' }, { id: 'blackgold', name: '黑金' }, { id: 'sakura', name: '樱粉' }, { id: 'ice', name: '冰蓝' },
+  // 2026-11 迈阿密霓虹风 (original palettes, no game IP): tropical shirt colours / neon night / beach day
+  // acc: worn accessories (critter.js): glasses = 墨镜, chain = 金链子, band = 头巾
+  { id: 'aloha', name: '椰岛花衬衫', acc: ['glasses', 'chain'] }, { id: 'neon', name: '霓虹夜', acc: ['glasses'] }, { id: 'beach', name: '海滩风', acc: ['glasses'] },
+  { id: 'street', name: '街头牛仔', acc: ['chain', 'glasses'] },
 ];
+export const skinAcc = (look) => SKINS.find(k => k.id === look)?.acc || [];
 export const skinTexUrl = (id, look) => look ? D + 'skins/' + id + '_' + look + '.webp' : '';
 export const skinThumb = (id, look) => look ? D + 'thumbs/' + id + '_' + look + '.webp' : D + 'thumbs/' + id + '.webp';
 export const REG = Object.fromEntries([...BOT_CHARS, ...WARDROBE, ...SKIN_MODELS].map(e => [e.id, e]));
@@ -55,7 +60,7 @@ export function deleteChar(id) {
 export function restoreAll() { ls.set(K_DEL, '[]'); }
 // picked skin per base character: {"Rogue":"camo", "Survivalist":"Hiker", ...}; '' = 原版; unknown / stale values fall back to 原版
 function skinMap() { try { const o = JSON.parse(ls.get(K_SKIN) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; } }
-// all choices for a base: 原版, 4 recolors, then its model skins ({ id: model id, model: true })
+// all choices for a base: 原版, 7 recolors, then its model skins ({ id: model id, model: true })
 export function skinsOf(base) { const e = WARDROBE.find(w => w.id === base); return e ? [...SKINS, ...e.models.map(m => ({ id: m, name: REG[m].name, model: true }))] : [SKINS[0]]; }
 export function pickedSkin(base = pickedId()) { const v = skinMap()[base]; return v && skinsOf(base).some(k => k.id === v) ? v : ''; }
 export function setSkin(base, skin) { if (!BASE.has(base) || !skinsOf(base).some(k => k.id === skin)) return; const m = skinMap(); if (skin) m[base] = skin; else delete m[base]; ls.set(K_SKIN, JSON.stringify(m)); }

@@ -10,16 +10,16 @@ const HALF = 140; // the original 280 x 280 m core (port, village, woods keep th
 export const ISLAND = { minX: -196, maxX: 196, minZ: -252, maxZ: 140 };
 const IC = { x: (ISLAND.minX + ISLAND.maxX) / 2, z: (ISLAND.minZ + ISLAND.maxZ) / 2, w: ISLAND.maxX - ISLAND.minX, d: ISLAND.maxZ - ISLAND.minZ };
 
-function canvasTex(w, h, draw, rx = 1, ry = 1) {
+export function canvasTex(w, h, draw, rx = 1, ry = 1) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
-function noise(g, w, h, a, n = 1200, rgb = '0,0,0') { for (let i = 0; i < n; i++) { g.fillStyle = `rgba(${rgb},${Math.random() * a})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); } }
+export function noise(g, w, h, a, n = 1200, rgb = '0,0,0') { for (let i = 0; i < n; i++) { g.fillStyle = `rgba(${rgb},${Math.random() * a})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); } }
 // deterministic rng so every match on this map looks the same
 let seed = 7; const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647; const rr = (a, b) => a + rand() * (b - a);
 
 // merge many box/cyl geometries that share one material into one mesh (keeps draw calls low on phones)
-class Batch {
+export class Batch {
   constructor(mat) { this.mat = mat; this.geos = []; }
   add(geo, x, y, z, ry = 0) { const g = geo.index ? geo.toNonIndexed() : geo.clone(); const m = new THREE.Matrix4().makeRotationY(ry).setPosition(x, y, z); g.applyMatrix4(m); this.geos.push(g); }
   build(scene) {
@@ -33,7 +33,7 @@ class Batch {
 }
 
 // hide meshes whose bounding sphere is farther than their userData.lodD from the camera (a few dozen checks per frame)
-function lodUpdate(list, cam) {
+export function lodUpdate(list, cam) {
   for (const m of list) {
     const s = m.geometry.boundingSphere, r = m.userData.lodD + s.radius, dx = s.center.x - cam.x, dz = s.center.z - cam.z;
     m.visible = dx * dx + dz * dz < r * r;
@@ -162,20 +162,28 @@ export function buildIsland(scene, quality) {
   const decoStats = decorateIsland(scene, { solids, HALF, B: ISLAND, BLD, TREES, FENCES, ROADS, quality, lods: LODS });
   decoStats.props = OUT.stats;
 
+  const { nodes, covers, findPath, nearestNode, rayWorld, hasLOS, near } = navCore(solids, G_DOORS, G_ROOMS, ISLAND);
+  const spawns = { blue: [], red: [] };
+  return { solids, nodes, covers, spawns, minimapRects, findPath, nearestNode, rayWorld, hasLOS, update() {}, walkY: 0, bounds: ISLAND, center: new THREE.Vector2(IC.x, IC.z), kind: 'island', near, decoStats, roads: ROADS, lod: (cam) => { OUT.lod(cam); lodUpdate(LODS, cam); } };
+}
+
+
+// nav graph + ray tests + collision lookup over a map's solids (shared by 港口岛 and 迈阿密)
+export function navCore(solids, G_DOORS, G_ROOMS, BB) {
   // ---------- nav graph: 4 m grid + door / room nodes ----------
   // walkable test for the nav graph, via an 8 m hash of the low solids (the map has ~2x the solids now: a linear scan was O(n^2))
   const FH = new Map(), FC = 8;
   for (const b of solids) { if (!(b.min.y < 1.6 && b.max.y > 0.3)) continue; for (let x = Math.floor(b.min.x / FC); x <= Math.floor(b.max.x / FC); x++) for (let z = Math.floor(b.min.z / FC); z <= Math.floor(b.max.z / FC); z++) { const k = x * 4096 + z; let a = FH.get(k); if (!a) FH.set(k, a = []); a.push(b); } }
   const free = (x, z, r = 0.6) => {
-    if (!(x >= ISLAND.minX - 8 && x <= ISLAND.maxX + 8 && z >= ISLAND.minZ - 8 && z <= ISLAND.maxZ + 8)) return false;
+    if (!(x >= BB.minX - 8 && x <= BB.maxX + 8 && z >= BB.minZ - 8 && z <= BB.maxZ + 8)) return false;
     for (let cx = Math.floor((x - r) / FC); cx <= Math.floor((x + r) / FC); cx++) for (let cz = Math.floor((z - r) / FC); cz <= Math.floor((z + r) / FC); cz++) { const a = FH.get(cx * 4096 + cz); if (a) for (const b of a) if (x + r > b.min.x && x - r < b.max.x && z + r > b.min.z && z - r < b.max.z) return false; }
     return true;
   };
   const nodes = [], grid = new Map(), S = 4;
-  for (let x = ISLAND.minX + 2; x <= ISLAND.maxX - 2; x += S) for (let z = ISLAND.minZ + 2; z <= ISLAND.maxZ - 2; z += S) if (free(x, z)) { grid.set(x + ',' + z, nodes.length); nodes.push({ p: new THREE.Vector3(x, 0, z), n: [], deck: true }); }
+  for (let x = BB.minX + 2; x <= BB.maxX - 2; x += S) for (let z = BB.minZ + 2; z <= BB.maxZ - 2; z += S) if (free(x, z)) { grid.set(x + ',' + z, nodes.length); nodes.push({ p: new THREE.Vector3(x, 0, z), n: [], deck: true }); }
   const segClear = (a, b) => { const d = Math.hypot(b.x - a.x, b.z - a.z), st = Math.ceil(d / 0.5); for (let i = 1; i < st; i++) { const t = i / st; if (!free(a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t, 0.42)) return false; } return true; };
   const link = (i, j) => { if (i !== j && !nodes[i].n.includes(j)) { nodes[i].n.push(j); nodes[j].n.push(i); } };
-  for (let x = ISLAND.minX + 2; x <= ISLAND.maxX - 2; x += S) for (let z = ISLAND.minZ + 2; z <= ISLAND.maxZ - 2; z += S) {
+  for (let x = BB.minX + 2; x <= BB.maxX - 2; x += S) for (let z = BB.minZ + 2; z <= BB.maxZ - 2; z += S) {
     const i = grid.get(x + ',' + z); if (i == null) continue;
     for (const [dx, dz] of [[S, 0], [0, S], [S, S], [S, -S]]) { const j = grid.get((x + dx) + ',' + (z + dz)); if (j != null && segClear(nodes[i].p, nodes[j].p)) link(i, j); }
   }
@@ -235,8 +243,7 @@ export function buildIsland(scene, quality) {
   // collision subset around a position for moveEntity (3x3 cells, cached per cell)
   const nearCache = new Map();
   function near(p) { const cx = Math.floor(p.x / CG), cz = Math.floor(p.z / CG), k = cx + ',' + cz; let a = nearCache.get(k); if (a) return a; const set = new Set(); for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) for (const i of cells.get((cx + ox) + ',' + (cz + oz)) || []) set.add(solids[i]); a = [...set]; nearCache.set(k, a); return a; }
-  const spawns = { blue: [], red: [] };
-  return { solids, nodes, covers, spawns, minimapRects, findPath, nearestNode, rayWorld, hasLOS, update() {}, walkY: 0, bounds: ISLAND, center: new THREE.Vector2(IC.x, IC.z), kind: 'island', near, decoStats, lod: (cam) => { OUT.lod(cam); lodUpdate(LODS, cam); } };
+  return { nodes, covers, findPath, nearestNode, rayWorld, hasLOS, near };
 }
 
 // ======================================================================================================

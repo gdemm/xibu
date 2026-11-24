@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { buildMap, moveEntity } from './map.js';
 import { buildIsland } from './island.js';
+import { buildMiami } from './miami.js';
 import { WEAPONS, ORDER, buildViewmodels, MUZZLE } from './weapons.js';
 import { createBotMesh, updateBot, eyeOf } from './bots.js';
 import { animateDeath, resetSoldier, animateSoldier, soldierTris, createSoldier, soldierHit, setSoldierGear } from './critter.js';
@@ -13,6 +14,8 @@ import { ensureChar } from './critter.js';
 import { playerJump, airStep, updateDrop } from './drop.js';
 import { partyLook, toonify } from './party.js';
 import { spawnVehicles, driveVehicle, flyVehicle, poseVehicle, inFootprint, vehicleBox, exitSpot } from './vehicles.js';
+import { autoDrive, resetAuto } from './autodrive.js';
+import { setupWanted, updateWanted, addStars, addCash, shotCops, canJack, jack, robStart, robStop, COP_ENTITY } from './wanted.js';
 import { sfx, unlockAudio } from './audio.js';
 import * as HUD from './hud.js';
 import { initArrows, clearArrows, shootArrow, updateArrows } from './bow.js';
@@ -40,7 +43,7 @@ try { HUDL = JSON.parse(localStorage.getItem('party_hud_layout') || '{}') || {};
 let hudEdit = false;
 
 // ---------------- settings ----------------
-const DEF = { quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, showFps: 0, tp: 1, peace: 0 };
+const DEF = { quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, smooth: 0.5, showFps: 0, tp: 1, peace: 0 };
 let S = { ...DEF };
 try { S = { ...DEF, ...JSON.parse(localStorage.getItem('partyfps.settings') || '{}') }; } catch (e) {}
 const saveS = () => { try { localStorage.setItem('partyfps.settings', JSON.stringify(S)); } catch (e) {} };
@@ -92,11 +95,11 @@ function buildWorld(kind = 'ship') {
   for (let i = scene.children.length - 1; i >= 0; i--) { const o = scene.children[i]; scene.remove(o); o.traverse?.(c => { c.geometry?.dispose?.(); }); }
   scene.add(new THREE.HemisphereLight(0xeaf6ff, 0x8a7a5a, 1.9));
   const sun = new THREE.DirectionalLight(0xfff4dc, 2.0); sun.position.set(-40, 60, 25); scene.add(sun);
-  G.map = kind === 'island' ? buildIsland(scene, S.quality) : buildMap(scene, S.quality);
+  G.map = kind === 'island' ? buildIsland(scene, S.quality) : kind === 'miami' ? buildMiami(scene, S.quality) : buildMap(scene, S.quality);
   builtQuality = S.quality + kind;
-  scene.fog = new THREE.Fog(0xbfe6ff, 45, { low: 140, mid: 190, high: 260 }[S.quality]);
+  scene.fog = kind === 'miami' ? new THREE.Fog(0xffd9ec, 40, { low: 125, mid: 160, high: 230 }[S.quality]) : new THREE.Fog(0xbfe6ff, 45, { low: 140, mid: 190, high: 260 }[S.quality]);   // 迈阿密: smaller, denser city -> shorter view, pink haze
   camera.far = scene.fog.far + 25; camera.updateProjectionMatrix();     // nothing past the fog is drawn (the bigger island stays cheap)
-  G.sky = partyLook(scene, S.quality, kind);
+  G.sky = partyLook(scene, S.quality, kind === 'miami' ? 'island' : kind);
   tracers.length = 0;
   const tm = new THREE.LineBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.9 });
   for (let i = 0; i < 24; i++) {
@@ -158,10 +161,10 @@ function startMatch(opts) {
   G.paused = false; closeBag(); $('settings').classList.add('hidden'); $('nearList').classList.add('hidden'); nearKey = '';
   opts = { team: 'blue', size: 5, target: 30, diff: 'normal', ...(opts || {}) };
   G.opts = opts;
-  const mapKind = opts.mode === 'br' && opts.brMap !== 'ship' ? 'island' : 'ship';
+  const mapKind = opts.mode === 'br' && opts.brMap !== 'ship' ? (opts.brMap === 'miami' ? 'miami' : 'island') : 'ship';
   if (!G.map || builtQuality !== S.quality + mapKind) buildWorld(mapKind);
-  const mmEl = $('minimap'); if (mapKind === 'island') { mmEl.width = mmEl.height = 300; mmEl.classList.add('sq'); } else { mmEl.width = 400; mmEl.height = 104; mmEl.classList.remove('sq'); }
-  document.body.classList.toggle('brIsland', mapKind === 'island');
+  const mmEl = $('minimap'); if (mapKind !== 'ship') { mmEl.width = mmEl.height = 300; mmEl.classList.add('sq'); } else { mmEl.width = 400; mmEl.height = 104; mmEl.classList.remove('sq'); }
+  document.body.classList.toggle('brIsland', mapKind !== 'ship'); document.body.classList.toggle('miami', mapKind === 'miami');
   for (const b of G.bots) scene.remove(b.mesh);
   brCleanup(G, scene);
   for (const v of G.vehicles || []) scene.remove(v.mesh);
@@ -172,7 +175,7 @@ function startMatch(opts) {
   G.quality = S.quality; G.peace = !!+S.peace; VM.setTeam(opts.mode === 'br' ? 'blue' : opts.team);
   if (G.mode === 'br') {
     G.diff = opts.diff; G.scores = { blue: 0, red: 0 }; G.now = G.now || 0;
-    setupBR(G, scene, BRH);
+    setupBR(G, scene, BRH); setupWanted(G);
     makeBody();
     $('target').textContent = '';
     $('lobby').classList.add('hidden'); $('endScr').classList.add('hidden'); $('scoreboard').classList.add('hidden'); $('deathScr').classList.add('hidden');
@@ -182,7 +185,7 @@ function startMatch(opts) {
     HUD.centerMsg(G.drop ? '派对开始！点「跳伞」选择落点' : '派对吃鸡 · 搜集物资，活到最后', 2600);
     return;
   }
-  document.body.classList.remove('br');
+  document.body.classList.remove('br'); G.wanted = null; setupWanted(G);
   G.diff = opts.diff; G.target = +opts.target; G.scores = { blue: 0, red: 0 }; G.timeLeft = 600;
   const p = makeEntity('你', opts.team, true); G.player = p;
   const bots = [];
@@ -307,6 +310,7 @@ function kill(t, attacker, w, head) {
     P.firing = false; P.scoped = false; G.reloading = false; P.draw = 0; closeBag();
     $('deathBy').textContent = attacker.team === 'zone' ? '你倒在了安全区外' : `击败你的是 ${attacker.name}${head ? '（爆头）' : ''}`; $('deathScr').classList.remove('hidden');
   }
+  if (attacker.isPlayer && G.wanted && !t.isPlayer) { addStars(G, WH, 1, '击杀'); addCash(G, 100); }
   if (attacker.isPlayer) { HUD.hitMarker('kill'); sfx.kill(); HUD.centerMsg(head ? `爆头！击杀 ${t.name}` : `击杀 ${t.name}`, 1100); }
   if (G.mode === 'br') { brKilled(G, t, BRH); return; }
   if (G.scores[attacker.team] >= G.target) endMatch();
@@ -317,6 +321,7 @@ BRH = {
   resetBot: (e) => { resetSoldier(e.mesh); e.mesh.visible = true; e.mesh.rotation.set(0, e.yaw, 0); e.mesh.position.copy(e.pos); e.aiState = 'patrol'; e.path = null; e.target = null; e.burstLeft = 4; e.lastSeen.copy(e.pos); },
 };
 G.brGoal = brGoal;
+const WH = { HUD, scene, sfx, damage: (t, a, att, w, head, zone) => damage(t, a, att, w, head, zone), inCar: () => P.inCar, tracer: (a, b) => addTracer(a, b), addSpark: (p, c) => addSpark(p, c), toonify };
 const DROPH = { HUD, animate: (m, dt, o) => animateSoldier(m, dt, o) };
 G.debugKillBot = function () {
   if (G.state !== 'playing') return null;
@@ -339,11 +344,22 @@ const thirdPerson = () => !!P.inCar || !!G.player?.air || (S.tp && !P.scoped);
 function makeBody() { if (P.body) scene.remove(P.body); P.body = createSoldier(G.mode === 'br' ? 'player' : G.player.team, { ...pickedLook() }); P.body.visible = false; scene.add(P.body); $('bView')?.classList.toggle('on', !!S.tp); }
 function poseBody(dt, mx, mz, speed, seated) {
   const b = P.body; if (!b) return;
-  b.visible = G.player.alive && thirdPerson() && !(P.inCar && (P.inCar.type === 'bus' || P.inCar.type === 'truck' || P.inCar.mesh?.userData.kenney));
+  b.visible = G.player.alive && thirdPerson() && !(P.inCar && (P.inCar.type === 'bus' || P.inCar.type === 'truck' || P.inCar.T.closed || P.inCar.mesh?.userData.kenney));
   if (!b.visible) return;
-  b.position.copy(G.player.pos); b.rotation.set(0, G.player.yaw, 0);
-  if (seated) { const v = P.inCar; b.rotation.set(0, v.yaw, v.lean, 'YXZ'); b.position.y += { jeep: 0.55, moto: 0.45, bike: 0.5 }[v.type] || 0.5; if (v.type === 'jeep') { b.position.x += Math.cos(v.yaw) * -0.45; b.position.z += -Math.sin(v.yaw) * -0.45; } }
-  animateSoldier(b, dt, { moveX: seated ? 0 : mx, moveZ: seated ? 0 : mz, speed, yaw: b.rotation.y, wep: G.weapon.id, firing: G.now - (G.player.lastFired || -9) < 0.6, crouch: !!seated || G.player.crouch, aim: !seated, seat: !!seated, bow: !!G.weapon.bow, draw: P.draw, nocked: G.ammo.bow?.mag > 0, pitch: G.player.pitch * 0.6, ground: seated ? true : G.player.onGround, vy: G.player.vel.y, reload: G.reloading ? 1 - Math.max(0, G.reloadEnd - G.now) / G.weapon.reload : -1 });
+  b.position.copy(G.player.pos);
+  // 2026-11 转身: the body turns smoothly (shortest arc, fast exponential) instead of snapping to the camera yaw.
+  // Aiming (firing / scope / bow draw / standing still) -> face the camera yaw; moving without aiming -> face the run direction.
+  const p = G.player, aiming = seated || P.scoped || P.draw > 0 || P.firing || G.now - (p.lastFired || -9) < 0.9 || G.reloading;
+  const mv = Math.hypot(mx, mz) > 0.1, faceMove = !aiming && mv && S.tp;
+  const tgt = faceMove ? Math.atan2(-mx, -mz) : p.yaw;
+  if (P.bodyYaw == null || !b.userData.yawInit) { P.bodyYaw = tgt; b.userData.yawInit = true; }
+  let dy = tgt - P.bodyYaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  const rate = aiming ? 22 : faceMove ? 10 : 6;
+  if (!faceMove && !aiming && Math.abs(dy) < 1.2) dy = 0;    // idle: small camera turns don't swivel the body (no shuffle)
+  P.bodyYaw += dy * Math.min(1, dt * rate);
+  b.rotation.set(0, P.bodyYaw, 0);
+  if (seated) { const v = P.inCar; b.rotation.set(0, v.yaw, v.lean, 'YXZ'); b.position.y += { jeep: 0.55, moto: 0.45, bike: 0.5, convert: 0.35 }[v.type] || 0.5; if (v.type === 'jeep' || v.type === 'convert') { b.position.x += Math.cos(v.yaw) * -0.45; b.position.z += -Math.sin(v.yaw) * -0.45; } }
+  animateSoldier(b, dt, { moveX: seated ? 0 : mx, moveZ: seated ? 0 : mz, speed, yaw: b.rotation.y, wep: G.weapon.id, firing: G.now - (G.player.lastFired || -9) < 0.6, crouch: !!seated || G.player.crouch, aim: !seated && !faceMove, seat: !!seated, bow: !!G.weapon.bow, draw: P.draw, nocked: G.ammo.bow?.mag > 0, pitch: G.player.pitch * 0.6, ground: seated ? true : G.player.onGround, vy: G.player.vel.y, reload: G.reloading ? 1 - Math.max(0, G.reloadEnd - G.now) / G.weapon.reload : -1 });
 }
 const _cd = new THREE.Vector3(), _cp = new THREE.Vector3();
 function chaseCam(x, y, z, dist, side, up) {
@@ -351,19 +367,23 @@ function chaseCam(x, y, z, dist, side, up) {
   _cp.set(x, y + up, z);
   const right = new THREE.Vector3(1, 0, 0).applyEuler(_q); _cp.addScaledVector(right, side);
   _cd.set(0, 0, 1).applyEuler(_q);
-  const d = Math.min(dist, G.map.rayWorld(_cp, _cd, dist + 0.4) - 0.35);
+  let d = Math.min(dist, G.map.rayWorld(_cp, _cd, dist + 0.4) - 0.35);
+  // 2026-11 视角: pull in at once when a wall comes between (no clipping), ease back out (no pumping while walking past posts)
+  if (P.camD == null || P.camDist !== dist || d < P.camD) P.camD = d; else P.camD += (d - P.camD) * Math.min(1, (P.camDt || 0.016) * 7);
+  P.camDist = dist; d = P.camD;
   camera.position.copy(_cp).addScaledVector(_cd, Math.max(0.4, d)); if (camera.position.y < 0.3) camera.position.y = 0.3;
   camera.rotation.set(p.pitch, p.yaw, 0);
 }
 function nearestCar() {
   const p = G.player; let best = null, bd = 1e9;
-  for (const v of G.vehicles || []) { if (v.driver) continue; if (!inFootprint(v, p.pos.x, p.pos.z, 2.2)) continue; const d = v.pos.distanceTo(p.pos); if (d < bd) { bd = d; best = v; } }
+  for (const v of G.vehicles || []) { if (v.dead || (v.driver && !canJack(v))) continue; if (!inFootprint(v, p.pos.x, p.pos.z, 2.2)) continue; const d = v.pos.distanceTo(p.pos); if (d < bd) { bd = d; best = v; } }
   return best;
 }
 function toggleCar() {
   if (G.state !== 'playing' || !G.player?.alive) return;
   if (P.inCar) { leaveCar(); return; }
   const v = nearestCar(); if (!v) return;
+  if (v.driver) { jack(G, WH, v); HUD.centerMsg('抢车！把警察拽了下来', 1200); }
   P.inCar = v; v.driver = G.player; P.scoped = false; P.firing = false; G.reloading = false; G.player.crouch = false;
   G.player.yaw = v.yaw; G.player.pitch = -0.18; HUD.centerMsg(v.T.name + (v.T.fly ? ' · 按住「升」「降」控制高度，摇杆前进转向' : ' · 摇杆前后油门刹车，左右转向'), 2000);
 }
@@ -373,7 +393,7 @@ function leaveCar(force) {
   const floorY = v.T.fly ? G.solidsNear(v.pos).reduce((m, b) => (v.pos.x > b.min.x - 0.5 && v.pos.x < b.max.x + 0.5 && v.pos.z > b.min.z - 0.5 && v.pos.z < b.max.z + 0.5 && b.max.y <= (v.alt || 0) + 0.3) ? Math.max(m, b.max.y) : m, 0) : 0;
   if (force && v.T.fly) { v.alt = floorY; v.speed = 0; poseVehicle(v, 0); }
   if (v.T.fly && (v.alt || 0) - floorY > 2.5) { HUD.centerMsg('太高了，先降落再下机', 1200); return; }
-  P.inCar = null; v.driver = null; P.liftUp = P.liftDown = false;
+  P.inCar = null; v.driver = null; P.liftUp = P.liftDown = false; if (P.auto) setAuto(false);
   // free = no wall/prop in the body's height at that spot; support = ground or a roof right under the feet (so you can get out on a rooftop)
   const fr = (x, z, y = 0) => G.solidsNear({ x, z }).every(b => !(x + 0.5 > b.min.x && x - 0.5 < b.max.x && z + 0.5 > b.min.z && z - 0.5 < b.max.z && b.max.y > y + 0.3 && b.min.y < y + 1.75)) && !inFootprint(v, x, z, 0.5);
   const sup = (x, z, y) => y < 0.1 || G.solidsNear({ x, z }).some(b => x > b.min.x && x < b.max.x && z > b.min.z && z < b.max.z && Math.abs(b.max.y - y) < 0.35);
@@ -390,7 +410,8 @@ function updateNearList(dt) {
   const key = list.map(l => l.id).join(',');
   if (key === nearKey) return; nearKey = key;
   el.classList.toggle('hidden', !list.length);
-  el.innerHTML = list.map(l => { const d = l.def, gear = d.k === 'armor' || d.k === 'helmet' || d.k === 'bag';
+  const bx = list.find(l => l.boxed)?.boxed;   // 死亡盒子: a header row naming whose crate it is
+  el.innerHTML = (bx ? `<div class="nlh">📦 ${bx.name} 的盒子</div>` : '') + list.map(l => { const d = l.def, gear = d.k === 'armor' || d.k === 'helmet' || d.k === 'bag';
     return `<div class="nl${l.manual ? ' man' : ''}" data-id="${l.id}"><i style="background:${hexC(gear ? LV_COLOR[d.lv] : d.c)}"></i><span>${d.name}</span>${gear ? `<b>Lv${d.lv}</b>` : d.k === 'scope' ? `<b>${d.lv}x</b>` : ''}</div>`; }).join('');
 }
 function pickNear(id) {
@@ -403,14 +424,27 @@ $('nearList').addEventListener('click', (e) => { const r = e.target.closest('.nl
 function updateCarButton() {
   const b = $('bCar'); if (!b) return;
   const show = G.player?.alive && !G.player.air && (P.inCar || nearestCar());
-  b.classList.toggle('hidden', !show); if (show) b.textContent = P.inCar ? '下车' : '上车';
+  b.classList.toggle('hidden', !show); if (show) b.textContent = P.inCar ? '下车' : nearestCar()?.driver ? '抢车' : '上车';
   const hint = $('carHint'); if (hint) { hint.classList.toggle('hidden', !show || isTouch); if (show) hint.textContent = (P.inCar ? 'F 下车' : 'F 上车 ' + nearestCar()?.T.name); }
   document.body.classList.toggle('driving', !!P.inCar); document.body.classList.toggle('heli', !!P.inCar?.T.fly);
+  const ab = $('bAuto'); if (ab) ab.classList.toggle('hidden', !(P.inCar && !P.inCar.T.fly && G.br && G.player?.alive));
+}
+function setAuto(on, msg) {
+  if (on && (!P.inCar || P.inCar.T.fly || !G.br)) return;
+  P.auto = !!on; resetAuto(P.inCar);
+  const b = $('bAuto'); if (b) { b.classList.toggle('on', P.auto); b.textContent = P.auto ? '自动中' : '自动驾驶'; }
+  if (msg || on) HUD.centerMsg(msg || '自动驾驶 · 沿公路开往安全区，碰摇杆接管', 1600);
 }
 function updateDriving(dt) {
   const p = G.player, v = P.inCar;
-  const thr = Math.max(-1, Math.min(1, -P.joyY + (P.keys.KeyW ? 1 : 0) - (P.keys.KeyS ? 1 : 0)));
-  const st = Math.max(-1, Math.min(1, P.joyX + (P.keys.KeyD ? 1 : 0) - (P.keys.KeyA ? 1 : 0)));
+  let thr = Math.max(-1, Math.min(1, -P.joyY + (P.keys.KeyW ? 1 : 0) - (P.keys.KeyS ? 1 : 0)));
+  let st = Math.max(-1, Math.min(1, P.joyX + (P.keys.KeyD ? 1 : 0) - (P.keys.KeyA ? 1 : 0)));
+  // 自动驾驶: any manual throttle / steering takes the wheel back
+  if (P.auto) {
+    if (Math.abs(thr) > 0.15 || Math.abs(st) > 0.1 || v.T.fly) setAuto(false, '已切换手动驾驶');
+    else { const B = G.br, z = B ? (B.next && B.stage !== 'final' ? B.next.c : B.c) : null;
+      if (!z) setAuto(false); else { const r = autoDrive(v, dt, G.map, G.vehicles, { x: z.x, z: z.y }); thr = r.thr; st = r.st; if (r.done) setAuto(false, r.msg); } }
+  }
   const prevYaw = v.yaw;
   const lift = (P.liftUp || P.keys.Space ? 1 : 0) - (P.liftDown || P.keys.KeyC ? 1 : 0);
   const hit = v.T.fly ? flyVehicle(v, dt, Math.abs(thr) > 0.15 ? thr : 0, Math.abs(st) > 0.1 ? st : 0, lift, G.map) : driveVehicle(v, dt, Math.abs(thr) > 0.15 ? thr : 0, Math.abs(st) > 0.1 ? st : 0, G.map, G.vehicles);
@@ -421,7 +455,8 @@ function updateDriving(dt) {
   if (!v.T.fly && Math.abs(v.speed) > 4) for (const e of G.entities) {
     if (e === p || !e.alive || G.now < (e.carHitT || 0)) continue;
     if (!inFootprint(v, e.pos.x, e.pos.z, 0.45)) continue;
-    e.carHitT = G.now + 0.6; damage(e, Math.abs(v.speed) * 6 * v.T.hitK, p, { name: v.T.name }, false);
+    e.carHitT = G.now + 0.6; if (G.wanted && G.now > (G.wanted.runT || 0)) { G.wanted.runT = G.now + 3; addStars(G, WH, 1, '撞人'); }
+    damage(e, Math.abs(v.speed) * 6 * v.T.hitK, p, { name: v.T.name }, false);
     const fx = -Math.sin(v.yaw), fz = -Math.cos(v.yaw); e.pos.x += fx * 1.5; e.pos.z += fz * 1.5; e.vel.y = 4;
   }
   poseVehicle(v, dt);
@@ -544,6 +579,7 @@ function playerShoot() {
     muzzle = origin.clone().addScaledVector(_dir, 0.7); if (P.body) P.body.userData.kick = 1;
   }
   G.fire(p, origin, _dir.clone(), w.id, 1, muzzle);
+  if (G.wanted) shotCops(G, WH, origin, _dir.clone(), w);
   if (!w.melee) a.mag--;
   P.streak++; P.lastShotT = G.now;
   P.nextShot = G.now + w.rate;
@@ -559,7 +595,7 @@ function playerShoot() {
 const keysMoving = () => P.keys.KeyW || P.keys.KeyA || P.keys.KeyS || P.keys.KeyD;
 
 function updatePlayer(dt) {
-  const p = G.player;
+  const p = G.player; P.camDt = dt;
   if (!p.alive) {
     if (G.mode !== 'br') $('respawnIn').textContent = `${Math.max(0, p.respawnAt - G.now).toFixed(1)} 秒后在舱室复活`;
     camera.position.y += (p.pos.y + 0.4 - camera.position.y) * Math.min(1, dt * 3);
@@ -567,8 +603,16 @@ function updatePlayer(dt) {
     return;
   }
   // look
+  // 2026-11 视角: touch look = mild response curve (fine aim on slow drags, faster on big swipes) + light exponential smoothing
+  // of the remaining turn (镜头平滑 setting, ~1-2 frames, kills finger jitter without a laggy feel). Mouse stays raw.
   const sensK = (isTouch ? 0.0058 : 0.0022) * S.sens * (camera.fov / 75);
-  p.yaw -= P.lookX * sensK; p.pitch -= P.lookY * sensK; P.lookX = P.lookY = 0;
+  if (isTouch) {
+    const m = Math.hypot(P.lookX, P.lookY), curve = 0.82 + 0.36 * Math.min(1, m / (40 * dt * 60 + 1e-3));
+    P.lookAX = (P.lookAX || 0) + P.lookX * sensK * curve; P.lookAY = (P.lookAY || 0) + P.lookY * sensK * curve;
+    const sm = +S.smooth || 0, k = sm <= 0.01 ? 1 : 1 - Math.exp(-dt * (75 - 50 * sm));
+    const ax = P.lookAX * k, ay = P.lookAY * k; p.yaw -= ax; p.pitch -= ay; P.lookAX -= ax; P.lookAY -= ay;
+  } else { p.yaw -= P.lookX * sensK; p.pitch -= P.lookY * sensK; }
+  P.lookX = P.lookY = 0;
   // debug auto-aim (testing only)
   if (P.aimAt && G.now < P.debugFireUntil && P.aimAt.alive) {
     const e = camera.position, t = P.aimAt.pos; const dx = t.x - e.x, dz = t.z - e.z, dy = t.y + 1.25 - e.y;
@@ -711,11 +755,14 @@ addEventListener('keydown', (e) => {
   const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(e.code); if (n >= 0 && (!G.owned || G.owned.has(ORDER[n]))) setWeapon(ORDER[n]);
   if (e.code === 'KeyQ') cycleWeapon(1);
   if (e.code === 'KeyF') { if (!ejectOrOpen()) toggleCar(); }
+  if (e.code === 'KeyG' && P.inCar) setAuto(!P.auto);
+  if (e.code === 'KeyH' && !e.repeat && G.wanted) robStart(G);
   if (e.code === 'KeyV') toggleView();
   if (e.code === 'KeyB' && !e.repeat) toggleBag();
   if (e.code === 'KeyE' && !e.repeat) pickNear();
 });
 addEventListener('keyup', (e) => {
+  if (e.code === 'KeyH' && G.wanted?.rob) robStop(G, WH);
   P.keys[e.code] = false;
   if (e.code === 'Tab') showScoreboard(false);
   if ((e.code === 'KeyC' || e.code === 'ControlLeft') && G.player) G.player.crouch = false;
@@ -744,6 +791,8 @@ function btnDown(btn, el) {
   else if (btn === 'switch') cycleWeapon(1);
   else if (btn === 'scope') toggleScope();
   else if (btn === 'car') toggleCar();
+  else if (btn === 'auto') setAuto(!P.auto);
+  else if (btn === 'rob') robStart(G);
   else if (btn === 'eject') ejectOrOpen();
   else if (btn === 'view') toggleView();
   else if (btn === 'bag') toggleBag();
@@ -781,7 +830,8 @@ touchLayer.addEventListener('touchmove', (e) => {
       if (d > R) { dx = dx / d * R; dy = dy / d * R; }
       P.joyX = dx / R; P.joyY = dy / R; joyKnob.style.transform = `translate(${dx}px,${dy}px)`;
     } else if (s.type === 'look' || (s.type === 'btn' && s.btn === 'fire')) {
-      P.lookX += p.x - s.x; P.lookY += p.y - s.y; s.x = p.x; s.y = p.y;
+      const ddx = p.x - s.x, ddy = p.y - s.y, dd = Math.hypot(ddx, ddy), cl = dd > 140 ? 140 / dd : 1;   // a lost touchmove can't flick the camera
+      P.lookX += ddx * cl; P.lookY += ddy * cl; s.x = p.x; s.y = p.y;
     }
   }
 }, { passive: false });
@@ -790,7 +840,7 @@ function touchEnd(e) {
   for (const t of e.changedTouches) {
     const s = T.get(t.identifier); if (!s) continue; T.delete(t.identifier);
     if (s.type === 'joy') { P.joyX = P.joyY = 0; if (P.sprint) { P.runLock = true; HUD.centerMsg && HUD.centerMsg('自动奔跑中，碰摇杆取消', 1200); } P.sprint = false; joyBase.classList.remove('run'); joyBase.classList.add('hidden'); }
-    if (s.type === 'btn') { if (s.btn === 'up') P.liftUp = false; if (s.btn === 'down') P.liftDown = false; s.el.classList.remove('pressed'); if (s.btn === 'fire' && ![...T.values()].some(v => v.btn === 'fire')) P.firing = false; }
+    if (s.type === 'btn') { if (s.btn === 'up') P.liftUp = false; if (s.btn === 'down') P.liftDown = false; if (s.btn === 'rob' && G.wanted?.rob) robStop(G, WH); s.el.classList.remove('pressed'); if (s.btn === 'fire' && ![...T.values()].some(v => v.btn === 'fire')) P.firing = false; }
   }
 }
 touchLayer.addEventListener('touchend', touchEnd); touchLayer.addEventListener('touchcancel', touchEnd);
@@ -874,7 +924,7 @@ document.addEventListener('pointerdown', (e) => {
 }, true);
 // ---------------- HUD custom layout ----------------
 let hudSel = null, hudDrag = null, hudReturnSettings = false;
-function hudControls() { return [...document.querySelectorAll('#touch .tb, #touch #joyBase')].filter(e => !['bCar', 'bUp', 'bDown', 'bEject'].includes(e.id)); }
+function hudControls() { return [...document.querySelectorAll('#touch .tb, #touch #joyBase')].filter(e => !['bCar', 'bUp', 'bDown', 'bEject', 'bAuto', 'bRob'].includes(e.id)); }
 function normControl(el) {
   const cs = getComputedStyle(el), l = parseFloat(cs.left), t = parseFloat(cs.top);
   el.style.left = (isFinite(l) ? l : 0) + 'px'; el.style.top = (isFinite(t) ? t : 0) + 'px';
@@ -978,6 +1028,7 @@ $('hudSave').addEventListener('click', saveHudLayout);
 function syncSettingsUI() {
   document.querySelectorAll('#settings .seg').forEach(seg => seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', String(S[seg.dataset.s]) === b.dataset.v)));
   $('sens').value = S.sens; $('sensV').textContent = (+S.sens).toFixed(1);
+  if ($('smooth')) { $('smooth').value = S.smooth ?? 0.5; $('smoothV').textContent = ['关', '低', '中', '高'][Math.round((S.smooth ?? 0.5) * 3)] || '中'; }
   $('fpsMeter').classList.toggle('hidden', !+S.showFps);
 }
 document.querySelectorAll('#settings .seg').forEach(seg => seg.addEventListener('click', (e) => {
@@ -985,6 +1036,7 @@ document.querySelectorAll('#settings .seg').forEach(seg => seg.addEventListener(
   S[k] = k === 'quality' ? v : +v; G.quality = S.quality; G.peace = !!+S.peace; saveS(); syncSettingsUI(); if (k === 'quality') applyPixelRatio();
 }));
 $('sens').addEventListener('input', () => { S.sens = +$('sens').value; saveS(); syncSettingsUI(); });
+$('smooth')?.addEventListener('input', () => { S.smooth = +$('smooth').value; saveS(); syncSettingsUI(); });
 const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
 const openSettings = () => {
   syncSettingsUI(); const play = G.state === 'playing';
@@ -1035,7 +1087,7 @@ function loop(ts) {
     G.now += dt; G.timeLeft -= dt;
     if (G.timeLeft <= 0) { G.timeLeft = 0; endMatch(); }
     if (G.mode !== 'br') { for (const e of G.entities) if (!e.alive && G.now >= e.respawnAt && G.state === 'playing') respawn(e); }
-    else updateBR(G, dt, BRH);
+    else { updateBR(G, dt, BRH); if (G.wanted) updateWanted(G, dt, WH); }
     if (G.drop) updateDrop(G, dt, scene, DROPH);
     updatePlayer(dt);
     updateCarButton(); updateAirButton(); updateNearList(dt);

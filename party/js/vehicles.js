@@ -10,6 +10,12 @@ export const VTYPES = {
   bus:   { name: '大巴', len: 5.6, wid: 1.3, max: 15, acc: 5, turn: 1.1, cam: 14, seatY: 4.2, hitK: 1.6 },
   heli:  { name: '直升机', len: 2.4, wid: 1.1, max: 32, acc: 9, turn: 1.5, cam: 13, seatY: 2.4, hitK: 0, fly: true },
   truck: { name: '卡车', len: 1.9, wid: 1.25, max: 19, acc: 8, turn: 1.6, cam: 8, seatY: 3.3, hitK: 1.3 },
+  // 2026-11 迈阿密 car set (original low-poly designs, no real brands): pastel / neon paint, chrome bits
+  coupe:   { name: '霓虹跑车', len: 2.1, wid: 0.95, max: 31, acc: 15, turn: 2.0, cam: 6.5, seatY: 1.55, hitK: 1, closed: true },
+  muscle:  { name: '肌肉车', len: 2.3, wid: 1.0, max: 29, acc: 14, turn: 1.8, cam: 7, seatY: 1.6, hitK: 1.1, closed: true },
+  convert: { name: '敞篷车', len: 2.2, wid: 0.98, max: 27, acc: 12, turn: 1.9, cam: 6.5, seatY: 1.6, hitK: 1 },
+  police:  { name: '警车', len: 2.3, wid: 1.0, max: 29, acc: 13, turn: 1.9, cam: 7, seatY: 1.65, hitK: 1.1, closed: true },
+  pickup:  { name: '皮卡', len: 2.5, wid: 1.05, max: 23, acc: 10, turn: 1.7, cam: 7.5, seatY: 1.9, hitK: 1.2, closed: true },
 };
 // parked at the roadside (road edge + half width + gap), facing along the road
 const SPOTS = [
@@ -23,7 +29,7 @@ const SPOTS = [
   ['jeep', -120, -198.4, Math.PI / 2], ['jeep', 168.4, 40, 0], ['jeep', 150, 5.6, Math.PI / 2], ['moto', 60, -207.6, Math.PI / 2], ['moto', -168.4, 100, 0],
   ['moto', 168.4, -150, 0], ['bike', 140, -198.6, Math.PI / 2], ['bike', -4.9, -180, 0], ['truck', -168.1, -100, 0], ['heli', -100, -172, 0], ['bus', -150, 5.9, -Math.PI / 2],
 ];
-const COLORS = { jeep: [0x5b6b3a, 0x3b6fb6, 0xc0392b], moto: [0x111111, 0xc0392b, 0x2e6fb6], bike: [0x2e8b57, 0xd4a017, 0x3b6fb6, 0xe67e22], bus: [0xe1b12c, 0x3b7fc4], heli: [0x2f6e8f, 0xd35400], truck: [0x8a2f24, 0x2f5f8a, 0x51633a] };
+const COLORS = { coupe: [0xff4fa3, 0x2fe0d0, 0xffe14d, 0xb46bff], muscle: [0xff7a1a, 0x7dff4a, 0x3a86ff, 0xffffff], convert: [0xffb3c7, 0x9fe3d6, 0xfff0a8, 0xc9b6ff], police: [0xffffff], pickup: [0xff6b6b, 0x5fd3c8, 0xf4f1e8], jeep: [0x5b6b3a, 0x3b6fb6, 0xc0392b], moto: [0x111111, 0xc0392b, 0x2e6fb6], bike: [0x2e8b57, 0xd4a017, 0x3b6fb6, 0xe67e22], bus: [0xe1b12c, 0x3b7fc4], heli: [0x2f6e8f, 0xd35400], truck: [0x8a2f24, 0x2f5f8a, 0x51633a] };
 
 const MAT = {}; const mat = (c, o) => MAT[c + (o || '')] || (MAT[c + (o || '')] = new THREE.MeshLambertMaterial(o ? { color: c, transparent: true, opacity: o } : { color: c }));
 function builder(g) {
@@ -66,6 +72,7 @@ function farLod(g) {
   const lo = new THREE.Mesh(geo, FARMAT); lo.visible = false; g.add(lo); g.userData.hi = hi; g.userData.lo = lo;
 }
 function vehicleMesh(type, color) {
+  if (CARS[type]) return carMesh(type, color);
   if (KENNEY[type] && hasProps()) { const k = kenneyMesh(type, color); if (k) return k; }
   const g = new THREE.Group(), { box, wheel, wheels } = builder(g);
   const DARK = 0x2a2c30, METAL = 0x9aa0a6, GLASS = 0x8fb8d8;
@@ -125,7 +132,7 @@ function openSpot(map, x, z) {
 export function spawnVehicles(scene, map) {
   if (map.kind !== 'island') return [];
   const n = {};
-  return SPOTS.map(([type, x, z, yaw]) => {
+  return (map.vehicleSpots || SPOTS).map(([type, x, z, yaw]) => {
     const k = n[type] = (n[type] || 0) + 1, cs = COLORS[type];
     if (type === 'heli' && !heliClear(map, x, z)) [x, z] = openSpot(map, x, z); // never park a helicopter indoors / under a roof
     const mesh = vehicleMesh(type, cs[(k - 1) % cs.length]); scene.add(mesh);
@@ -192,6 +199,7 @@ export function poseVehicle(v, dt) {
   v.mesh.position.set(v.pos.x, v.alt || 0, v.pos.z); v.mesh.rotation.set(0, v.yaw, v.lean, 'YXZ');
   v.spin += v.speed * dt;
   for (const { w, r } of v.mesh.userData.wheels) w.rotation.x = -v.spin / r;
+  const bar = v.mesh.userData.bar; if (bar) { const on = v.siren && ((performance.now() / 160) | 0) % 2; bar[0].material = on ? SIREN_R : SIREN_OFF; bar[1].material = v.siren && !on ? SIREN_B : SIREN_OFF; }
   const ro = v.mesh.userData.rotor; if (ro) { v.rpm = Math.max(0, Math.min(1, (v.rpm || 0) + (v.driver ? dt : -dt * 0.4))); ro.rotation.y += v.rpm * 28 * dt; v.mesh.userData.tail.rotation.x += v.rpm * 40 * dt; }
 }
 // axis-aligned box around a vehicle so people can't walk through it
@@ -210,4 +218,77 @@ export function exitSpot(v, free, support) {
   for (const [x, z] of cand) if (free(x, z, y) && (!support || support(x, z, y))) return new THREE.Vector3(x, y, z);
   for (const [x, z] of cand) if (free(x, z, y)) return new THREE.Vector3(x, y, z); // nothing under it: step off and drop
   return new THREE.Vector3(cand[6][0], y, cand[6][1]);
+}
+
+// ---------------- 迈阿密 cars: each one merged into ONE vertex-coloured mesh + ONE glass mesh (2 draw calls; police +2 lights +1 decal) ----------------
+const CARS = { coupe: 1, muscle: 1, convert: 1, police: 1, pickup: 1 };
+const CARMAT = new THREE.MeshLambertMaterial({ vertexColors: true }), GLASSMAT = new THREE.MeshLambertMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.55 });
+const SIREN_R = new THREE.MeshBasicMaterial({ color: 0xff2a3a }), SIREN_B = new THREE.MeshBasicMaterial({ color: 0x2a6bff }), SIREN_OFF = new THREE.MeshLambertMaterial({ color: 0x5a5f6a });
+let POLICE_TEX = null;
+function policeTex() {
+  if (POLICE_TEX) return POLICE_TEX;
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64; const g = c.getContext('2d');
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, 256, 64); g.fillStyle = '#1b2a6b'; g.fillRect(0, 44, 256, 12);
+  g.font = '900 38px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#1b2a6b'; g.fillText('POLICE', 128, 24);
+  POLICE_TEX = new THREE.CanvasTexture(c); POLICE_TEX.colorSpace = THREE.SRGBColorSpace; return POLICE_TEX;
+}
+const CARGEO = {};
+function carGeo(type, color) {
+  const key = type + color; if (CARGEO[key]) return CARGEO[key];
+  const P = [], G = [], col = new THREE.Color(), m = new THREE.Matrix4(), e = new THREE.Euler();
+  const add = (list, geo, x, y, z, c, rx = 0, ry = 0, rz = 0) => { const g = geo.index ? geo.toNonIndexed() : geo.clone(); g.applyMatrix4(m.makeRotationFromEuler(e.set(rx, ry, rz)).setPosition(x, y, z)); g.deleteAttribute('uv');
+    if (list === P) { col.set(c); const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = col.r; a[i * 3 + 1] = col.g; a[i * 3 + 2] = col.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); } list.push(g); };
+  const bx = (w, h, d, x, y, z, c, rx = 0) => add(P, new THREE.BoxGeometry(w, h, d), x, y, z, c, rx);
+  const gl = (w, h, d, x, y, z, rx = 0) => add(G, new THREE.BoxGeometry(w, h, d), x, y, z, 0, rx);
+  const CHROME = 0xd8dde4, DARK = 0x22252b, TIRE = 0x1b1c1f, LIGHT = 0xfff6c8, TAIL = 0xff2244;
+  const wheel = (x, z, r = 0.38, w = 0.3) => { add(P, new THREE.CylinderGeometry(r, r, w, 10), x, r, z, TIRE, 0, 0, Math.PI / 2); add(P, new THREE.CylinderGeometry(r * 0.55, r * 0.55, w + 0.02, 8), x, r, z, CHROME, 0, 0, Math.PI / 2); };
+  const T = VTYPES[type], L = T.len * 2, W = T.wid * 2;
+  const body = type === 'police' ? 0xffffff : color, dark2 = new THREE.Color(body).multiplyScalar(0.75).getHex();
+  // chassis + bumpers + lights (common)
+  const lowY = type === 'pickup' ? 0.75 : 0.6, bodyH = type === 'muscle' ? 0.58 : type === 'pickup' ? 0.7 : 0.5;
+  bx(W, bodyH, L, 0, lowY, 0, body);
+  bx(W + 0.06, 0.16, 0.22, 0, lowY - 0.18, -L / 2 - 0.06, CHROME); bx(W + 0.06, 0.16, 0.22, 0, lowY - 0.18, L / 2 + 0.06, CHROME);
+  for (const s of [-1, 1]) { bx(0.34, 0.14, 0.06, s * (W / 2 - 0.3), lowY + 0.08, -L / 2 - 0.01, LIGHT); bx(0.34, 0.12, 0.06, s * (W / 2 - 0.3), lowY + 0.1, L / 2 + 0.01, TAIL); }
+  bx(W - 0.1, 0.06, L - 0.3, 0, 0.18, 0, type === 'police' ? DARK : NEONUNDER[(color >>> 3) % NEONUNDER.length]);   // underglow strip / skirt
+  const wz = L / 2 - 0.75; for (const s of [-1, 1]) { wheel(s * (W / 2 - 0.05), -wz); wheel(s * (W / 2 - 0.05), wz); }
+  if (type === 'coupe') {         // low wedge: sloped hood, short fastback cabin, wing
+    bx(W - 0.04, 0.14, 1.3, 0, lowY + 0.3, -L / 2 + 0.75, body, -0.12);
+    bx(W - 0.3, 0.42, 1.5, 0, lowY + 0.46, 0.35, body); gl(W - 0.34, 0.4, 0.06, 0, lowY + 0.45, -0.45, -0.75); gl(W - 0.2, 0.32, 1.1, 0, lowY + 0.48, 0.35);
+    bx(W - 0.1, 0.06, 0.4, 0, lowY + 0.62, L / 2 - 0.25, dark2); for (const s of [-1, 1]) bx(0.06, 0.3, 0.2, s * 0.6, lowY + 0.45, L / 2 - 0.25, dark2);
+    for (const s of [-1, 1]) bx(0.04, 0.08, L * 0.7, s * (W / 2 + 0.01), lowY + 0.05, 0, 0xffffff);
+  } else if (type === 'muscle') { // long hood with scoop, twin racing stripes, chrome
+    bx(W - 0.3, 0.46, 1.5, 0, lowY + 0.52, 0.45, body); gl(W - 0.34, 0.42, 0.06, 0, lowY + 0.52, -0.35, -0.55); gl(W - 0.22, 0.34, 1.2, 0, lowY + 0.54, 0.45);
+    bx(0.5, 0.14, 0.7, 0, lowY + 0.35, -L / 2 + 1.0, DARK);
+    for (const s of [-0.22, 0.22]) { bx(0.16, 0.02, L + 0.01, s, lowY + 0.3, 0, 0xffffff); bx(0.16, 0.02, 1.5, s, lowY + 0.76, 0.45, 0xffffff); }
+    for (const s of [-1, 1]) bx(0.03, 0.06, L * 0.8, s * (W / 2 + 0.01), lowY - 0.05, 0, CHROME);
+  } else if (type === 'convert') { // open top: windscreen frame, seats, rear deck chrome trim
+    gl(W - 0.2, 0.38, 0.05, 0, lowY + 0.45, -0.3, -0.35); bx(W - 0.2, 0.05, 0.08, 0, lowY + 0.64, -0.36, CHROME);
+    for (const z of [0.05, 0.85]) for (const s of [-1, 1]) { bx(0.55, 0.12, 0.55, s * 0.42, lowY + 0.3, z, 0xf4efe6); bx(0.55, 0.5, 0.12, s * 0.42, lowY + 0.5, z + 0.28, 0xf4efe6); }
+    bx(W - 0.3, 0.05, 0.1, 0, lowY + 0.27, L / 2 - 0.5, CHROME); bx(0.4, 0.28, 0.08, -0.42, lowY + 0.38, -0.25, DARK);
+  } else if (type === 'police') { // sedan, two-tone doors, push bar
+    bx(W - 0.3, 0.48, 1.9, 0, lowY + 0.48, 0.2, body); gl(W - 0.34, 0.42, 0.06, 0, lowY + 0.48, -0.78, -0.6); gl(W - 0.22, 0.36, 1.6, 0, lowY + 0.5, 0.2); gl(W - 0.34, 0.4, 0.06, 0, lowY + 0.48, 1.18, 0.6);
+    for (const s of [-1, 1]) bx(0.04, 0.5, 2.2, s * (W / 2 + 0.01), lowY, 0.1, 0x1b2a6b);
+    bx(W - 0.4, 0.4, 0.1, 0, lowY - 0.05, -L / 2 - 0.22, DARK); bx(W - 0.5, 0.08, 0.6, 0, lowY + 0.76, 0.0, DARK);   // push bar + light bar base
+  } else if (type === 'pickup') { // tall cab + open bed with side walls
+    bx(W - 0.1, 0.62, 1.4, 0, lowY + 0.66, -0.35, body); gl(W - 0.14, 0.48, 0.06, 0, lowY + 0.66, -1.08, -0.3); gl(W - 0.04, 0.4, 1.0, 0, lowY + 0.7, -0.35);
+    for (const s of [-1, 1]) bx(0.08, 0.4, 1.9, s * (W / 2 - 0.04), lowY + 0.45, L / 2 - 1.0, body); bx(W, 0.4, 0.08, 0, lowY + 0.45, L / 2 - 0.04, body); bx(W - 0.16, 0.04, 1.9, 0, lowY + 0.27, L / 2 - 1.0, DARK);
+    bx(W - 0.1, 0.08, 0.08, 0, lowY + 1.05, -0.9, CHROME);
+  }
+  const merge = (list) => { if (!list.length) return null; let n = 0; for (const g of list) n += g.attributes.position.count; const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), cc = list[0].attributes.color ? new Float32Array(n * 3) : null; let o = 0;
+    for (const g of list) { pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); if (cc) cc.set(g.attributes.color.array, o * 3); o += g.attributes.position.count; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); if (cc) g.setAttribute('color', new THREE.BufferAttribute(cc, 3)); g.computeBoundingSphere(); return g; };
+  return (CARGEO[key] = { body: merge(P), glass: merge(G) });
+}
+const NEONUNDER = [0xff2bd6, 0x28e8ff, 0x7dff4a, 0xffe600];
+function carMesh(type, color) {
+  const { body, glass } = carGeo(type, color), g = new THREE.Group();
+  g.add(new THREE.Mesh(body, CARMAT)); if (glass) g.add(new THREE.Mesh(glass, GLASSMAT));
+  g.userData.wheels = []; g.userData.car = true;
+  if (type === 'police') {
+    const T = VTYPES.police, W = T.wid * 2, y = 0.6 + 0.76 + 0.09;
+    const r = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.32), SIREN_OFF), b = r.clone(); r.position.set(-0.32, y, 0); b.position.set(0.32, y, 0); g.add(r, b); g.userData.bar = [r, b];
+    const dm = new THREE.MeshBasicMaterial({ map: policeTex() });
+    for (const s of [-1, 1]) { const q = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.38), dm); q.position.set(s * (W / 2 + 0.03), 0.62, 0.3); q.rotation.y = s * Math.PI / 2; g.add(q); }
+  }
+  return g;
 }

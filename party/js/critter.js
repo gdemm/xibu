@@ -11,7 +11,7 @@ import { Builder, M } from './soldier.js';
 import { makeBow } from './bow.js';
 import { STYLE } from './charstyle.js';          // optional procedural look (null = the KayKit models as shipped)
 import { buildStyled, reshapeRig, makeGy } from './charkit.js';
-import { BOT_CHARS, REG, pickedLook, skinTexUrl } from './roster.js';
+import { BOT_CHARS, REG, pickedLook, skinTexUrl, skinAcc } from './roster.js';
 export { toonRamp, critterMaterial, BODY_COLORS } from './bean.js';
 const { toonRamp, critterMaterial } = BEAN;
 
@@ -587,6 +587,9 @@ export function createSoldier(skin = 'party', variant) {
     hatMesh.scale.setScalar(HAT_SCALE * (STYLE?.hatScale ?? 1) / SCALE); hatMesh.position.y = C.headTop - 0.07;
     bones.head.add(hatMesh);
   }
+  // 2026-11 迈阿密 skins: sunglasses / gold chain / bandana on the head & chest bones (1 merged mesh each, player only)
+  const acc = look ? skinAcc(look) : [];
+  if (acc.length) addAcc(bones, C, acc, hatMesh);
   const blob = new THREE.Mesh(blobGeo, blobMat); blob.position.y = 0.03; g.add(blob);
   if (team) { const ring = new THREE.Mesh(ringGeo, ringMat(TEAM_HAT[skin])); ring.position.y = 0.005; ring.renderOrder = 1; blob.add(ring); }
   const puffs = new THREE.Group(); puffs.visible = false; g.add(puffs);
@@ -839,4 +842,31 @@ export function resetSoldier(g) {
   u.last = null; u.vx = u.vz = 0; u.visYaw = null; u.yawRate = 0; u.twist = 0; u.lean = 0; u.fwdLean = 0; u.airK = 0; u.wasAir = false; u.minVy = 0; u.land = 0; u.landT = 1; u.diveK = 0; u.moveK = 0; u.runK = 0;
   u.blob.visible = true; u.puffs.visible = false;
   u.root.rotation.set(0, 0, 0); u.root.position.set(0, 0, 0); u.root.scale.setScalar(1);
+}
+
+// ---------- accessories (2026-11): head-bone space is upright, +z = face forward, y = 0 at the neck, C.headTop = top of head ----------
+const ACC_MAT = { gold: new THREE.MeshToonMaterial({ color: 0xffc83a, emissive: 0x5a3a00, emissiveIntensity: 0.4 }), dark: new THREE.MeshToonMaterial({ color: 0x15151c }), band: new THREE.MeshToonMaterial({ color: 0xd81e3c }) };
+const ACC_GEO = {};
+function accGeo(kind, ht) {
+  const key = kind + ht.toFixed(2); if (ACC_GEO[key]) return ACC_GEO[key];
+  const P = [], add = (g, x, y, z, rx = 0, ry = 0, rz = 0) => { g = g.index ? g.toNonIndexed() : g; g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); g.translate(x, y, z); g.deleteAttribute('uv'); P.push(g); };
+  if (kind === 'glasses') {           // two dark lenses + bridge + arms, sitting on the face
+    const y = ht * GL.y, z = ht * GL.z, w = ht * 0.2;
+    for (const s of [-1, 1]) { add(new THREE.BoxGeometry(w, w * 0.62, ht * 0.05), s * w * 0.62, y, z); add(new THREE.BoxGeometry(ht * 0.03, ht * 0.03, ht * 0.4), s * w * 1.15, y + w * 0.2, z - ht * 0.2); }
+    add(new THREE.BoxGeometry(w * 0.4, ht * 0.03, ht * 0.03), 0, y + w * 0.15, z);
+  } else if (kind === 'chain') {      // gold torus around the neck + a medallion
+    add(new THREE.TorusGeometry(ht * 0.3, ht * 0.04, 6, 18), 0, ht * CH.y, ht * CH.z, Math.PI / 2 - 0.55);
+    add(new THREE.CylinderGeometry(ht * 0.08, ht * 0.08, ht * 0.03, 10), 0, ht * (CH.y - 0.16), ht * (CH.z + 0.27), Math.PI / 2 - 0.3);
+  } else if (kind === 'band') {       // bandana: a band around the forehead + knot tails at the back
+    add(new THREE.CylinderGeometry(ht * 0.49, ht * 0.5, ht * 0.13, 16, 1, true), 0, ht * BD.y, ht * BD.z);
+    for (const s of [-1, 1]) add(new THREE.BoxGeometry(ht * 0.06, ht * 0.22, ht * 0.03), s * ht * 0.06, ht * (BD.y - 0.12), ht * (BD.z - 0.5), 0.3, 0, s * 0.3);
+  }
+  return (ACC_GEO[key] = mergeGeometries(P));
+}
+export const GL = { y: 0.42, z: 0.5 }, CH = { y: -0.12, z: 0.12 }, BD = { y: 0.62, z: 0.0 };
+function addAcc(bones, C, acc, hatMesh) {
+  const ht = C.headTop;
+  if (acc.includes('glasses')) bones.head.add(new THREE.Mesh(accGeo('glasses', ht), ACC_MAT.dark));
+  if (acc.includes('chain')) bones.head.add(new THREE.Mesh(accGeo('chain', ht), ACC_MAT.gold));
+  if (acc.includes('band') && !hatMesh) bones.head.add(new THREE.Mesh(accGeo('band', ht), ACC_MAT.band));
 }

@@ -49,10 +49,23 @@ button{font-family:inherit;cursor:pointer}
 #target{font-size:10px;color:#cbd;position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap;margin-top:2px;text-shadow:0 1px 2px #000}
 #bUp,#bDown{display:none;width:64px;height:64px;right:calc(36px + env(safe-area-inset-right));background:rgba(60,180,120,.55);font-weight:700}#bUp{top:calc(50% - 110px)}#bDown{top:calc(50% + 46px)}body.heli #bUp,body.heli #bDown{display:flex}
 #bCar{width:64px;height:64px;right:calc(150px + env(safe-area-inset-right));top:calc(50% - 32px);background:rgba(60,140,230,.55);font-weight:700}
+#bAuto{width:64px;height:44px;right:calc(150px + env(safe-area-inset-right));top:calc(50% + 40px);background:rgba(40,40,60,.55);font-size:12px;font-weight:700}
+#bAuto.on{background:rgba(255,60,170,.7);border-color:#fff;box-shadow:0 0 12px rgba(255,80,200,.8)}
+#bRob{width:72px;height:72px;right:calc(150px + env(safe-area-inset-right));top:calc(50% - 36px);font-size:13px;font-weight:800;line-height:1.15;text-align:center;background:linear-gradient(to top,rgba(255,43,214,.85) var(--p,0%),rgba(30,20,50,.6) var(--p,0%));border-color:#ff8af0}
+#wantedBox{display:none;position:absolute;left:calc(140px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));text-align:left;pointer-events:none}
+body.gtaMode #wantedBox{display:block}
+#wanted{font-size:22px;letter-spacing:1px;line-height:1}
+#wanted i{font-style:normal;color:rgba(255,255,255,.28);text-shadow:0 1px 2px #000}
+#wanted i.on{color:#fff;text-shadow:0 0 6px #ff2bd6,0 1px 2px #000}
+#wanted.hot i.on{animation:wflash .5s steps(2) infinite}
+@keyframes wflash{50%{color:#28e8ff;text-shadow:0 0 8px #28e8ff,0 1px 2px #000}}
+#cash{font:900 20px system-ui;color:#7dff4a;text-shadow:0 0 6px rgba(0,0,0,.6),0 1px 2px #000;margin-top:2px}
+body.hudEdit #touch #bRob{display:none!important}
 #bView{width:44px;height:44px;left:calc(22px + env(safe-area-inset-left));bottom:calc(62px + env(safe-area-inset-bottom));font-size:12px}
 #bView.on{background:rgba(255,190,60,.55)}
 #speedo{position:absolute;left:50%;top:calc(52px + env(safe-area-inset-top));transform:translateX(-50%);font:700 22px system-ui;color:#fff;text-shadow:0 1px 3px #000;display:none}
 body.driving #speedo{display:block}
+body.driving #ammoBox{display:none}
 body.driving #bFire,body.driving #bFire2,body.driving #bScope,body.driving #bJump,body.driving #bCrouch,body.driving #bReload,body.driving #bSwitch{display:none}
 #carHint{position:absolute;left:50%;top:62%;transform:translateX(-50%);color:#fff;font:600 14px system-ui;background:rgba(0,0,0,.45);padding:4px 10px;border-radius:6px}
 #bEject{width:96px;height:96px;right:calc(130px + env(safe-area-inset-right));top:calc(50% - 48px);background:rgba(255,77,109,.75);font-size:22px;border-color:#fff;box-shadow:0 4px 0 rgba(120,20,60,.6)}
@@ -134,6 +147,7 @@ body:not(.br) #bBag{display:none!important}
 #nearList .nl span{flex:1;overflow:hidden;text-overflow:ellipsis}
 #nearList .nl b{font-size:11px;padding:1px 5px;border-radius:5px;background:rgba(255,255,255,.14)}
 #nearList .nl.man{border-style:dashed}
+#nearList .nlh{flex:0 0 22px;display:flex;align-items:center;padding:0 8px;border-radius:7px;background:rgba(255,150,40,.7);color:#fff;font:800 12px system-ui;text-shadow:0 1px 2px #000;white-space:nowrap;overflow:hidden}
 body.air #nearList,body.driving #nearList{display:none!important}
 #bagPanel{position:fixed;inset:0;z-index:26;display:flex;align-items:center;justify-content:center;pointer-events:none}
 #bagPanel .bagCard{pointer-events:auto;position:relative;width:min(460px,86vw);max-height:80vh;overflow:auto;touch-action:pan-y;background:rgba(19,37,50,.88);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px 14px;backdrop-filter:blur(6px);box-shadow:0 10px 30px rgba(0,0,0,.45)}
@@ -189,7 +203,7 @@ body.br #topbar .b,body.br #topbar .r{font-size:15px;min-width:0;white-space:now
 }
 body.hudEdit #touch{display:block!important;z-index:41;background:rgba(0,0,0,.55)}
 body.hudEdit #touch .tb{display:flex!important;pointer-events:auto}
-body.hudEdit #touch #bCar,body.hudEdit #touch #bUp,body.hudEdit #touch #bDown,body.hudEdit #touch #bEject{display:none!important}
+body.hudEdit #touch #bCar,body.hudEdit #touch #bAuto,body.hudEdit #touch #bUp,body.hudEdit #touch #bDown,body.hudEdit #touch #bEject{display:none!important}
 body.hudEdit #joyBase{display:block!important;pointer-events:auto!important}
 body.hudEdit #touch .sel{outline:3px dashed #ffd45c;outline-offset:3px}
 #hudEditBar{position:fixed;left:50%;bottom:calc(10px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:46;display:flex;flex-direction:column;gap:6px;background:rgba(19,37,50,.94);border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:8px 12px;min-width:min(360px,92vw)}
@@ -271,7 +285,7 @@ body.forceLand .wdGrid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr))}
       <div class="row tdmOnly"><label>阵营</label><div class="seg" data-k="team"><button data-v="blue" class="on blue">海鹰队</button><button data-v="red">赤鲨队</button></div></div>
       <div class="row tdmOnly"><label>规模</label><div class="seg" data-k="size"><button data-v="3">3 v 3</button><button data-v="5" class="on">5 v 5</button></div></div>
       <div class="row tdmOnly"><label>击杀目标</label><div class="seg" data-k="target"><button data-v="30" class="on">30</button><button data-v="50">50</button></div></div>
-      <div class="row brOnly"><label>地图</label><div class="seg" data-k="brMap"><button data-v="island" class="on">港口岛</button><button data-v="ship">货轮</button></div></div>
+      <div class="row brOnly"><label>地图</label><div class="seg" data-k="brMap"><button data-v="island" class="on">港口岛</button><button data-v="miami">迈阿密</button><button data-v="ship">货轮</button></div></div>
       <div class="row brOnly"><label>人数</label><div class="seg" data-k="brSize"><button data-v="16">16 人</button><button data-v="24" class="on">24 人</button><button data-v="32">32 人</button></div></div>
       <div class="row"><label>机器人</label><div class="seg" data-k="diff"><button data-v="easy">简单</button><button data-v="normal" class="on">普通</button><button data-v="hard">困难</button></div></div>
       <div class="actions">
@@ -279,7 +293,7 @@ body.forceLand .wdGrid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr))}
         <button class="ghost" id="btnWardrobe">角色仓库</button>
         <button class="ghost" id="btnSettings">画面设置</button>
       </div>
-      <div class="tip">电脑：WASD 移动 · 鼠标瞄准 · 左键开火 · 右键开镜 · F 跳伞/开伞/上车 · V 视角 · Tab 战绩</div>
+      <div class="tip">电脑：WASD 移动 · 鼠标瞄准 · 左键开火 · 右键开镜 · F 跳伞/开伞/上车 · G 自动驾驶 · H 按住抢劫 · V 视角 · Tab 战绩</div>
     </div>
   </div>
 </div>
@@ -296,6 +310,7 @@ body.forceLand .wdGrid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr))}
   <div id="gear"><span id="gArm" class="lv0"><svg viewBox="0 0 24 24"><path d="M7 3l2 2h6l2-2 4 3-2 5h-1v10H6V11H5L3 6z"/></svg><b>0</b></span><span id="gHelm" class="lv0"><svg viewBox="0 0 24 24"><path d="M3 15a9 9 0 0118 0v2H3zM2 17h20v2H2z"/></svg><b>0</b></span><span id="gBag" class="lv0"><svg viewBox="0 0 24 24"><path d="M8 5V3h8v2h3a2 2 0 012 2v13a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h3zm2 0h4V4h-4v1zM6 9v2h12V9H6zm0 4v2h12v-2H6z"/></svg><b>-</b></span><span id="gScope" class="lv0"><svg viewBox="0 0 24 24"><path d="M1 10h4v4H1zM5 8h13v8H5zM18 7h5v10h-5zM9 4h4v4H9z"/></svg><b>-</b></span></div>
   <div id="hpBox"><span class="plus">✚</span><span id="hpNum">100</span><div id="hpBar"><div id="hpFill"></div></div></div>
   <div id="ammoBox"><div id="wName">步枪</div><div id="ammo"><b>30</b><span> / 90</span></div></div>
+  <div id="wantedBox"><div id="wanted"></div><div id="cash">$ 0</div></div>
   <div id="speedo"></div><div id="carHint" class="hidden"></div>
   <div id="deathScr" class="hidden"><b>你被击败了</b><span id="deathBy"></span><span id="respawnIn"></span></div>
 </div>
@@ -312,6 +327,8 @@ body.forceLand .wdGrid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr))}
   <div class="tb" id="bSwitch" data-btn="switch">切枪</div>
   <div class="tb" id="bBag" data-btn="bag">背包</div>
   <div class="tb hidden" id="bCar" data-btn="car">上车</div>
+  <div class="tb hidden" id="bAuto" data-btn="auto">自动驾驶</div>
+  <div class="tb hidden" id="bRob" data-btn="rob">按住<br>抢劫</div>
   <div class="tb" id="bUp" data-btn="up">升</div>
   <div class="tb" id="bDown" data-btn="down">降</div>
   <div class="tb hidden" id="bEject" data-btn="eject">跳伞</div>
@@ -331,6 +348,7 @@ body.forceLand .wdGrid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr))}
   <div class="row"><label>画质</label><div class="seg" data-s="quality"><button data-v="low">流畅</button><button data-v="mid">均衡</button><button data-v="high">高清</button></div></div>
   <div class="row"><label>帧率上限</label><div class="seg" data-s="fps"><button data-v="30">30</button><button data-v="60">60</button><button data-v="90">90</button><button data-v="120">120</button></div></div>
   <div class="row"><label>灵敏度</label><input type="range" id="sens" min="0.3" max="2.5" step="0.1"><span id="sensV" style="width:32px;text-align:right">1.0</span></div>
+  <div class="row"><label>镜头平滑</label><input type="range" id="smooth" min="0" max="1" step="0.3333"><span id="smoothV" style="width:32px;text-align:right">中</span></div>
   <div class="row"><label>显示帧率</label><div class="seg" data-s="showFps"><button data-v="0">关</button><button data-v="1">开</button></div></div>
   <div class="row"><label>机器人打我</label><div class="seg" data-s="peace"><button data-v="0">开</button><button data-v="1">关(测试)</button></div></div>
   <div class="tip" id="setTip">画质更改在下一局完全生效（分辨率立即生效）。</div>

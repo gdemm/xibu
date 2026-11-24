@@ -101,11 +101,15 @@ function lootRings(G, scene) {
   if (RING.parent !== scene) scene.add(RING);
   const pulse = 1 + 0.1 * Math.sin(G.now * 3.2); let n = 0; const pp = G.player?.pos;
   for (const l of G.loot) {
-    if (l.taken || !l.m.parent || n >= 1024) continue;
+    if (l.taken || l.boxed || !l.m.parent || n >= 1024) continue;
     if (pp) { const dx = l.m.position.x - pp.x, dz = l.m.position.z - pp.z; if (dx * dx + dz * dz > 3600) continue; }   // rings only within 60 m (帧率)
     const s = (l.def.lv >= 3 || l.def.k === 'sniper' ? 1.15 : 1) * pulse;
     _rm.makeScale(s, 1, s).setPosition(l.m.position.x, 0.04, l.m.position.z); RING.setMatrixAt(n, _rm);
     RING.setColorAt(n, _rc.set(l.def.c).lerp(_rw, 0.25)); n++;
+  }
+  for (const b of G.deathBoxes || []) {   // 死亡盒子: one ring per box (its items have none)
+    if (!b.m.visible || n >= 1024) continue;
+    _rm.makeScale(1.25 * pulse, 1, 1.25 * pulse).setPosition(b.m.position.x, 0.04, b.m.position.z); RING.setMatrixAt(n, _rm); RING.setColorAt(n, _rc.set(0xffb347)); n++;
   }
   RING.count = n; RING.instanceMatrix.needsUpdate = true; if (RING.instanceColor) RING.instanceColor.needsUpdate = true;
 }
@@ -122,6 +126,60 @@ export function dropBagItem(G, scene, it, x, z) {
   const def = LOOT.find(d => d.k === it.k && (d.lv || 0) === (it.lv || 0)) || { k: it.k, lv: it.lv, name: it.name, c: 0xcfd6dc, w: 1 };
   const l = spawnLoot(G, scene, def, x, z, 1.5); l.manual = true;   // dropped by the player: never auto-picked by the player (nearby list only)
   return l;
+}
+// ---------- 死亡掉落 (2026-11): a dead player / bot leaves one crate with everything they carried ----------
+// The crate is ONE merged mesh (1 draw call, drawn within 60 m like loot); its items are normal loot entries that are never
+// drawn (boxed), parked at the crate, so the nearby list / auto-pickup / bot looting all work unchanged. Max MAX_BOX crates.
+const MAX_BOX = 14; let BOX_GEO = null; const BOX_MAT = new THREE.MeshLambertMaterial({ vertexColors: true }), HID_MAT = new THREE.MeshBasicMaterial();
+function boxGeo() {
+  if (BOX_GEO) return BOX_GEO;
+  const P = [], C = (g, c) => { const n = g.attributes.position.count, a = new Float32Array(n * 3), cc = new THREE.Color(c); for (let i = 0; i < n; i++) { a[i * 3] = cc.r; a[i * 3 + 1] = cc.g; a[i * 3 + 2] = cc.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
+  const bx = (w, h, d, x, y, z, c) => { const g = new THREE.BoxGeometry(w, h, d).toNonIndexed(); g.deleteAttribute('uv'); g.translate(x, y, z); P.push(C(g, c)); };
+  bx(1.1, 0.5, 0.7, 0, 0.25, 0, 0x4f6b3a); bx(1.16, 0.12, 0.76, 0, 0.56, 0, 0x3d5530);           // body + lid
+  bx(0.08, 0.64, 0.78, -0.36, 0.31, 0, 0x2b2b2b); bx(0.08, 0.64, 0.78, 0.36, 0.31, 0, 0x2b2b2b);  // straps
+  bx(0.3, 0.16, 0.02, 0, 0.3, 0.36, 0xffb347);                                                     // orange tag (reads at range)
+  bx(0.06, 0.9, 0.06, 0.48, 0.95, -0.28, 0x8a8a8a); bx(0.34, 0.22, 0.02, 0.64, 1.28, -0.28, 0xff7a1a);   // little flag
+  return (BOX_GEO = mergeGeometries(P));
+}
+const defOf = (k, lv) => LOOT.find(d => d.k === k && (d.lv || 0) === (lv || 0));
+export function spawnLootDef(G, scene, k, x, z) { const d = LOOT.find(x => x.k === k && (x.lv || 0) <= 1); return d ? spawnLoot(G, scene, d, x, z, 0.5) : null; }
+export function deathDrop(G, scene, e) {
+  if (!G.br || !e) return null;
+  const items = [];
+  if (e.isPlayer) {
+    for (const k of G.owned || []) { const d = defOf(k); if (d) items.push(d); }
+    if ([...(G.owned || [])].some(k => G.ammo[k] && G.ammo[k].reserve > 0 && k !== 'knife')) items.push(defOf('ammo'));
+    for (const k of ['armor', 'helmet']) if (e[k]) { const d = defOf(k, e[k]); if (d) items.push(d); }
+    if (G.bagLv) { const d = defOf('bag', G.bagLv); if (d) items.push(d); }
+    if (G.scope) { const d = defOf('scope', G.scope); if (d) items.push(d); }
+    for (const it of G.bag || []) { const d = defOf(it.k, it.lv); if (!d) continue; for (let i = 0; i < Math.min(3, it.n || 1); i++) items.push(d); }
+  } else {
+    if (e.armed && e.gun) { const d = defOf(e.gun); if (d) items.push(d, defOf('ammo')); }
+    for (const k of ['armor', 'helmet']) if (e[k]) { const d = defOf(k, e[k]); if (d) items.push(d); }
+    if (Math.random() < 0.4) items.push(defOf('med'));
+  }
+  if (!items.length) return null;
+  G.deathBoxes = G.deathBoxes || [];
+  while (G.deathBoxes.length >= MAX_BOX) removeBox(G, scene, G.deathBoxes[0]);
+  const x = e.pos.x, z = e.pos.z;
+  const m = new THREE.Mesh(boxGeo(), BOX_MAT); m.position.set(x, Math.max(0, e.pos.y || 0), z); m.rotation.y = e.yaw || 0; m.name = 'deathbox'; scene.add(m);
+  const box = { m, name: e.name, items: [] };
+  for (const def of items) {
+    const im = new THREE.Mesh(lootGeo(def.k), HID_MAT); im.position.set(x, 0.35, z);   // never added to the scene: drawn as the crate
+    const l = { id: ++LOOT_ID, def, m: im, taken: false, noPick: G.now + 0.8, boxed: box }; G.loot.push(l); box.items.push(l);
+  }
+  G.deathBoxes.push(box); return box;
+}
+function removeBox(G, scene, b) {
+  scene.remove(b.m); for (const l of b.items) l.taken = true;
+  G.deathBoxes = G.deathBoxes.filter(x => x !== b);
+}
+function updateBoxes(G, scene, cp) {
+  if (!G.deathBoxes?.length) return;
+  for (const b of G.deathBoxes.slice()) {
+    if (b.items.every(l => l.taken)) { removeBox(G, scene, b); continue; }
+    if (cp) { const dx = b.m.position.x - cp.x, dz = b.m.position.z - cp.z; b.m.visible = dx * dx + dz * dz < 3600; }
+  }
 }
 const PICK_R2 = 1.4, NEAR_R2 = 2.5 * 2.5;
 export const LV_COLOR = [0xcfd6dc, 0xe8eef2, 0x4d9bff, 0xb46bff];
@@ -261,13 +319,16 @@ export function updateBR(G, dt, h) {
   const outside = G.player.alive && !G.player.air && brOutside(G, G.player);
   h.$('dmg').classList.toggle('zone', outside);
   // loot pickup
-  lootRings(G, h.scene);
   const cp = h.camera ? h.camera.position : G.player?.pos;
+  updateBoxes(G, h.scene, cp);
+  lootRings(G, h.scene);
   for (const l of G.loot) {
     if (l.taken) continue;
-    if (cp) { const dx = l.m.position.x - cp.x, dz = l.m.position.z - cp.z; l.m.visible = dx * dx + dz * dz < 3600; }   // items drawn within 60 m, like their rings (帧率)
+    if (!l.boxed) {
+      if (cp) { const dx = l.m.position.x - cp.x, dz = l.m.position.z - cp.z; l.m.visible = dx * dx + dz * dz < 3600; }   // items drawn within 60 m, like their rings (帧率)
+      l.m.rotation.y += dt * 1.2;
+    }
     if (l.noPick && G.now < l.noPick) continue;
-    l.m.rotation.y += dt * 1.2;
     for (const e of G.entities) {
       if (!e.alive || e.air) continue;
       const dx = e.pos.x - l.m.position.x, dz = e.pos.z - l.m.position.z;
@@ -337,6 +398,7 @@ function take(G, e, l, h, manual = false) {
 
 export function brKilled(G, t, h) {
   const B = G.br;
+  deathDrop(G, h.scene, t);
   const alive = G.entities.filter(e => e.alive).length; B.alive = alive;
   t.place = alive + 1;
   if (t.isPlayer) { setTimeout(() => h.endMatch(), 2200); h.$('respawnIn').textContent = `你获得了第 ${t.place} 名`; return; }
@@ -371,7 +433,8 @@ export function brMinimap(G, ctx, mx, mz, sx, sz) {
 
 export function cleanup(G, scene) {
   cleanupDrop(G, scene);
-  for (const l of G.loot || []) { scene.remove(l.m); l.m.material.dispose(); }
+  for (const l of G.loot || []) { scene.remove(l.m); if (!l.boxed) l.m.material.dispose(); }
+  for (const b of G.deathBoxes || []) scene.remove(b.m); G.deathBoxes = [];
   G.loot = []; G.bag = []; G.bagLv = 0; G.bagMsgT = 0;
   if (RING) { RING.count = 0; if (RING.parent) RING.parent.remove(RING); }
   if (G.br?.mesh) scene.remove(G.br.mesh);

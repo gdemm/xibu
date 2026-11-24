@@ -8,10 +8,10 @@ import * as THREE from 'three';
 
 let seed = 4242; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647; const rr = (a, b) => a + rnd() * (b - a);
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color();
-const mat4 = (x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => _m.clone().compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, rz)), _s.set(sx, sy, sz));
+export const mat4 = (x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => _m.clone().compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, rz)), _s.set(sx, sy, sz));
 
 // geometry bucket: positions / normals / colours of non-indexed triangles
-class Bucket {
+export class Bucket {
   constructor() { this.p = []; this.n = []; this.c = []; }
   add(geo, m, color, color2 = null, y0 = 0, y1 = 1) {   // color2: vertical gradient (local y0 -> y1 goes color -> color2)
     const g = geo.index ? geo.toNonIndexed() : geo.clone();
@@ -38,7 +38,7 @@ class Bucket {
   }
   get tris() { return this.p.length / 9; }
 }
-class Grid {   // buckets keyed by ~70 m cells around (cx, cz)
+export class Grid {   // buckets keyed by ~70 m cells around (cx, cz)
   constructor(half, n = 4, cx = 0, cz = 0, lodD = 0) { this.half = half; this.n = n; this.cx = cx; this.cz = cz; this.lodD = lodD; this.cells = new Map(); }
   at(x, z) {
     const n = this.n, s = (this.half * 2) / n;
@@ -61,18 +61,18 @@ function bladeTuft() {           // 5 thin blades fanned around Y, height 1
   const N = g.attributes.normal; for (let i = 0; i < N.count; i++) N.setXYZ(i, 0, 1, 0);
   return g;
 }
-const TUFT = bladeTuft();
+export const TUFT = bladeTuft();
 const STEM = new THREE.CylinderGeometry(0.012, 0.012, 1, 3, 1, true);
-const PETALS = new THREE.OctahedronGeometry(1, 0);
+export const PETALS = new THREE.OctahedronGeometry(1, 0);
 const PEBBLE = new THREE.IcosahedronGeometry(1, 0);
 const BUSH = new THREE.IcosahedronGeometry(1, 0);
-const BOX = new THREE.BoxGeometry(1, 1, 1);
-const CYL8 = new THREE.CylinderGeometry(1, 1, 1, 8);
-const CYL10 = new THREE.CylinderGeometry(1, 1, 1, 10);
-const CONE7 = new THREE.ConeGeometry(1, 1, 7);
-const WEDGES = Array.from({ length: 8 }, (_, k) => new THREE.ConeGeometry(1, 1, 2, 1, true, k * Math.PI / 4, Math.PI / 4));   // umbrella canopy panels
-const ICO = new THREE.IcosahedronGeometry(1, 0);
-const PLANE = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+export const BOX = new THREE.BoxGeometry(1, 1, 1);
+export const CYL8 = new THREE.CylinderGeometry(1, 1, 1, 8);
+export const CYL10 = new THREE.CylinderGeometry(1, 1, 1, 10);
+export const CONE7 = new THREE.ConeGeometry(1, 1, 7);
+export const WEDGES = Array.from({ length: 8 }, (_, k) => new THREE.ConeGeometry(1, 1, 2, 1, true, k * Math.PI / 4, Math.PI / 4));   // umbrella canopy panels
+export const ICO = new THREE.IcosahedronGeometry(1, 0);
+export const PLANE = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 
 const FLOWER_COLS = [0xffffff, 0xffe14d, 0xff7aa8, 0xb58cff, 0xff8a3d, 0x7ad7ff];
 const LEAF_COLS = [0x3fb54a, 0x4cc44f, 0x2f9e45, 0x5fcf52, 0x7fd34e];
@@ -80,7 +80,7 @@ const ROUND_COLS = [0x7fd34e, 0x9bdc4c, 0x66c95a, 0xb7e05a];
 const AUTUMN = [0xffa63d, 0xff7b4a, 0xffd04d];
 const BARREL_COLS = [0xe8463c, 0x2f7fe0, 0x35b06a, 0xf2b33a];
 const SHUTTER_COLS = [0x3f8fd6, 0x2ea86a, 0xe0574f, 0x8a63d2];
-const UMB_COLS = [[0xff4d6d, 0xffffff], [0x2ec4b6, 0xffffff], [0xffbe0b, 0xff6b35], [0x3a86ff, 0xffe14d]];
+export const UMB_COLS = [[0xff4d6d, 0xffffff], [0x2ec4b6, 0xffffff], [0xffbe0b, 0xff6b35], [0x3a86ff, 0xffe14d]];
 
 export function decorateIsland(scene, { solids, HALF: HALF0, B: BD, BLD, TREES, FENCES, ROADS, quality, lods = null }) {
   // bounds: the island may be asymmetric (2026-11 扩图); scatter ranges use bounds, buckets cover it with a 6x6 grid

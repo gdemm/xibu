@@ -28,3 +28,12 @@ Kenney 和 Kay Lousberg 都不要求署名，这里仍然注明以示感谢。
 | assets/props/props.bin + props.json（吉普=SUV、卡车=皮卡，路边车辆残骸、轮胎、路锥、油桶、木箱、栅栏、岩石、帐篷、路牌、篝火、木头、工作台、宝箱、室内家具等） | Kenney「Car Kit」「Survival Kit」「Furniture Kit」「Weapon Pack」(https://kenney.nl/assets)；离线烘焙成一个顶点着色的压缩文件（量化坐标、int8 法线、rgb8 颜色）；车辆另存一份约 15% 面数的简化版（*_lo，远处显示，同样来自 Kenney Car Kit） | Kenney (www.kenney.nl) | CC0 1.0（assets/chars/LICENSE-Kenney.txt） |
 
 摩托、自行车、大巴、直升机仍是本项目程序生成的原创造型；物资地面光圈也是代码生成的。
+
+## 迈阿密地图 / 霓虹车系 / 迈阿密风皮肤（2026-11）
+| 内容 | 来源 | 许可 |
+|---|---|---|
+| 迈阿密地图（海滨大道、粉彩装饰艺术风建筑、霓虹灯、棕榈树、沙滩伞、救生员塔、栈桥、便利店、招牌文字） | 本项目代码生成的原创造型；室内家具和停车场轿车沿用上面的 Kenney Car Kit / Furniture Kit（CC0） | 原创 / CC0 1.0 |
+| 霓虹跑车 / 肌肉车 / 敞篷车 / 警车（通用 "POLICE" 字样，无真实警局标识）/ 皮卡 | 本项目程序生成的原创低模，不仿任何真实车型或品牌 | 原创 |
+| assets/chars2/skins/*_aloha / _neon / _beach / _street.webp（椰岛花衬衫 / 霓虹夜 / 海滩风 / 街头牛仔）+ 墨镜、金链子配件 | 本项目对 KayKit 基础角色贴图的调色（同上方换色皮肤流程）；配件为代码生成 | 本项目（基于 Kay Lousberg 的 CC0 贴图） |
+
+风格参考"迈阿密霓虹/开放世界犯罪游戏"的氛围与玩法机制（通缉星级、警车追捕、抢车、抢劫便利店），所有名称、角色、车辆和图形均为原创，不含任何 Rockstar / GTA 的名称、标志、角色形象或车辆设计。
