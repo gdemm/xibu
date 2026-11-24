@@ -211,7 +211,7 @@ function save(){try{localStorage.setItem('bead.v1',JSON.stringify({N,grid,target
 function load(){try{const s=JSON.parse(localStorage.getItem('bead.v1'));if(s&&s.grid&&s.grid.length===s.N*s.N){({N,grid,target,mode,curPat,cur}=s);return true}}catch(e){}return false}
 function patGrid(i){const p=PATS[i];if(p.g)return p.g.slice();const n=16,g=new Array(n*n).fill(-1);p.rows.forEach((r,y)=>{for(let x=0;x<n;x++){const c=r[x];if(c&&c!=='.'&&p.map[c]!=null)g[y*n+x]=p.map[c]}});return g}
 let Z=1,OX=0,OY=0,FIT=300,zoomN=-1;
-function autoZoom(){const w=$('#wrap');FIT=Math.floor(Math.min(w.clientWidth,w.clientHeight)-4);Z=Math.max(1,Math.min(5,26*N/FIT));zoomN=N;const sz=FIT*Z;OX=(w.clientWidth-sz)/2;OY=(w.clientHeight-sz)/2;if(sz>w.clientWidth){const f=target?firstTodo():-1;if(f>=0){OX=w.clientWidth/2-((f%N)+.5)*sz/N;OY=w.clientHeight/2-(((f/N)|0)+.5)*sz/N}}}
+function autoZoom(){const w=$('#wrap');FIT=Math.floor(Math.min(w.clientWidth,w.clientHeight)-4);zoomN=N;if(target){fitArt();return}Z=1;OX=(w.clientWidth-FIT)/2;OY=(w.clientHeight-FIT)/2}
 function fitArt(){const w=$('#wrap'),W=w.clientWidth,H=w.clientHeight;FIT=Math.floor(Math.min(W,H)-4);let x0=N,y0=N,x1=-1,y1=-1;const src=target||grid;src.forEach((v,i)=>{if(v>=0||(grid[i]>=0)){const x=i%N,y=(i/N)|0;x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y)}});
  if(x1<0){Z=1;return}x0=Math.max(0,x0-1);y0=Math.max(0,y0-1);x1=Math.min(N-1,x1+1);y1=Math.min(N-1,y1+1);const bw=x1-x0+1,bh=y1-y0+1,c=Math.min((W-8)/bw,(H-8)/bh);Z=Math.max(1,Math.min(6,c*N/FIT));const cc=FIT*Z/N;OX=W/2-(x0+bw/2)*cc;OY=H/2-(y0+bh/2)*cc}
 function firstTodo(){return target?target.findIndex((t,i)=>t>=0&&grid[i]!==t):-1}
