@@ -133,6 +133,73 @@ export function buildFreeDeco(G, scene) {
     extraShops.push({ x: kx - 2.6, z: kz, name: '加油站', gas: true });
     kiosks.push({ kind: 'gas', x: kx - 2.6, z: kz, label: '加油站 · 可抢劫', color: 0x28e8ff });
   }
+
+  // ================= 地图细节 (2026-11-25, modelled on the real Miami Beach layout the original game is based on) =================
+  let rs = 7; const R = () => (rs = (rs * 16807) % 2147483647) / 2147483647, RR = (a, b) => a + R() * (b - a);
+  const B = map.bounds, WX = B.minX - 12;          // west sea wall x
+  // ---- 市中心 skyline across the bay: a low island of glass towers (west, x < -185) ----
+  const town = new Merge(), GLASS = [0x5fb4e8, 0x7fd0e8, 0x3f86c8, 0x9fd8f0, 0xbfe6f2, 0x4a6fa8], CROWN = [0xff2bd6, 0x28e8ff, 0xffe600, 0x7dff4a];
+  town.box(-238, -0.6, 0, 100, 1.2, 330, 0xd9cbb8);
+  for (let i = 0; i < 34; i++) {
+    const x = RR(-280, -196), z = RR(-150, 150), w = RR(9, 18), d = RR(9, 18), h = RR(22, 95) * (Math.abs(z) < 60 ? 1.25 : 0.85), col = GLASS[(R() * GLASS.length) | 0];
+    town.box(x, h / 2, z, w, h, d, col);
+    for (let y = 4; y < h - 2; y += 3.4) town.box(x, y, z, w + 0.12, 0.35, d + 0.12, 0xeef4f8);       // floor slabs
+    if (R() < 0.5) town.box(x, h + 2, z, w * 0.6, 4, d * 0.6, col);                                     // setback top
+    if (R() < 0.55) { const c = CROWN[(R() * CROWN.length) | 0], th = h + (R() < 0.5 ? 4 : 0.1); glow.box(x, th, z - d * 0.31, w * 0.62, 0.3, 0.2, c); glow.box(x, th, z + d * 0.31, w * 0.62, 0.3, 0.2, c); glow.box(x - w * 0.31, th, z, 0.2, 0.3, d * 0.62, c); glow.box(x + w * 0.31, th, z, 0.2, 0.3, d * 0.62, c); }
+  }
+  // ---- 跨海大桥 (causeway) from the west end of the north cross street out over the bay to downtown ----
+  for (const bz of [-84, 84]) {
+    const x0 = WX - 1, x1 = -196, L = x0 - x1;
+    for (let k = 0; k < 16; k++) {
+      const a = x0 - (k + 0.5) * L / 16, t = (k + 0.5) / 16, y = 0.3 + Math.sin(t * Math.PI) * 7;
+      town.box(a, y, bz, L / 16 + 0.3, 0.6, 9, 0xcfc8bc); town.box(a, y + 0.75, bz - 4.3, L / 16 + 0.3, 0.9, 0.3, 0xf4f1ea); town.box(a, y + 0.75, bz + 4.3, L / 16 + 0.3, 0.9, 0.3, 0xf4f1ea);
+      town.box(a, y + 0.32, bz, L / 16 + 0.3, 0.02, 0.3, 0xffd84a);
+      if (k % 3 === 1) { town.cyl(a, (y - 1.2) / 2 - 0.6, bz, 0.9, y + 0.6, 0xbfb8ac); town.cyl(a, y + 3, bz - 4.3, 0.08, 4.4, 0x3a3a48); glow.box(a, y + 5.2, bz - 3.8, 0.5, 0.15, 0.9, k % 2 ? 0xff2bd6 : 0x28e8ff); }
+    }
+  }
+  // ---- 游艇码头 (marina) on the north shore: wooden piers + moored yachts and speedboats ----
+  const ZN = B.minZ - 12;
+  for (let k = 0; k < 6; k++) {
+    const px = -130 + k * 20;
+    town.box(px, -0.35, ZN - 14, 2.2, 0.3, 26, 0x9a7a5a);
+    for (const sd of [-1, 1]) for (let j = 0; j < 3; j++) {
+      if (R() < 0.2) continue;
+      const bx = px + sd * 4.6, bz = ZN - 6 - j * 8, big = R() < 0.4, hl = big ? 7.5 : 5, hw = big ? 2.6 : 1.9;
+      town.box(bx, -0.75, bz, hw, 1.0, hl, 0xffffff); town.box(bx, -0.3, bz - hl * 0.5, hw * 0.6, 0.6, 0.8, 0xffffff, 0);
+      town.box(bx, -0.95, bz, hw + 0.05, 0.25, hl + 0.05, [0x1f5f9f, 0xff5fa0, 0x2bb3a8, 0x222222][(R() * 4) | 0]);
+      town.box(bx, -0.05, bz + hl * 0.08, hw * 0.75, big ? 1.1 : 0.6, hl * 0.4, big ? 0xf4f4f4 : 0x2a3a4a);
+      if (big) town.box(bx, 0.65, bz + hl * 0.12, hw * 0.55, 0.5, hl * 0.25, 0x3a5a7a);
+    }
+  }
+  // ---- 远处邮轮 (a cruise liner anchored offshore, east) ----
+  { const x = B.maxX + 120, z = -40;
+    town.box(x, 1.5, z, 22, 6, 120, 0xfafafa); town.box(x, -0.2, z, 22.2, 2.4, 120.2, 0x1f3f7f);
+    for (let k = 0; k < 4; k++) town.box(x, 6.5 + k * 2.6, z + 6, 19 - k * 1.5, 2.4, 86 - k * 10, 0xffffff);
+    for (let k = 0; k < 4; k++) glow.box(x - 10.6 + k * 0.01, 7.6 + k * 2.6, z + 6, 0.1, 0.4, 84 - k * 10, k % 2 ? 0x28e8ff : 0xffe6a0);
+    town.box(x, 19, z - 14, 5, 5, 9, 0xd8442e); town.box(x, 21.7, z - 14, 5.2, 0.5, 9.2, 0x111111);
+    glow.box(x, 17.5, z + 40, 14, 0.3, 0.3, 0xff2bd6); }
+  // ---- street furniture: zebra crossings + traffic lights at every junction, bus stops on 柯林斯大道 ----
+  const RD = map.roads || [], V = RD.filter(r => r[3] - r[1] > r[2] - r[0]), Hh = RD.filter(r => r[2] - r[0] > r[3] - r[1]);
+  for (const v of V) for (const hr of Hh) {
+    const cx = (v[0] + v[2]) / 2, cz = (hr[1] + hr[3]) / 2;
+    if (cx < hr[0] || cx > hr[2] || cz < v[1] || cz > v[3]) continue;
+    for (const sz of [-1, 1]) for (let k = -3; k <= 3; k++) solid.box(cx + k * 1.05, 0.115, cz + sz * 5.6, 0.6, 0.02, 2.2, 0xf6f6f2);     // crossings across the vertical road
+    for (const sx of [-1, 1]) for (let k = -3; k <= 3; k++) solid.box(cx + sx * 5.6, 0.115, cz + k * 1.05, 2.2, 0.02, 0.6, 0xf6f6f2);    // across the horizontal road
+    for (const [sx, sz] of [[-1, -1], [1, 1]]) {
+      const lx = cx + sx * 5.0, lz = cz + sz * 5.0;
+      if (map.solids.some(b => lx > b.min.x - 0.3 && lx < b.max.x + 0.3 && lz > b.min.z - 0.3 && lz < b.max.z + 0.3 && b.max.y > 0.5)) continue;
+      solid.cyl(lx, 2.6, lz, 0.09, 5.2, 0x2a2c34); solid.box(lx - sx * 1.6, 5.05, lz, 3.2, 0.12, 0.12, 0x2a2c34);
+      solid.box(lx - sx * 3.0, 4.55, lz, 0.38, 1.0, 0.38, 0x1a1c22);
+      glow.box(lx - sx * 3.0, 4.85, lz - sz * 0.2, 0.22, 0.22, 0.04, 0x3a0a0a); glow.box(lx - sx * 3.0, 4.55, lz - sz * 0.2, 0.22, 0.22, 0.04, 0x3a2a0a); glow.box(lx - sx * 3.0, 4.25, lz - sz * 0.2, 0.22, 0.22, 0.04, 0x3aff6a);
+    }
+  }
+  for (const bz of [-40, 44]) for (const bx of [18.4]) {
+    if (map.solids.some(b => bx - 2 < b.max.x && bx + 2 > b.min.x && bz - 1 < b.max.z && bz + 1 > b.min.z && b.max.y > 0.5)) continue;
+    solid.box(bx - 0.6, 1.3, bz, 0.1, 2.6, 3.6, 0x9fd8f0); solid.box(bx, 2.65, bz, 1.6, 0.12, 3.8, 0xf4f1ea);
+    solid.box(bx - 0.2, 0.5, bz, 0.5, 0.1, 3.0, 0x8a5a3a); glow.box(bx - 0.66, 1.9, bz + 1.4, 0.04, 0.8, 0.5, 0xffe600);
+  }
+  const townM = town.mesh(new THREE.MeshLambertMaterial({ vertexColors: true }));
+  if (townM) { scene.add(townM); objs.push({ mesh: townM }); }
   const glowM = glow.mesh(new THREE.MeshBasicMaterial({ vertexColors: true })), solidM = solid.mesh(new THREE.MeshLambertMaterial({ vertexColors: true }));
   for (const m of [glowM, solidM]) if (m) { scene.add(m); objs.push({ mesh: m }); }
   if (P.length) {
