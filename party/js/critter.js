@@ -857,16 +857,19 @@ function accGeo(kind, ht) {
   } else if (kind === 'chain') {      // gold torus around the neck + a medallion
     add(new THREE.TorusGeometry(ht * 0.3, ht * 0.04, 6, 18), 0, ht * CH.y, ht * CH.z, Math.PI / 2 - 0.55);
     add(new THREE.CylinderGeometry(ht * 0.08, ht * 0.08, ht * 0.03, 10), 0, ht * (CH.y - 0.16), ht * (CH.z + 0.27), Math.PI / 2 - 0.3);
+  } else if (kind === 'hoops') {      // big gold hoop earrings hanging under the ears
+    for (const sx of [-1, 1]) add(new THREE.TorusGeometry(ht * 0.085, ht * 0.014, 5, 16), sx * ht * HP.x, ht * HP.y, ht * HP.z, 0, Math.PI / 2, 0);
   } else if (kind === 'band') {       // bandana: a band around the forehead + knot tails at the back
     add(new THREE.CylinderGeometry(ht * 0.49, ht * 0.5, ht * 0.13, 16, 1, true), 0, ht * BD.y, ht * BD.z);
     for (const s of [-1, 1]) add(new THREE.BoxGeometry(ht * 0.06, ht * 0.22, ht * 0.03), s * ht * 0.06, ht * (BD.y - 0.12), ht * (BD.z - 0.5), 0.3, 0, s * 0.3);
   }
   return (ACC_GEO[key] = mergeGeometries(P));
 }
-export const GL = { y: 0.42, z: 0.5 }, CH = { y: -0.12, z: 0.12 }, BD = { y: 0.62, z: 0.0 };
+export const HP = { x: 0.47, y: 0.2, z: 0.05 }, GL = { y: 0.42, z: 0.5 }, CH = { y: -0.12, z: 0.12 }, BD = { y: 0.62, z: 0.0 };
 function addAcc(bones, C, acc, hatMesh) {
   const ht = C.headTop;
   if (acc.includes('glasses')) bones.head.add(new THREE.Mesh(accGeo('glasses', ht), ACC_MAT.dark));
   if (acc.includes('chain')) bones.head.add(new THREE.Mesh(accGeo('chain', ht), ACC_MAT.gold));
+  if (acc.includes('hoops')) bones.head.add(new THREE.Mesh(accGeo('hoops', ht), ACC_MAT.gold));
   if (acc.includes('band') && !hatMesh) bones.head.add(new THREE.Mesh(accGeo('band', ht), ACC_MAT.band));
 }

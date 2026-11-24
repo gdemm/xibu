@@ -9,7 +9,15 @@ import { autoDrive, resetAuto } from './autodrive.js';
 import { spawnLootDef } from './br.js';
 import { centerMsg } from './hud.js';
 import { buildFreeDeco, disposeFreeDeco } from './freedeco.js';
-import { createPeds, dressPed, posePed, flushPeds, disposePeds } from './peds.js';
+import * as PedBox from './peds.js';
+import * as PedKit from './pedmodels.js';
+// 路人: animated chibi models (pedmodels.js); the instanced box people (peds.js) only if the character GLBs failed
+const PK = (P) => (P && P.models ? PedKit : PedBox);
+const createPeds = (scene, n) => PedKit.createPeds(scene, n) || PedBox.createPeds(scene, n);
+const dressPed = (P, i, ped) => PK(P).dressPed(P, i, ped);
+const posePed = (P, i, ped, far, dt, pp) => PK(P).posePed(P, i, ped, far, dt, pp);
+const flushPeds = (P) => PK(P).flushPeds(P);
+const disposePeds = (P, scene) => PK(P).disposePeds(P, scene);
 
 const $ = (id) => document.getElementById(id);
 const ROB_R = 2.8, PED_N = 28, CIV_N = 8, ARMOR_HP = 200;
@@ -246,7 +254,7 @@ function updatePeds(G, dt, h) {
     const far = pp ? (p.pos.x - pp.x) ** 2 + (p.pos.z - pp.z) ** 2 > 4900 : false;
     if (!p.alive) {
       if (p.deadT > 0) { p.deadT -= dt; if (p.deadT <= 0) respawnPed(G, p); }
-      posePed(PM, i, p, far); continue;
+      posePed(PM, i, p, far, dt, pp); continue;
     }
     if (p.reportT > 0) {
       p.reportT -= dt;
@@ -276,8 +284,8 @@ function updatePeds(G, dt, h) {
       else if (p.fleeT > 0) pickNeighbor(G, p);
     }
     p.walk += dt * speed * 2.6;
-    if (far && (F.pedFrame + i) % 4) continue;   // distant: refresh the instance only every 4th frame
-    posePed(PM, i, p, far);
+    if (!PM.models && far && (F.pedFrame + i) % 4) continue;   // box people far away: refresh the instance only every 4th frame
+    posePed(PM, i, p, far, dt, pp);
   }
   flushPeds(PM);
 }

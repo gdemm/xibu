@@ -40,8 +40,8 @@ export const SKINS = [
 ];
 // 2026-11 自由模式双主角 (original looks in a Miami-crime-drama vibe; own names, no game IP): KayKit Driver / Mage + our own palettes
 export const FREE_LEADS = [
-  { char: 'Driver', look: 'vicem', name: '马科', acc: ['chain'] },
-  { char: 'Mage', look: 'vicef', name: '维拉', acc: ['glasses', 'chain'] },
+  { char: 'ActionFigure', look: 'vicem', name: '马科', acc: [] },
+  { char: 'Mage', look: 'vicef', name: '维拉', acc: ['hoops'] },
 ];
 export const skinAcc = (look) => SKINS.find(k => k.id === look)?.acc || FREE_LEADS.find(k => k.look === look)?.acc || [];
 export function freeLeadIdx() { const v = +ls.get('pgta_lead'); return v === 1 ? 1 : 0; }

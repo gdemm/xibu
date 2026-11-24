@@ -11,6 +11,7 @@ import { lobbyChars } from './lobbychars.js';
 import { openWardrobe } from './wardrobe.js';
 import { pickedLook, FREE_LEADS, freeLeadIdx, setFreeLead } from './roster.js';
 import { ensureChar } from './critter.js';
+import { PED_LOOKS } from './pedmodels.js';
 import { playerJump, airStep, updateDrop } from './drop.js';
 import { partyLook, toonify } from './party.js';
 import { spawnVehicles, driveVehicle, flyVehicle, poseVehicle, inFootprint, vehicleBox, exitSpot } from './vehicles.js';
@@ -83,7 +84,7 @@ addEventListener('resize', onResize); onResize(); landReady = true;
 // ---------------- game state ----------------
 const BLUE_NAMES = ['阿杰', '小林', '老周', '石头', '阿飞'];
 const RED_NAMES = ['老K', '铁牙', '阿狼', '火锅', '刀疤'];
-const G = window.__game = {
+const G = window.__game = { scene,
   state: 'lobby', entities: [], bots: [], player: null, scores: { blue: 0, red: 0 }, timeLeft: 600, now: 0,
   diff: 'normal', target: 30, map: null, weapon: WEAPONS.rifle, ammo: {}, reloading: false, fps: 0, opts: null,
   bag: [], bagLv: 0, bagMsgT: 0,
@@ -238,7 +239,7 @@ let starting = false;
 async function startWithChar(opts) {
   if (starting) return; starting = true;
   const b = $('btnStart'); const t = b.textContent; b.textContent = '加载中…';
-  try { const L = pickedLook(); await ensureChar(L.char, L.look); if (opts.mode === 'free') await Promise.all(FREE_LEADS.map(l => ensureChar(l.char, l.look))); } finally { b.textContent = t; starting = false; }
+  try { const L = pickedLook(); await ensureChar(L.char, L.look); if (opts.mode === 'free') await Promise.all([...FREE_LEADS.map(l => ensureChar(l.char, l.look)), ...PED_LOOKS.map(([c, l]) => ensureChar(c, l))]); } finally { b.textContent = t; starting = false; }
   startMatch(opts);
 }
 G.startWithChar = startWithChar;
@@ -380,7 +381,8 @@ G.solidsNear = (pos) => {
   return out;
 };
 const thirdPerson = () => !!P.inCar || !!G.player?.air || (S.tp && !P.scoped);
-function makeBody() { if (P.body) scene.remove(P.body); const lead = G.free ? FREE_LEADS[freeLeadIdx()] : null; P.body = createSoldier(G.mode === 'br' || G.free ? 'player' : G.player.team, lead ? { char: lead.char, look: lead.look, hat: 'none' } : { ...pickedLook() }); P.body.visible = false; scene.add(P.body); $('bView')?.classList.toggle('on', !!S.tp); }
+function makeBody() { if (P.body) scene.remove(P.body); const lead = G.free ? FREE_LEADS[freeLeadIdx()] : null; P.body = createSoldier(G.mode === 'br' || G.free ? 'player' : G.player.team, lead ? { char: lead.char, look: lead.look, hat: 'none' } : { ...pickedLook() });
+  if (lead) { const gs = new Set(); P.body.traverse(o => { if (o.isMesh && /Headband/i.test(o.name)) gs.add(o.geometry); }); P.body.traverse(o => { if (o.isMesh && gs.has(o.geometry)) o.visible = false; }); } P.body.visible = false; scene.add(P.body); $('bView')?.classList.toggle('on', !!S.tp); }
 function poseBody(dt, mx, mz, speed, seated) {
   const b = P.body; if (!b) return;
   b.visible = G.player.alive && thirdPerson() && !(P.inCar && (P.inCar.type === 'bus' || P.inCar.type === 'truck' || P.inCar.T.closed || P.inCar.mesh?.userData.kenney));
