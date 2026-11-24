@@ -357,12 +357,12 @@ void main(){ vec3 transformed = position + normalize(normal) * w; ${SWAY} }`,
     if (type[idx(i, j)] !== T.G) continue; const r = rand(); if (r > 0.16) continue;
     const ck = ((j / CH) | 0) * NC + ((i / CH) | 0), B = dB[ck] || (dB[ck] = new Builder()), x = wx(i) + RND(-0.55, 0.55), z = wx(j) + RND(-0.55, 0.55);
     if (r < 0.1) { const c = TH.tuft[ri(0, 2)]; for (let k = 0; k < 4; k++) { const a = k * 1.6 + RND(-0.3, 0.3), hh = RND(0.22, 0.38); B.add(new THREE.ConeGeometry(0.06, hh, 3, 1, true), M(x + Math.cos(a) * 0.06, hh / 2, z + Math.sin(a) * 0.06, Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35), c); } }
-    else if (r < 0.13) { const s = RND(0.07, 0.13); B.add(new THREE.IcosahedronGeometry(1, 0), M(x, s * 0.35, z, 0, RND(0, 3), 0, s * 1.2, s * 0.6, s), TH.pebble[ri(0, 2)]); }
+    else if (r < 0.14) { const s = RND(0.07, 0.13); B.add(new THREE.OctahedronGeometry(1, 0), M(x, s * 0.35, z, 0, RND(0, 3), 0, s * 1.2, s * 0.6, s), TH.pebble[ri(0, 2)]); }
     else if (!DUSK) { // little flower clusters on the meadow
       for (let k = 0; k < 2; k++) { const fx2 = x + RND(-0.25, 0.25), fz = z + RND(-0.25, 0.25), hh = RND(0.16, 0.26), c = [0xfff6a8, 0xff9fd0, 0xffffff, 0xb9a6ff][ri(0, 3)];
         B.add(new THREE.ConeGeometry(0.025, hh, 3, 1, true), M(fx2, hh / 2, fz), 0x4f9e33).add(new THREE.OctahedronGeometry(0.075, 0), M(fx2, hh, fz, 0, RND(0, 3), 0, 1.3, 0.45, 1.3), c); }
     } else { // glowing toadstools in the swamp
-      for (let k = 0; k < 2; k++) { const mx = x + RND(-0.25, 0.25), mz = z + RND(-0.25, 0.25), s = RND(0.7, 1.2), c = [0x5ff7e0, 0xff7ad9, 0xc9a2ff][ri(0, 2)];
+      for (let k = 0, n = 1 + (rand() < 0.5); k < n; k++) { const mx = x + RND(-0.25, 0.25), mz = z + RND(-0.25, 0.25), s = RND(0.7, 1.2), c = [0x5ff7e0, 0xff7ad9, 0xc9a2ff][ri(0, 2)];
         B.add(new THREE.CylinderGeometry(0.035 * s, 0.05 * s, 0.2 * s, 5, 1, true), M(mx, 0.1 * s, mz), 0xe9e3f2).add(new THREE.ConeGeometry(0.12 * s, 0.1 * s, 6, 1, true), M(mx, 0.24 * s, mz), c); }
     }
   }
@@ -371,11 +371,11 @@ void main(){ vec3 transformed = position + normalize(normal) * w; ${SWAY} }`,
   for (let j = 1; j < N - 1; j++) for (let i = 1; i < N - 1; i++) {
     if (!isWt(i, j)) continue; const vd = isVoid(i, j), edge = landN(i, j); if (vd && !edge) continue; const r = rand();
     const ck = ((j / CH) | 0) * NC + ((i / CH) | 0), B = dB[ck] || (dB[ck] = new Builder()), x = wx(i) + RND(-0.35, 0.35), z = wx(j) + RND(-0.35, 0.35);
-    if (!vd && edge && r < 0.3) { for (let k = 0; k < 2; k++) { const rx2 = x + RND(-0.3, 0.3), rz = z + RND(-0.3, 0.3), hh = RND(0.5, 0.85), tl = RND(-0.15, 0.15); B.add(new THREE.ConeGeometry(0.03, hh, 3, 1, true), M(rx2, hh / 2, rz, tl, 0, tl), DUSK ? 0x2f9a96 : 0x5fa83a); if (k < 1) B.add(new THREE.CylinderGeometry(0.05, 0.05, 0.16, 4), M(rx2 + tl * hh * 0.5, hh * 0.8, rz - tl * hh * 0.5, tl, 0, tl), DUSK ? 0x5a3d6a : 0x8a5a2b); } }
+    if (!vd && edge && r < 0.3) { for (let k = 0; k < 2; k++) { const rx2 = x + RND(-0.3, 0.3), rz = z + RND(-0.3, 0.3), hh = RND(0.5, 0.85), tl = RND(-0.15, 0.15); B.add(new THREE.ConeGeometry(0.03, hh, 3, 1, true), M(rx2, hh / 2, rz, tl, 0, tl), DUSK ? 0x2f9a96 : 0x5fa83a); if (k < 1) B.add(new THREE.CylinderGeometry(0.05, 0.05, 0.16, 4, 1, true), M(rx2 + tl * hh * 0.5, hh * 0.8, rz - tl * hh * 0.5, tl, 0, tl), DUSK ? 0x5a3d6a : 0x8a5a2b); } }
     else if (!vd && !edge && r < 0.22) { const s = RND(0.22, 0.34); B.add(new THREE.CircleGeometry(s, 7, 0.5, Math.PI * 1.75).rotateX(-Math.PI / 2), M(x, 0.03, z, 0, RND(0, 6), 0), DUSK ? 0x3c8f4a : 0x4fb83a); if (rand() < 0.3) B.add(new THREE.OctahedronGeometry(0.08, 0), M(x, 0.08, z, 0, 0, 0, 1.2, 0.7, 1.2), DUSK ? 0xff7ad9 : 0xffb3da); }
     else if (vd && r < 0.16) {
       if (!DUSK) { const s = RND(0.25, 0.5); B.add(new THREE.IcosahedronGeometry(s, 0), M(x, s * 0.2, z, RND(0, 3), RND(0, 3), 0, 1.2, 0.7, 1), 0xb9b2c4); }
-      else { const hh = RND(0.6, 1.1); B.add(new THREE.CylinderGeometry(0.04, 0.1, hh, 5), M(x, hh / 2 - 0.1, z, RND(-0.3, 0.3), 0, RND(-0.3, 0.3)), 0x3a2c4a).add(new THREE.CylinderGeometry(0.02, 0.04, hh * 0.4, 4), M(x + 0.12, hh * 0.7, z, 0, 0, -0.9), 0x3a2c4a); }
+      else { const hh = RND(0.6, 1.1); B.add(new THREE.CylinderGeometry(0.04, 0.1, hh, 5, 1, true), M(x, hh / 2 - 0.1, z, RND(-0.3, 0.3), 0, RND(-0.3, 0.3)), 0x3a2c4a).add(new THREE.CylinderGeometry(0.02, 0.04, hh * 0.4, 4, 1, true), M(x + 0.12, hh * 0.7, z, 0, 0, -0.9), 0x3a2c4a); }
     }
   }
   for (const ck in dB) ground.add(new THREE.Mesh(dB[ck].build(), vcMat()));

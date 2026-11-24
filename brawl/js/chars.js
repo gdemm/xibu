@@ -133,8 +133,8 @@ export const PET = { kind: 'dog', name: '铁皮旺财' };
 // ---------------- meshes ----------------
 const GEO = {};
 function parts(kind, lod, split = true) {
-  const key = kind + (lod ? ':lo' : '') + (split ? '' : ':m'); if (GEO[key]) return GEO[key];
-  DET = lod ? 0.62 : 1; HEAD = null;
+  const det = typeof lod === 'number' ? lod : lod ? 0.62 : 1, key = kind + ':' + det + (split ? '' : ':m'); if (GEO[key]) return GEO[key];
+  DET = det; HEAD = null;
   const body = new Builder(), foot = new Builder(), arm = new Builder(), armL = new Builder();
   let fx = 0.24, fy = 0.12, armPos = [0.6, 1.2, 0.02], melee = false, two = true;
 

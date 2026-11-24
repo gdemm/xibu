@@ -4,7 +4,7 @@ import { createLand } from './land.js';
 import { CHARS, ORDER, makeBrawler, animBrawler, kickBrawler } from './chars.js';
 import { makeFX } from './fx.js';
 import { createGame } from './game.js';
-import { clamp } from './util.js';
+import { clamp, Builder, M, vcMat } from './util.js';
 import { MAPS } from './world.js';
 
 const $ = (id) => document.getElementById(id);
@@ -23,13 +23,12 @@ const FX = makeFX(scene);
 const lob = new THREE.Scene(); lob.background = null;
 lob.add(new THREE.HemisphereLight(0xffffff, 0x8a9ab0, 1.6)); const ls = new THREE.DirectionalLight(0xffffff, 2.2); ls.position.set(3, 8, 7); lob.add(ls);
 const lcam = new THREE.PerspectiveCamera(30, 2, 0.1, 100);
-const podium = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 0.4, 40), new THREE.MeshToonMaterial({ color: 0xffd23f })); podium.position.y = -0.2; lob.add(podium);
+const podium = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 0.4, 32), vcMat()); podium.position.y = -0.2; lob.add(podium);
 const podO = new THREE.Mesh(podium.geometry, new THREE.MeshBasicMaterial({ color: 0x1a1022, side: THREE.BackSide })); podO.scale.setScalar(1.04); podium.add(podO);
-{ // podium trim: lighter top disc + rim band + little stars round the edge
-  const top = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.04, 40), new THREE.MeshToonMaterial({ color: 0xffe680 })); top.position.y = 0.215; podium.add(top);
-  const band = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.06, 6, 48), new THREE.MeshToonMaterial({ color: 0xff8a1f })); band.rotation.x = Math.PI / 2; band.position.y = -0.02; podium.add(band);
-  const sg = new THREE.OctahedronGeometry(0.09, 0), sm = new THREE.MeshToonMaterial({ color: 0xffffff });
-  const st = new THREE.InstancedMesh(sg, sm, 10); for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; st.setMatrixAt(i, new THREE.Matrix4().makeTranslation(Math.sin(a) * 1.58, 0.06, Math.cos(a) * 1.58)); } podium.add(st);
+{ // podium trim, one merged mesh: lighter top disc + rim band + little stars round the edge
+  const pb = new Builder().add(new THREE.CylinderGeometry(1.3, 1.3, 0.04, 32), M(0, 0.215, 0), 0xffe680).add(new THREE.TorusGeometry(1.6, 0.06, 5, 40), M(0, -0.02, 0, Math.PI / 2), 0xff8a1f);
+  for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; pb.add(new THREE.OctahedronGeometry(0.09, 0), M(Math.sin(a) * 1.58, 0.06, Math.cos(a) * 1.58), 0xffffff); }
+  pb.add(podium.geometry.clone(), null, 0xffd23f); const pg = pb.build(); podium.geometry = pg;
 }
 let lobT = 0, lobKick = 3; let lobMesh = null, sel = localStorage.getItem('mdl_kind') || 'chef'; if (!CHARS[sel]) sel = 'chef';
 let opts = { n: 16, diff: 1, mode: localStorage.getItem('mdl_mode') || 'party' }; if (!['party', 'solo', 'duo'].includes(opts.mode)) opts.mode = 'party';
@@ -81,7 +80,7 @@ function buildCards() {
 function showSel() {
   const c = CHARS[sel]; $('selName').textContent = c.name + ' · ' + c.title; $('selRole').textContent = `${c.role} · 武器「${c.weapon}」 · 大招「${c.superName}」`; $('selDesc').textContent = c.desc;
   $('selStats').textContent = `生命 ${c.hp}　射程 ${c.range}　装填 ${c.reload}s`;
-  if (lobMesh) lob.remove(lobMesh); lobMesh = makeBrawler(sel); lobMesh.scale.setScalar(1.15); lob.add(lobMesh); if (lobT > 0.5) kickBrawler(lobMesh, false, 'spin'); lobKick = lobT + 3.2;
+  if (lobMesh) lob.remove(lobMesh); lobMesh = makeBrawler(sel, 0.8); lobMesh.scale.setScalar(1.15); lob.add(lobMesh); if (lobT > 0.5) kickBrawler(lobMesh, false, 'spin'); lobKick = lobT + 3.2;
 }
 for (const b of $('segN').children) b.onclick = () => { opts.n = +b.dataset.n; for (const x of $('segN').children) x.classList.toggle('on', x === b); };
 const MODE_SUB = { party: '派对吃鸡 · 最后一个站着的赢', solo: '经典单人 · 10人抢能量块', duo: '经典双人 · 5队抢能量块' };
@@ -359,7 +358,7 @@ function frame(now) {
   if (state === 'lobby') {
     lobT += dt; if (lobMesh && lobT > lobKick) { lobKick = lobT + 3.6 + Math.random() * 2; kickBrawler(lobMesh, Math.random() < 0.5); }
     if (lobMesh) { lobMesh.rotation.y = Math.sin(lobT * 0.7) * 0.5 + 0.3; animBrawler(lobMesh, dt, 0); lobMesh.userData.inner.scale.y = 1 + Math.sin(lobT * 3) * 0.025; }
-    const wide = W / Hh; lcam.position.set(wide > 1.2 ? 3.4 : 0, 2.3, 13.2); lcam.lookAt(wide > 1.2 ? 3.4 : 0, 1.3, 0); lob.position.x = 0;
+    const wide = W / Hh; lcam.position.set(wide > 1.2 ? 3.4 : 0, 2.3, 14.6); lcam.lookAt(wide > 1.2 ? 3.4 : 0, 1.12, 0); lob.position.x = 0;
     renderer.setClearColor(0x2b6cff, 1); renderer.render(lob, lcam); drawOverlay(dt); return;
   }
   if (!paused && G.world) {
