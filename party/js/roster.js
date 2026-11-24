@@ -9,10 +9,12 @@ export const BOT_CHARS = [
 ];
 const D = './assets/chars2/';
 const W = (id, name, ver, drop) => ({ id, url: D + id + '.glb', name, ver, drop, thumb: D + 'thumbs/' + id + '.webp' });
-// 8 base looks (男: 橙帽少年 / 老兵 / 冒险者 / 动作英雄 / 农夫, 女: 鸭舌帽女孩 / 眼镜女孩 / 魔法少女). Each has 5 recolor choices
+// 2 base looks (动作英雄 / 农夫). Each has 5 recolor choices
 // (原版 + 4 palette skins of its own atlas) and some model skins (other KayKit looks, loaded from their own glb).
 const S = (id, name, drop) => ({ ...W(id, name, '', drop), skinOnly: true });
 export const SKIN_MODELS = [
+  S('Protagonist_B', '橙帽少年'), S('Survivalist', '老兵'), S('Rogue', '冒险者'),
+  S('Protagonist_A', '鸭舌帽女孩'), S('Witch', '眼镜女孩', ['Witch_Hat']), S('MagicalGirl', '魔法少女'),
   S('Robot_One', '小机器人'), S('Clown', '小丑'),
   S('Marksman', '狙击手', ['Ghillie', 'FaceNet']), S('Hiker', '登山客'), S('Engineer', '护目镜工匠'),
   S('Druid', '鹿角德鲁伊'), S('Ranger', '游侠', ['Quiver']), S('Rogue_Hooded', '兜帽侠'),
@@ -23,15 +25,10 @@ export const SKIN_MODELS = [
   S('Tiefling', '恶魔少女', ['Tail']),
 ];
 const B = (id, name, ver, drop, models) => ({ ...W(id, name, ver, drop), models });
+// 2 base characters (user 2026-11-24); every other look is a model skin under one of them
 export const WARDROBE = [
-  B('Protagonist_B', '橙帽少年', '男', undefined, ['Robot_One', 'Helper_B']),
-  B('Survivalist', '老兵', '男', undefined, ['Marksman', 'Hiker', 'Engineer']),
-  B('Rogue', '冒险者', '男', undefined, ['Druid', 'Ranger', 'Rogue_Hooded']),
-  B('ActionFigure', '动作英雄', '男', ['Cigar'], ['Superhero', 'Ninja', 'Driver']),
-  B('Farmer_B', '农夫', '男', undefined, ['Animatronic_Normal', 'MonsterCostume']),
-  B('Protagonist_A', '鸭舌帽女孩', '女', undefined, ['Helper_A', 'Clown']),
-  B('Witch', '眼镜女孩', '女', ['Witch_Hat'], ['Mage', 'Cleric']),
-  B('MagicalGirl', '魔法少女', '女', undefined, ['Tiefling']),
+  B('ActionFigure', '动作英雄', '男', ['Cigar'], ['Superhero', 'Ninja', 'Driver', 'Survivalist', 'Marksman', 'Hiker', 'Engineer', 'Rogue', 'Druid', 'Ranger', 'Rogue_Hooded', 'Protagonist_B']),
+  B('Farmer_B', '农夫', '男', undefined, ['Protagonist_A', 'Witch', 'MagicalGirl', 'Tiefling', 'Mage', 'Cleric', 'Helper_A', 'Helper_B', 'Clown', 'Robot_One', 'Animatronic_Normal', 'MonsterCostume']),
 ];
 // recolor skins: our own palette remaps of the base character's KayKit atlas (pre-baked 256px lossless WebP, assets/chars2/skins/)
 export const SKINS = [
