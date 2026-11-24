@@ -43,7 +43,7 @@ try { HUDL = JSON.parse(localStorage.getItem('party_hud_layout') || '{}') || {};
 let hudEdit = false;
 
 // ---------------- settings ----------------
-const DEF = { quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, smooth: 0.5, showFps: 0, tp: 1, peace: 0 };
+const DEF = { mpal: 'dusk', quality: isTouch ? 'mid' : 'high', fps: 60, sens: 1, smooth: 0.5, showFps: 0, tp: 1, peace: 0 };
 let S = { ...DEF };
 try { S = { ...DEF, ...JSON.parse(localStorage.getItem('partyfps.settings') || '{}') }; } catch (e) {}
 const saveS = () => { try { localStorage.setItem('partyfps.settings', JSON.stringify(S)); } catch (e) {} };
@@ -86,6 +86,13 @@ const G = window.__game = {
   diff: 'normal', target: 30, map: null, weapon: WEAPONS.rifle, ammo: {}, reloading: false, fps: 0, opts: null,
   bag: [], bagLv: 0, bagMsgT: 0,
 };
+// 迈阿密天色 (GTA6-style grades), chosen in 设置
+const MIAMI_PALS = {
+  dusk:  { name: '黄昏', hs: 0xffe2d2, hg: 0x6a5a8a, hi: 1.8, sun: 0xffc08a, si: 2.3, sy: 38, fog: 0xff9e8c, sea: 0x0fb8c6, sky: { top: 0x3d2c9e, mid: 0xff7a9a, bot: 0xffb46e, cloud: 0xffd2c2, cloudE: 0xff8a7a } },
+  noon:  { name: '正午', hs: 0xf2fbff, hg: 0x8a7a5a, hi: 2.0, sun: 0xfff6e0, si: 2.4, sy: 80, fog: 0xa8e6ff, sea: 0x00c8d8, sky: { top: 0x1268ff, mid: 0x6fd0ff, bot: 0xd8f6ff, cloud: 0xffffff, cloudE: 0xbfe4ff } },
+  night: { name: '霓虹夜', hs: 0x8a7aff, hg: 0x2a1a4a, hi: 1.1, sun: 0xff6ad0, si: 0.9, sy: 30, fog: 0x2a1848, sea: 0x10405a, sky: { top: 0x0a0624, mid: 0x3a1460, bot: 0xb02a8a, cloud: 0x6a4aa0, cloudE: 0x401860 } },
+  dawn:  { name: '粉色清晨', hs: 0xffeef6, hg: 0x7a6a9a, hi: 1.9, sun: 0xffd6e6, si: 2.0, sy: 30, fog: 0xffc6dc, sea: 0x40d0d0, sky: { top: 0x7a9cff, mid: 0xffb6d6, bot: 0xffe6c8, cloud: 0xfff0f6, cloudE: 0xffb0d0 } },
+};
 let builtQuality = null;
 let BRH = null; // battle-royale helpers, filled after functions are defined
 const tracers = [];
@@ -94,13 +101,14 @@ function buildWorld(kind = 'ship') {
   // clear old world
   for (let i = scene.children.length - 1; i >= 0; i--) { const o = scene.children[i]; scene.remove(o); o.traverse?.(c => { c.geometry?.dispose?.(); }); }
   const mia = kind === 'miami';   // 迈阿密: GTA6-style golden-hour grade (warm sun, magenta/orange sky, teal sea)
-  scene.add(mia ? new THREE.HemisphereLight(0xffe2d2, 0x6a5a8a, 1.8) : new THREE.HemisphereLight(0xeaf6ff, 0x8a7a5a, 1.9));
-  const sun = new THREE.DirectionalLight(mia ? 0xffc08a : 0xfff4dc, mia ? 2.3 : 2.0); sun.position.set(-40, mia ? 38 : 60, 25); scene.add(sun);
-  G.map = kind === 'island' ? buildIsland(scene, S.quality) : kind === 'miami' ? buildMiami(scene, S.quality) : buildMap(scene, S.quality);
-  builtQuality = S.quality + kind;
-  scene.fog = kind === 'miami' ? new THREE.Fog(0xff9e8c, 40, { low: 125, mid: 160, high: 230 }[S.quality]) : new THREE.Fog(0xbfe6ff, 45, { low: 140, mid: 190, high: 260 }[S.quality]);   // 迈阿密: smaller, denser city -> shorter view, pink haze
+  const MP = MIAMI_PALS[S.mpal] || MIAMI_PALS.dusk;
+  scene.add(mia ? new THREE.HemisphereLight(MP.hs, MP.hg, MP.hi) : new THREE.HemisphereLight(0xeaf6ff, 0x8a7a5a, 1.9));
+  const sun = new THREE.DirectionalLight(mia ? MP.sun : 0xfff4dc, mia ? MP.si : 2.0); sun.position.set(-40, mia ? MP.sy : 60, 25); scene.add(sun);
+  G.map = kind === 'island' ? buildIsland(scene, S.quality) : kind === 'miami' ? buildMiami(scene, S.quality, MP.sea) : buildMap(scene, S.quality);
+  builtQuality = S.quality + kind + (mia ? S.mpal : '');
+  scene.fog = kind === 'miami' ? new THREE.Fog(MP.fog, 40, { low: 125, mid: 160, high: 230 }[S.quality]) : new THREE.Fog(0xbfe6ff, 45, { low: 140, mid: 190, high: 260 }[S.quality]);   // 迈阿密: smaller, denser city -> shorter view, pink haze
   camera.far = scene.fog.far + 25; camera.updateProjectionMatrix();     // nothing past the fog is drawn (the bigger island stays cheap)
-  G.sky = partyLook(scene, S.quality, mia ? 'island' : kind, mia ? { top: 0x3d2c9e, mid: 0xff7a9a, bot: 0xffb46e, cloud: 0xffd2c2, cloudE: 0xff8a7a } : null);
+  G.sky = partyLook(scene, S.quality, mia ? 'island' : kind, mia ? MP.sky : null);
   tracers.length = 0;
   const tm = new THREE.LineBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.9 });
   for (let i = 0; i < 24; i++) {
@@ -163,7 +171,7 @@ function startMatch(opts) {
   opts = { team: 'blue', size: 5, target: 30, diff: 'normal', ...(opts || {}) };
   G.opts = opts;
   const mapKind = opts.mode === 'br' && opts.brMap !== 'ship' ? (opts.brMap === 'miami' ? 'miami' : 'island') : 'ship';
-  if (!G.map || builtQuality !== S.quality + mapKind) buildWorld(mapKind);
+  if (!G.map || builtQuality !== S.quality + mapKind + (mapKind === 'miami' ? S.mpal : '')) buildWorld(mapKind);
   const mmEl = $('minimap'); if (mapKind !== 'ship') { mmEl.width = mmEl.height = 300; mmEl.classList.add('sq'); } else { mmEl.width = 400; mmEl.height = 104; mmEl.classList.remove('sq'); }
   document.body.classList.toggle('brIsland', mapKind !== 'ship'); document.body.classList.toggle('miami', mapKind === 'miami');
   for (const b of G.bots) scene.remove(b.mesh);
@@ -1034,7 +1042,7 @@ function syncSettingsUI() {
 }
 document.querySelectorAll('#settings .seg').forEach(seg => seg.addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return; const k = seg.dataset.s, v = b.dataset.v;
-  S[k] = k === 'quality' ? v : +v; G.quality = S.quality; G.peace = !!+S.peace; saveS(); syncSettingsUI(); if (k === 'quality') applyPixelRatio();
+  S[k] = (k === 'quality' || k === 'mpal') ? v : +v; G.quality = S.quality; G.peace = !!+S.peace; saveS(); syncSettingsUI(); if (k === 'quality') applyPixelRatio();
 }));
 $('sens').addEventListener('input', () => { S.sens = +$('sens').value; saveS(); syncSettingsUI(); });
 $('smooth')?.addEventListener('input', () => { S.smooth = +$('smooth').value; saveS(); syncSettingsUI(); });

@@ -31,7 +31,7 @@ const VSPOTS = [
   ['police', -130, 20, 0], ['heli', 124, -100, 0], ['jeep', -120, 60, 0], ['bus', 50, 89.9, -Math.PI / 2],
 ];
 
-export function buildMiami(scene, quality) {
+export function buildMiami(scene, quality, seaCol = 0x0fb8c6) {
   seed = 11;
   const solids = [], minimapRects = [], G_DOORS = [], G_ROOMS = [], BLD = [], SHOPS = [];
   const q = quality === 'low' ? 0.45 : quality === 'mid' ? 0.7 : 1;
@@ -61,7 +61,7 @@ export function buildMiami(scene, quality) {
   // ---------- sea, sand, city ground ----------
   scene.background = new THREE.Color(0xff7a9a);
   const seaGeo = new THREE.PlaneGeometry(1400, 1400); seaGeo.rotateX(-Math.PI / 2);
-  const sea = new THREE.Mesh(seaGeo, new THREE.MeshLambertMaterial({ color: 0x0fb8c6 })); sea.position.y = -1.2; sea.renderOrder = 4; scene.add(sea);
+  const sea = new THREE.Mesh(seaGeo, new THREE.MeshLambertMaterial({ color: seaCol })); sea.position.y = -1.2; sea.renderOrder = 4; scene.add(sea);
   const T = {
     sand: canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#f6e2b0'; g.fillRect(0, 0, w, h); noise(g, w, h, 0.12, 1400); }, 1, 1),
     pave: canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#e9dfd2'; g.fillRect(0, 0, w, h); g.strokeStyle = 'rgba(0,0,0,.08)'; g.lineWidth = 2; for (let i = 0; i <= w; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, h); g.stroke(); g.beginPath(); g.moveTo(0, i); g.lineTo(w, i); g.stroke(); } noise(g, w, h, 0.08, 600); }, 1, 1),
