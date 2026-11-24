@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>拼拼豆</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+html,body{height:100%;background:#fdf3e7;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:#4a3a2e;overflow:hidden;touch-action:manipulation}
+#app{display:flex;flex-direction:column;height:100%;max-width:640px;margin:0 auto;padding:env(safe-area-inset-top) 8px env(safe-area-inset-bottom)}
+header{display:flex;align-items:center;gap:6px;padding:8px 2px 6px}
+header h1{font-size:20px;letter-spacing:2px;color:#e86a6a;flex:1;white-space:nowrap}
+header h1 span{color:#5bb3e6}
+.tb{border:0;border-radius:10px;width:34px;height:34px;font-size:18px;background:#fff;color:#4a3a2e;box-shadow:0 2px 0 #e6d3bd}
+.tb.x{background:#e74c3c;color:#fff;box-shadow:0 2px 0 #a83224;font-weight:bold}
+#bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding-bottom:6px}
+select,.btn{font:inherit;font-size:14px;border:0;border-radius:10px;padding:7px 10px;background:#fff;color:#4a3a2e;box-shadow:0 2px 0 #e6d3bd}
+.btn.on{background:#ffd76a;box-shadow:0 2px 0 #d9a92c}
+.btn.hot{background:#ff8f6b;color:#fff;box-shadow:0 2px 0 #c9603f}
+#prog{font-size:13px;margin-left:auto;color:#8a705a}
+#wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative}
+canvas#board{touch-action:none;border-radius:14px;box-shadow:0 4px 0 #c9b6a0,0 6px 18px rgba(0,0,0,.12);background:#f4f4f2}
+#tools{display:flex;gap:6px;padding:6px 0;justify-content:space-between}
+#tools .btn{flex:1;padding:6px 0;font-size:12px;display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.1;white-space:nowrap;min-width:0}
+#tools .btn b{font-size:18px;font-weight:normal}
+#pal{display:grid;grid-template-columns:repeat(12,1fr);gap:5px;padding:4px 2px 10px}
+.sw{aspect-ratio:1;border-radius:50%;border:3px solid rgba(0,0,0,.08);position:relative}
+.sw::after{content:"";position:absolute;inset:30%;border-radius:50%;background:rgba(255,255,255,.5)}
+.sw.sel{outline:3px solid #4a3a2e;outline-offset:1px}
+.sw .n{position:absolute;right:-4px;top:-6px;font-size:9px;background:#4a3a2e;color:#fff;border-radius:6px;padding:0 3px;display:none}
+.sw.need .n{display:block}
+#msk{position:fixed;inset:0;background:rgba(40,25,15,.55);display:none;align-items:center;justify-content:center;z-index:9;padding:16px}
+#msk.show{display:flex}
+.card{background:#fff8ef;border-radius:18px;padding:16px;max-width:420px;width:100%;text-align:center}
+.card h2{font-size:20px;margin-bottom:8px;color:#e86a6a}
+.card canvas{max-width:100%;border-radius:10px;margin:8px 0;background:#fff}
+.card .row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px}
+#pick{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:10px 0}
+#pick div{background:#fff;border-radius:12px;padding:6px;box-shadow:0 2px 0 #e6d3bd;font-size:13px}
+#pick canvas{width:100%;image-rendering:pixelated;margin:0}
+#toast{position:fixed;left:50%;top:70px;transform:translateX(-50%);background:#4a3a2e;color:#fff;padding:8px 14px;border-radius:20px;font-size:14px;opacity:0;transition:.3s;pointer-events:none;z-index:10}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>拼<span>拼</span>豆</h1>
+    <button class="tb" id="fs" title="全屏">⤢</button>
+    <button class="tb x" id="quit" title="退出">✕</button>
+  </header>
+  <div id="bar">
+    <button class="btn" id="bPat">🧩 图案</button>
+    <button class="btn" id="bFree">✏️ 自由</button>
+    <select id="size"><option value="16">16×16</option><option value="24">24×24</option><option value="29" selected>29×29</option></select>
+    <button class="btn" id="bImg">🖼 照片转豆</button>
+    <span id="prog"></span>
+  </div>
+  <div id="wrap"><canvas id="board"></canvas></div>
+  <div id="tools">
+    <button class="btn on" data-t="pen"><b>🫘</b>放豆</button>
+    <button class="btn" data-t="erase"><b>🧽</b>拿掉</button>
+    <button class="btn" data-t="fill"><b>🪣</b>填充</button>
+    <button class="btn" data-t="pick"><b>💧</b>取色</button>
+    <button class="btn" id="undo"><b>↶</b>撤销</button>
+    <button class="btn" id="clear"><b>🗑</b>清空</button>
+    <button class="btn hot" id="iron"><b>♨️</b>熨烫</button>
+  </div>
+  <div id="pal"></div>
+</div>
+<div id="msk"><div class="card" id="card"></div></div>
+<div id="toast"></div>
+<input type="file" id="file" accept="image/*" hidden>
+<script>
+// 拼拼豆 — 原创图案，纯前端。
+const PAL=[
+ ['白','#f7f7f2'],['奶油','#f6e7bf'],['柠檬','#ffe14d'],['橙','#ff9a2e'],['珊瑚','#ff6f61'],['红','#e0302e'],
+ ['樱粉','#ffb3c7'],['玫红','#e64a8c'],['淡紫','#c7a6ee'],['紫','#7b4bc4'],['天蓝','#8fd3ff'],['蓝','#2f7fe0'],
+ ['藏青','#22357a'],['薄荷','#9ff0c8'],['草绿','#6cc84a'],['深绿','#2e8a47'],['肤色','#f5c9a0'],['驼','#c88a52'],
+ ['棕','#7a4a2a'],['浅灰','#c9c9c9'],['灰','#808080'],['黑','#262626'],['透明','#dfeef5'],['金','#d9b23a']];
+// 图案：字符→色号
+const PATS=[
+ {name:'小猫',map:{w:0,k:21,o:3,p:6,c:1},rows:[
+ '................',
+ '..k..........k..',
+ '.kok........kok.',
+ '.kook......kook.',
+ '.koookkkkkkoook.',
+ '.kooooooooooook.',
+ 'kooowooooooowook',
+ 'koowkwooooowkwok',
+ 'koowkwooooowkwok',
+ 'kooowooooooowook',
+ 'kppooookkooooppk',
+ 'koooookookoooook',
+ '.koooookkoooook.',
+ '.kooooooooooook.',
+ '..kkooooooookk..',
+ '....kkkkkkkk....'].map(r=>r.slice(0,16).padEnd(16,'.'))},
+ {name:'草莓',map:{r:5,g:14,d:15,y:2,w:0,k:21},rows:[
+ '......gg........',
+ '...gggggggg.....',
+ '..ggdggggdgg....',
+ '.krrgggddgggrk..',
+ 'krrrrggggrrrrrk.',
+ 'krryrrrrrryrrrk.',
+ 'krrrrryrrrrrrrk.',
+ 'krwrrrrrryrrrrk.',
+ '.krrryrrrrrrrk..',
+ '.krrrrrrryrrrk..',
+ '..krryrrrrrrk...',
+ '..krrrrrryrrk...',
+ '...krrrrrrrk....',
+ '....krryrrk.....',
+ '.....krrrk......',
+ '......kkk.......'].map(r=>(' '+r).slice(0,16).padEnd(16,'.').replace(' ','.'))},
+ {name:'小房子',map:{r:5,y:1,b:18,w:0,s:10,g:14,k:21,c:2},rows:[
+ 'ssssssssssssssss',
+ 'sssssssskkssssss',
+ 'ssssssskrrksssss',
+ 'sssssskrrrrkssss',
+ 'ssssskrrrrrrksss',
+ 'sssskrrrrrrrrkss',
+ 'ssskrrrrrrrrrrks',
+ 'sskkkkkkkkkkkkkk',
+ 'sskyyyyyyyyyyyks',
+ 'sskyccyyyybbyyks',
+ 'sskyccyyyybbyyks',
+ 'sskyyyyyyybbyyks',
+ 'sskyyyyyyybbyyks',
+ 'gggggggggggggggg',
+ 'gggggggggggggggg',
+ 'gggggggggggggggg']},
+ {name:'小幽灵',map:{w:0,k:21,p:6,b:11},rows:[
+ '................',
+ '.....kkkkkk.....',
+ '...kkwwwwwwkk...',
+ '..kwwwwwwwwwwk..',
+ '.kwwwwwwwwwwwwk.',
+ '.kwwkkwwwwkkwwk.',
+ '.kwwkbwwwwkbwwk.',
+ '.kwwwwwwwwwwwwk.',
+ '.kwpwwwkkwwwpwk.',
+ '.kwwwwwwwwwwwwk.',
+ '.kwwwwwwwwwwwwk.',
+ '.kwwwwwwwwwwwwk.',
+ '.kwwwwwwwwwwwwk.',
+ '.kwwkwwwkkwwkwk.',
+ '.kwk.kwk..kwk.k.',
+ '..k...k....k....']},
+ {name:'星星',map:{y:2,o:3,k:21,w:0},rows:[
+ '.......kk.......',
+ '......kyyk......',
+ '......kyyk......',
+ '.....kyyyyk.....',
+ 'kkkkkkyyyykkkkkk',
+ 'kyyyyyyyyyyyyyyk',
+ '.kyyyyyyyyyyyyk.',
+ '..kyywkyykwyyk..',
+ '...kyyyyyyyyk...',
+ '...kyyyookyyk...',
+ '..kyyyyyyyyyyk..',
+ '..kyyyykkyyyyk..',
+ '.kyyyyk..kyyyyk.',
+ '.kyyk......kyyk.',
+ 'kkk..........kkk',
+ '................']},
+ {name:'西瓜',map:{g:15,l:14,w:0,r:4,k:21},rows:[
+ '................',
+ '................',
+ '................',
+ 'g..............g',
+ 'gl............lg',
+ 'glwrrrrrrrrrrwlg',
+ 'glwrkrrrrrkrrwlg',
+ '.glwrrrkrrrrwlg.',
+ '.glwrrrrrrkrwlg.',
+ '..glwrkrrrrwlg..',
+ '..glwwrrrrwwlg..',
+ '...glwwwwwwlg...',
+ '....gllllllg....',
+ '.....gggggg.....',
+ '................',
+ '................']},
+];
+const $=s=>document.querySelector(s), cv=$('#board'), ctx=cv.getContext('2d');
+let N=29, grid=[], target=null, mode='free', tool='pen', cur=5, undo=[], cell=10, curPat=-1;
+const toast=t=>{const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),1500)};
+function newGrid(n){N=n;grid=new Array(n*n).fill(-1);undo=[];}
+function save(){try{localStorage.setItem('bead.v1',JSON.stringify({N,grid,target,mode,curPat,cur}))}catch(e){}}
+function load(){try{const s=JSON.parse(localStorage.getItem('bead.v1'));if(s&&s.grid&&s.grid.length===s.N*s.N){({N,grid,target,mode,curPat,cur}=s);return true}}catch(e){}return false}
+function patGrid(i){const p=PATS[i],n=16,g=new Array(n*n).fill(-1);p.rows.forEach((r,y)=>{for(let x=0;x<n;x++){const c=r[x];if(c&&c!=='.'&&p.map[c]!=null)g[y*n+x]=p.map[c]}});return g}
+function layout(){const w=$('#wrap'),s=Math.floor(Math.min(w.clientWidth,w.clientHeight)-4),dpr=devicePixelRatio||1;cell=s/N;cv.style.width=cv.style.height=s+'px';cv.width=cv.height=Math.round(s*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);draw()}
+function bead(x,y,col,r,ghost){const cx=(x+.5)*cell,cy=(y+.5)*cell,R=cell*.46;ctx.beginPath();ctx.arc(cx,cy,R,0,7);ctx.fillStyle=col;ctx.globalAlpha=ghost?.28:1;ctx.fill();ctx.globalAlpha=1;
+ if(!ghost){ctx.lineWidth=Math.max(1,cell*.06);ctx.strokeStyle='rgba(0,0,0,.18)';ctx.stroke();ctx.beginPath();ctx.arc(cx,cy,R*.36,0,7);ctx.fillStyle='rgba(255,255,255,.75)';ctx.fill();ctx.beginPath();ctx.arc(cx-R*.35,cy-R*.4,R*.18,0,7);ctx.fillStyle='rgba(255,255,255,.55)';ctx.fill()}}
+function draw(){const s=cell*N;ctx.clearRect(0,0,s,s);ctx.fillStyle='#f4f4f2';ctx.fillRect(0,0,s,s);
+ for(let y=0;y<N;y++)for(let x=0;x<N;x++){const i=y*N+x,v=grid[i];
+  if(v>=0)bead(x,y,PAL[v][1]);
+  else if(target&&target[i]>=0){bead(x,y,PAL[target[i]][1],0,true);if(cell>13){ctx.fillStyle='rgba(60,40,30,.55)';ctx.font=`${Math.floor(cell*.42)}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(target[i]+1,(x+.5)*cell,(y+.52)*cell)}}
+  else{ctx.beginPath();ctx.arc((x+.5)*cell,(y+.5)*cell,cell*.13,0,7);ctx.fillStyle='#d6d6d0';ctx.fill()}
+  if(target&&v>=0&&target[i]!==v){ctx.strokeStyle='#e0302e';ctx.lineWidth=2;ctx.beginPath();const a=x*cell+cell*.2,b=y*cell+cell*.2,c=cell*.6;ctx.moveTo(a,b);ctx.lineTo(a+c,b+c);ctx.stroke()}}
+ if(N>16){ctx.strokeStyle='rgba(0,0,0,.06)';ctx.lineWidth=1;for(let k=0;k<=N;k+=N%2?N>>1:8){}}
+ status()}
+function status(){const used=grid.filter(v=>v>=0).length;
+ if(target){let need=0,ok=0;target.forEach((t,i)=>{if(t>=0){need++;if(grid[i]===t)ok++}});const wrong=grid.filter((v,i)=>v>=0&&target[i]!==v).length;
+  $('#prog').textContent=`${PATS[curPat]?PATS[curPat].name:'照片'} ${ok}/${need}`+(wrong?` · ${wrong}颗放错`:'');
+  if(ok===need&&!wrong&&need>0&&!status.done){status.done=true;setTimeout(()=>toast('拼完啦！点 <b>♨️</b>熨烫'),200)}}
+ else $('#prog').textContent=`已放 ${used} 颗`;
+ const cnt={};if(target)target.forEach((t,i)=>{if(t>=0&&grid[i]!==t)cnt[t]=(cnt[t]||0)+1});
+ document.querySelectorAll('.sw').forEach((e,k)=>{e.classList.toggle('sel',k===cur);e.classList.toggle('need',!!cnt[k]);e.querySelector('.n').textContent=cnt[k]||''})}
+function buildPal(){const p=$('#pal');PAL.forEach(([n,c],k)=>{const d=document.createElement('div');d.className='sw';d.style.background=c;d.title=(k+1)+' '+n;d.innerHTML='<span class="n"></span>';d.onclick=()=>{cur=k;status();if(tool==='erase'||tool==='pick')setTool('pen')};p.appendChild(d)})}
+function setTool(t){tool=t;document.querySelectorAll('#tools [data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===t))}
+function pushUndo(){undo.push(grid.slice());if(undo.length>60)undo.shift()}
+function at(e){const r=cv.getBoundingClientRect();const x=Math.floor((e.clientX-r.left)/r.width*N),y=Math.floor((e.clientY-r.top)/r.height*N);return x>=0&&y>=0&&x<N&&y<N?y*N+x:-1}
+function apply(i){if(i<0)return false;if(tool==='pen'){if(grid[i]===cur)return false;grid[i]=cur}else if(tool==='erase'){if(grid[i]<0)return false;grid[i]=-1}else return false;return true}
+function fill(i){const from=grid[i],to=cur;if(from===to)return;const st=[i];while(st.length){const j=st.pop();if(grid[j]!==from)continue;grid[j]=to;const x=j%N,y=(j/N)|0;if(x>0)st.push(j-1);if(x<N-1)st.push(j+1);if(y>0)st.push(j-N);if(y<N-1)st.push(j+N)}}
+let down=false,last=-1;
+cv.addEventListener('pointerdown',e=>{const i=at(e);if(i<0)return;cv.setPointerCapture(e.pointerId);
+ if(tool==='pick'){const v=grid[i]>=0?grid[i]:(target?target[i]:-1);if(v>=0){cur=v;setTool('pen');toast('取色：'+(v+1)+' '+PAL[v][0])}status();return}
+ pushUndo();if(tool==='fill'){fill(i);draw();save();return}
+ down=true;last=i;if(!apply(i))undo.pop();else{draw();buzz()}});
+cv.addEventListener('pointermove',e=>{if(!down)return;const i=at(e);if(i===last)return;last=i;if(apply(i)){draw();buzz()}});
+const up=()=>{if(down){down=false;save()}};cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+function buzz(){if(navigator.vibrate)try{navigator.vibrate(6)}catch(e){}}
+document.querySelectorAll('#tools [data-t]').forEach(b=>b.onclick=()=>setTool(b.dataset.t));
+$('#undo').onclick=()=>{if(undo.length){grid=undo.pop();status.done=false;draw();save()}};
+$('#clear').onclick=()=>{if(grid.some(v=>v>=0)&&confirm('清空豆板？')){pushUndo();grid.fill(-1);status.done=false;draw();save()}};
+$('#size').onchange=e=>{const n=+e.target.value;if(grid.some(v=>v>=0)&&!confirm('换豆板会清空，继续？')){e.target.value=N;return}mode='free';target=null;curPat=-1;newGrid(n);modeBtns();layout();save()};
+function modeBtns(){$('#bPat').classList.toggle('on',mode==='pat');$('#bFree').classList.toggle('on',mode==='free');$('#size').value=N}
+$('#bFree').onclick=()=>{if(mode==='free')return;if(grid.some(v=>v>=0)&&!confirm('切到自由模式？图案提示会去掉，豆子保留。'))return;mode='free';target=null;curPat=-1;modeBtns();draw();save()};
+// 图案选择
+function thumb(g,n){const c=document.createElement('canvas');c.width=c.height=n*4;const x=c.getContext('2d');x.fillStyle='#f4f4f2';x.fillRect(0,0,n*4,n*4);g.forEach((v,i)=>{if(v>=0){x.fillStyle=PAL[v][1];x.beginPath();x.arc((i%n)*4+2,((i/n)|0)*4+2,1.9,0,7);x.fill()}});return c}
+$('#bPat').onclick=()=>{const c=$('#card');c.innerHTML='<h2>选一个图案</h2><div id="pick"></div><div class="row"><button class="btn" id="cx">取消</button></div>';
+ PATS.forEach((p,i)=>{const d=document.createElement('div');d.appendChild(thumb(patGrid(i),16));d.append(p.name);d.onclick=()=>{startPat(i);closeM()};$('#pick').appendChild(d)});
+ $('#cx').onclick=closeM;openM()};
+function startPat(i){newGrid(16);target=patGrid(i);curPat=i;mode='pat';status.done=false;const f=target.find(v=>v>=0);if(f!=null)cur=f;modeBtns();layout();save();toast('照着淡色豆子拼，数字是色号')}
+// 照片转豆
+$('#bImg').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Image();img.onload=()=>{const n=29,c=document.createElement('canvas');c.width=c.height=n;const x=c.getContext('2d');const s=Math.min(img.width,img.height);x.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,n,n);const d=x.getImageData(0,0,n,n).data;const rgb=PAL.map(p=>[1,3,5].map(k=>parseInt(p[1].substr(k,2),16)));newGrid(n);target=new Array(n*n).fill(-1);
+ for(let i=0;i<n*n;i++){if(d[i*4+3]<100)continue;let b=0,bd=1e9;rgb.forEach((c,k)=>{if(k===22)return;const dd=(c[0]-d[i*4])**2*.3+(c[1]-d[i*4+1])**2*.59+(c[2]-d[i*4+2])**2*.11;if(dd<bd){bd=dd;b=k}});target[i]=b}
+ curPat=-1;mode='pat';status.done=false;modeBtns();layout();save();toast('照片已转成豆图，照着拼吧');URL.revokeObjectURL(img.src)};img.src=URL.createObjectURL(f);e.target.value=''};
+// 熨烫
+$('#iron').onclick=()=>{if(!grid.some(v=>v>=0)){toast('先放几颗豆子');return}
+ const S=Math.min(560,N*20),k=S/N,c=document.createElement('canvas');c.width=c.height=S;const x=c.getContext('2d');
+ const card=$('#card');card.innerHTML='<h2><b>♨️</b>熨烫中…</h2>';card.appendChild(c);const row=document.createElement('div');row.className='row';card.appendChild(row);openM();
+ const xs=grid.map((v,i)=>v>=0?(i%N):1e9),ys=grid.map((v,i)=>v>=0?((i/N)|0):1e9);let t=0;
+ function frame(){t=Math.min(1,t+.025);x.fillStyle='#fff';x.fillRect(0,0,S,S);
+  grid.forEach((v,i)=>{if(v<0)return;const gx=i%N,gy=(i/N)|0,cx=(gx+.5)*k,cy=(gy+.5)*k,R=k*(.46+.06*t),hole=k*.16*(1-.55*t);
+   x.fillStyle=PAL[v][1];
+   // 融化：圆角方块逐渐变方，和邻居连在一起
+   const rr=R*(1-.6*t),half=R;x.beginPath();if(x.roundRect)x.roundRect(cx-half,cy-half,half*2,half*2,Math.max(0,rr));else x.arc(cx,cy,R,0,7);x.fill();
+   if(hole>.5){x.fillStyle='rgba(0,0,0,.22)';x.beginPath();x.arc(cx,cy,hole,0,7);x.fill()}x.fillStyle='rgba(255,255,255,.25)';x.beginPath();x.arc(cx-R*.3,cy-R*.35,R*.18,0,7);x.fill()});
+  // 熨斗
+  if(t<1){const ix=t*S*1.2-S*.1;x.fillStyle='rgba(255,255,255,.35)';x.fillRect(0,0,ix,S);x.font=`${S*.18}px sans-serif`;x.textAlign='center';x.fillText('♨️',ix,S*.55);requestAnimationFrame(frame)}
+  else{card.querySelector('h2').textContent=target&&status.done?'完美！作品完成 🎉':'作品完成 🎉';
+   row.innerHTML='<button class="btn hot" id="sv">保存图片</button><button class="btn" id="bk">继续拼</button>';
+   $('#sv').onclick=()=>{const a=document.createElement('a');a.download='拼豆作品.png';a.href=c.toDataURL('image/png');a.click();toast('已保存（手机可长按图片保存）')};$('#bk').onclick=closeM}}
+ frame()};
+function openM(){$('#msk').classList.add('show')}function closeM(){$('#msk').classList.remove('show')}
+$('#msk').onclick=e=>{if(e.target.id==='msk')closeM()};
+// ⤢ 全屏 / ✕ 退出
+$('#fs').onclick=()=>{const d=document;if(!d.fullscreenElement)(d.documentElement.requestFullscreen||d.documentElement.webkitRequestFullscreen||(()=>{})).call(d.documentElement);else d.exitFullscreen&&d.exitFullscreen()};
+$('#quit').onclick=()=>{if(document.fullscreenElement){document.exitFullscreen();return}if(history.length>1)history.back();else location.href='/'};
+buildPal();if(!load()){newGrid(29);mode='free'}modeBtns();setTool('pen');addEventListener('resize',layout);layout();
+window.__bead={get grid(){return grid},get N(){return N},startPat,PAL};
+</script>
+</body>
+</html>
