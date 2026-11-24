@@ -290,6 +290,23 @@ function carGeo(type, color) {
   for (const s of [-1, 1]) { bx(0.34, 0.14, 0.06, s * (W / 2 - 0.3), lowY + 0.08, -L / 2 - 0.01, LIGHT); bx(0.34, 0.12, 0.06, s * (W / 2 - 0.3), lowY + 0.1, L / 2 + 0.01, TAIL); }
   bx(W - 0.1, 0.06, L - 0.3, 0, 0.18, 0, type === 'police' ? DARK : NEONUNDER[(color >>> 3) % NEONUNDER.length]);   // underglow strip / skirt
   const wz = L / 2 - 0.75; for (const s of [-1, 1]) { wheel(s * (W / 2 - 0.05), -wz); wheel(s * (W / 2 - 0.05), wz); }
+  // 2026-11-25 外形细化: flared arches, sculpted nose/tail, grille, mirrors, door seams + handles, plates, exhausts, 5-spoke rims
+  { const RIM = type === 'muscle' ? 0xe8c04a : type === 'coupe' ? 0x2a2c30 : CHROME, top = lowY + bodyH / 2;
+    for (const s of [-1, 1]) for (const z of [-wz, wz]) {
+      bx(0.16, 0.16, 1.02, s * (W / 2 + 0.02), 0.86, z, body); bx(0.14, 0.32, 0.16, s * (W / 2 + 0.02), 0.62, z - 0.5, body); bx(0.14, 0.32, 0.16, s * (W / 2 + 0.02), 0.62, z + 0.5, body);
+      bx(0.06, 0.06, 0.94, s * (W / 2 + 0.06), 0.79, z, DARK);
+      for (let k = 0; k < 5; k++) add(P, new THREE.BoxGeometry(0.05, 0.42, 0.07), s * (W / 2 + 0.11), 0.38, z, RIM, k * Math.PI * 2 / 5, 0, 0);
+      add(P, new THREE.CylinderGeometry(0.08, 0.08, 0.06, 8), s * (W / 2 + 0.13), 0.38, z, DARK, 0, 0, Math.PI / 2);
+    }
+    bx(W - 0.12, 0.2, 0.3, 0, top - 0.02, -L / 2 - 0.1, body, 0.45); bx(W - 0.12, 0.18, 0.24, 0, top - 0.04, L / 2 + 0.08, body, -0.4);  // rounded nose + tail
+    bx(W * 0.52, 0.16, 0.05, 0, lowY - 0.02, -L / 2 - 0.03, DARK); bx(W * 0.54, 0.03, 0.06, 0, lowY + 0.07, -L / 2 - 0.035, CHROME);      // grille
+    bx(0.5, 0.14, 0.03, 0, lowY - 0.12, L / 2 + 0.18, 0xf4f4f0); bx(0.5, 0.14, 0.03, 0, lowY - 0.12, -L / 2 - 0.18, 0xf4f4f0);             // plates
+    for (const s of [-1, 1]) {
+      bx(0.12, 0.1, 0.16, s * (W / 2 + 0.07), lowY + 0.32, -0.55, body); bx(0.02, 0.08, 0.13, s * (W / 2 + 0.135), lowY + 0.32, -0.55, 0xbfe6ff);   // mirrors
+      bx(0.02, bodyH * 0.8, 0.03, s * (W / 2 + 0.005), lowY + 0.02, 0.05, dark2); bx(0.03, 0.04, 0.16, s * (W / 2 + 0.01), lowY + 0.12, -0.25, CHROME); // door seam + handle
+      if (type !== 'pickup') add(P, new THREE.CylinderGeometry(0.06, 0.06, 0.2, 8), s * (W / 2 - 0.35), lowY - 0.22, L / 2 + 0.12, CHROME, Math.PI / 2, 0, 0); // exhausts
+      bx(0.08, 0.05, L - 2.0, s * (W / 2 + 0.03), 0.3, 0, dark2);                                                         // side skirts
+    } }
   if (type === 'coupe') {         // low wedge: sloped hood, short fastback cabin, wing
     bx(W - 0.04, 0.14, 1.3, 0, lowY + 0.3, -L / 2 + 0.75, body, -0.12);
     bx(W - 0.3, 0.42, 1.5, 0, lowY + 0.46, 0.35, body); gl(W - 0.34, 0.4, 0.06, 0, lowY + 0.45, -0.45, -0.75); gl(W - 0.2, 0.32, 1.1, 0, lowY + 0.48, 0.35);
