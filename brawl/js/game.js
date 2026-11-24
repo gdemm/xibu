@@ -78,7 +78,7 @@ export function createGame(scene, FX, H) {
 
   function makeEnt(kind, name, isPlayer, owner) {
     const d = kind === PET.kind ? { hp: CHARS.granny.sup.hp, speed: 6.4, range: 3 } : CHARS[kind];
-    const mesh = makeBrawler(kind, true); mesh.scale.setScalar(kind === PET.kind ? 1.05 : 1.12); scene.add(mesh);
+    const mesh = makeBrawler(kind, true, !!isPlayer); mesh.scale.setScalar(kind === PET.kind ? 1.05 : 1.12); scene.add(mesh);
     if (isPlayer) { // own translucent-capable material so hiding in bushes can fade only us
       const mat = heroMat(true); mesh.traverse(o => { if (o.isMesh && o.material === heroMat()) o.material = mat; }); mesh.userData.mat = mat;
     }
@@ -230,7 +230,7 @@ export function createGame(scene, FX, H) {
   function superAtk(e, dx, dz, dist) {
     if (!canAct(e) || e.superC < 1) return false;
     const s = e.def.sup; e.superC = 0; e.lastAtkT = G.now; e.revealT = G.now + 1.0;
-    const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L; e.yaw = Math.atan2(dx, dz); kickBrawler(e.mesh);
+    const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L; e.yaw = Math.atan2(dx, dz); kickBrawler(e.mesh, false, s.kind === 'pet' || s.kind === 'storm' ? 'spin' : s.kind === 'charge' || s.kind === 'leap' ? 0 : 'hop');
     if (s.kind === 'blast') { for (let i = 0; i < s.n; i++) { const ang = (i / (s.n - 1) - 0.5) * s.spread; const c = Math.cos(ang), sn = Math.sin(ang); shoot(e, e.pos.x, e.pos.z, dx * c + dz * sn, -dx * sn + dz * c, s, s.range); } FX.burst(e.pos.x + dx, 1, e.pos.z + dz, 0xff7b2e, 14, 6, 0.2, 0.4); }
     else if (s.kind === 'burst') { for (let i = 0; i < s.n; i++) e.queue.push({ t: G.now + i * s.gap, dx, dz, a: s, range: s.range }); }
     else if (s.kind === 'charge') { e.action = { type: 'charge', dx, dz, left: s.dist, hit: new Set() }; }

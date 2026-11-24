@@ -41,6 +41,7 @@ function face(B, h, o) {
     feat(B, h, S(er * 0.38, 16, 12), s * ex + (o.look || 0) * er, ey - er * 0.1, -er * 0.02, 1, 1.1, 0.5, INK);
     feat(B, h, S(er * 0.24, 10, 8), s * ex + er * 0.26, ey + er * 0.3, -er * 0.16, 1, 1, 0.5, WHITE);
     feat(B, h, S(er * 0.11, 8, 6), s * ex - er * 0.2, ey - er * 0.32, -er * 0.15, 1, 1, 0.5, WHITE);
+    if (o.lid !== false) feat(B, h, TOR(er * 0.98, er * 0.19, Math.PI, 8, 16), s * ex, ey + er * 0.08, er * 0.28, 0.92, 1.22, 0.6, o.lidCol ?? INK, -s * 0.12);
     if (o.lash) feat(B, h, CAP(er * 0.13, er * 0.9, 6), s * (ex + er * 0.55), ey + er * 0.75, 0, 1, 1, 1, INK, Math.PI / 2 + s * 0.75);
     if (o.brow !== false) { const by = ey + er * 1.45 + (o.browUp || 0); feat(B, h, CAP(o.browT ?? er * 0.22, er * 1.1, 8), s * ex, by, -er * 0.05, 1, 1, 0.8, o.browCol ?? INK, Math.PI / 2 + s * (o.browAng ?? 0.25)); }
     if (o.cheek !== false) feat(B, h, S(er * 0.55, 12, 8), s * (ex + er * 0.35), ey - er * 1.55, er * 0.15, 1.2, 0.7, 0.3, o.cheekCol ?? 0xff8f8f);
@@ -131,9 +132,9 @@ export const PET = { kind: 'dog', name: '铁皮旺财' };
 
 // ---------------- meshes ----------------
 const GEO = {};
-function parts(kind, lod) {
-  const key = kind + (lod ? ':lo' : ''); if (GEO[key]) return GEO[key];
-  DET = lod ? 0.72 : 1; HEAD = null;
+function parts(kind, lod, split = true) {
+  const key = kind + (lod ? ':lo' : '') + (split ? '' : ':m'); if (GEO[key]) return GEO[key];
+  DET = lod ? 0.62 : 1; HEAD = null;
   const body = new Builder(), foot = new Builder(), arm = new Builder(), armL = new Builder();
   let fx = 0.24, fy = 0.12, armPos = [0.6, 1.2, 0.02], melee = false, two = true;
 
@@ -145,7 +146,7 @@ function parts(kind, lod) {
       .add(LATHE([[0, 0.28], [0.38, 0.3], [0.44, 0.42], [0, 0.44]]), M(), PA)
       .add(TOR(0.3, 0.09), M(0, 1.24, 0.02, Math.PI / 2), 0xffc93c).add(S(0.1), M(0.1, 1.18, 0.3), 0xffc93c).add(CONE(0.07, 0.22, 10), M(0.18, 1.06, 0.3, 0, 0, 0.5), 0xffc93c);
     const h = { y: 1.72, z: 0.02, R: 0.5 };
-    body.add(S(h.R), M(0, h.y, h.z), SK);
+    body.hi = body.parts.length; body.add(S(h.R), M(0, h.y, h.z), SK);
     face(body, h, { skin: SK, er: 0.11, ex: 0.18, ey: 1.78, browAng: -0.15, browT: 0.04, browUp: 0.03, nose: 0.12, noseCol: 0xe89a74, mouth: 'grin', my: 1.48, mw: 0.12, cheekCol: 0xff8a7a });
     for (const s of [-1, 1]) { feat(body, h, CAP(0.07, 0.2, 8), s * 0.14, 1.585, 0.0, 1, 1, 0.9, MU, s * 1.15); feat(body, h, S(0.07, 10, 8), s * 0.25, 1.62, 0.02, 1, 1, 0.9, MU); }
     for (const s of [-1, 1]) body.add(S(0.12), M(s * 0.44, 1.82, -0.05, 0, 0, 0, 0.6, 1, 0.9), MU);
@@ -168,7 +169,7 @@ function parts(kind, lod) {
       .add(TOR(0.48, 0.04), M(0, 0.33, 0, Math.PI / 2), 0x3c1fa8);
     for (const s of [-1, 1]) for (const k of [0, 1, 2]) body.add(new THREE.ConeGeometry(0.045, 0.1, 8), M(s * (0.3 + k * 0.06), 1.16 - k * 0.04, 0.06 - k * 0.05, 0, 0, -s * 1.0), 0xd8d8e8);
     const h = { y: 1.73, z: 0.02, R: 0.48 };
-    body.add(S(h.R), M(0, h.y, h.z), SK);
+    body.hi = body.parts.length; body.add(S(h.R), M(0, h.y, h.z), SK);
     face(body, h, { skin: SK, er: 0.125, ex: 0.18, ey: 1.74, lash: true, browCol: HRD, browAng: 0.18, iris: 0x7a2bd6, mouth: 'smirk', mw: 0.11, cheekCol: 0xff8fb0 });
     // hair: back cap + swoopy side bang + mohawk crest + shaved side
     body.add(S(0.53), M(0.02, 1.84, -0.1, 0, 0, 0, 1.0, 0.93, 0.92), HR)
@@ -195,7 +196,7 @@ function parts(kind, lod) {
     body.add(LATHE([[0, 0.28], [0.56, 0.3], [0.62, 0.46], [0, 0.48]]), M(), JE).add(TOR(0.6, 0.06, Math.PI * 2, 8, 36), M(0, 0.44, -0.02, Math.PI / 2), 0x4a2c1a).add(RB(0.22, 0.16, 0.08, 0.04), M(0, 0.44, 0.62), 0xffc43d)
       .add(CAP(0.05, 0.62), M(-0.28, 0.95, 0.6, -0.12, 0, 0.06), JE).add(CAP(0.05, 0.62), M(0.28, 0.95, 0.6, -0.12, 0, -0.06), JE);
     const h = { y: 1.78, z: 0.04, R: 0.46 };
-    body.add(S(h.R), M(0, h.y, h.z), SK);
+    body.hi = body.parts.length; body.add(S(h.R), M(0, h.y, h.z), SK);
     face(body, h, { skin: SK, er: 0.095, ex: 0.16, ey: 1.84, browT: 0.05, browAng: 0.35, browCol: BDD, nose: 0.12, noseCol: 0xd88a62, mouth: false, cheek: false });
     body.add(S(0.38), M(0, 1.5, 0.24, 0.2, 0, 0, 1.15, 0.95, 0.8), BD).add(S(0.22), M(0, 1.28, 0.36, 0.3, 0, 0, 1, 1, 0.75), BD).add(S(0.25), M(-0.32, 1.62, 0.12, 0, 0, 0, 0.6, 1, 0.8), BD).add(S(0.25), M(0.32, 1.62, 0.12, 0, 0, 0, 0.6, 1, 0.8), BD)
       .add(S(0.09), M(0, 1.6, 0.44, 0, 0, 0, 1.4, 0.6, 0.6), 0x5a1a20);
@@ -216,7 +217,7 @@ function parts(kind, lod) {
       .add(S(0.2), M(0, 1.06, 0.27, 0, 0, 0, 0.75, 0.55, 0.45), UN).add(CAP(0.045, 0.34), M(-0.1, 1.0, 0.33, -0.25, 0, 0.42), HAD).add(CAP(0.045, 0.34), M(0.1, 1.0, 0.33, -0.25, 0, -0.42), HAD);
     for (const s of [-1, 1]) body.add(S(0.07), M(s * 0.32, 1.05, 0.2), WHITE);
     const h = { y: 1.68, z: 0.03, R: 0.48 };
-    body.add(S(h.R), M(0, h.y, h.z), SK);
+    body.hi = body.parts.length; body.add(S(h.R), M(0, h.y, h.z), SK);
     face(body, h, { skin: SK, er: 0.13, ex: 0.18, ey: 1.7, browT: 0.045, browAng: 0.42, browCol: HR, mouth: 'grin', mw: 0.12, cheekCol: 0xff9a8a });
     feat(body, h, RB(0.14, 0.06, 0.04, 0.02, 2), 0.3, 1.52, 0.0, 1, 1, 1, WHITE, 0.5); feat(body, h, RB(0.06, 0.14, 0.04, 0.02, 2), 0.3, 1.52, -0.005, 1, 1, 1, 0xf2e6d6, 0.5);
     body.add(S(0.5), M(0, 1.79, -0.06, 0, 0, 0, 1.02, 0.85, 0.96), HR)
@@ -242,7 +243,7 @@ function parts(kind, lod) {
       .add(RB(0.18, 0.2, 0.06, 0.04), M(0.24, 0.98, 0.37, 0, 0.5, 0), 0xdfe3e8).add(CAP(0.02, 0.1), M(0.22, 1.08, 0.39, 0, 0, 0.2), 0x3fa9ff).add(CAP(0.02, 0.1), M(0.27, 1.07, 0.37, 0, 0, -0.1), 0xff4f6f)
       .add(LATHE([[0, 0.2], [0.5, 0.22], [0.5, 0.3], [0, 0.31]]), M(), DR);
     const h = { y: 1.64, z: 0.1, R: 0.48 };
-    body.add(S(h.R), M(0, h.y, h.z), SK);
+    body.hi = body.parts.length; body.add(S(h.R), M(0, h.y, h.z), SK);
     face(body, h, { skin: SK, er: 0.1, ex: 0.18, ey: 1.7, browCol: HRD, browAng: -0.3, browUp: 0.04, nose: 0.1, noseCol: 0xe8a888, mouth: 'tooth', my: 1.44, mw: 0.12, iris: 0x2f8f5b, cheekCol: 0xff9fae });
     for (const s of [-1, 1]) { feat(body, h, TOR(0.16, 0.035, Math.PI * 2, 8, 24), s * 0.18, 1.7, -0.08, 1, 1, 1, BR); feat(body, h, S(0.15, 22, 14), s * 0.18, 1.7, -0.06, 1, 1, 0.25, LS); }
     // re-draw eyes on top of lenses (lens is semi-glass look: light cyan disc behind pupils)
@@ -269,7 +270,7 @@ function parts(kind, lod) {
     for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2 + 0.5; body.add(S(0.05), M(Math.sin(a) * 0.6, 1.17, Math.cos(a) * 0.6), BRD); }
     body.add(CAP(0.17, 0.5), M(-0.2, 0.92, -0.52), TK).add(CAP(0.17, 0.5), M(0.2, 0.92, -0.52), TK).add(C(0.06, 0.06, 0.12), M(0, 1.3, -0.52, 0, 0, Math.PI / 2), 0x6a6a78)
       .add(TOR(0.3, 0.05, Math.PI * 1.2, 8, 20), M(0, 1.62, -0.55, 0, Math.PI / 2, -0.2), 0x3a3a46);
-    body.add(S(0.6), M(0, 1.72, 0), BR).add(S(0.4), M(0, 1.7, 0.26), SK);
+    body.hi = body.parts.length; body.add(S(0.6), M(0, 1.72, 0), BR).add(S(0.4), M(0, 1.7, 0.26), SK);
     const h = { y: 1.7, z: 0.26, R: 0.4 };
     face(body, h, { skin: SK, er: 0.095, ex: 0.14, ey: 1.73, browAng: 0.1, browT: 0.03, mouth: 'open', mw: 0.09, my: 1.56, ears: false, cheekCol: 0xff9f8f });
     HEAD = { y: 1.72, z: 0, R: 0.6 }; // scale the whole helmet, not just the face window
@@ -295,7 +296,7 @@ function parts(kind, lod) {
       .add(CAP(0.035, 0.36), M(0.12, 0.95, 0.4, -0.1, 0, 0.5), TOPD);
     for (const y of [1.05, 0.88, 0.71]) body.add(S(0.045), M(0.2, y, 0.38), GD);
     const h = { y: 1.7, z: 0.03, R: 0.47 };
-    body.add(S(h.R), M(0, h.y, h.z), SK);
+    body.hi = body.parts.length; body.add(S(h.R), M(0, h.y, h.z), SK);
     face(body, h, { skin: SK, er: 0.13, ex: 0.18, ey: 1.71, lash: true, browAng: 0.1, browT: 0.035, iris: 0x2a6fd6, mouth: 'open', mw: 0.1, my: 1.5, cheekCol: 0xff8fa0 });
     // hair: cap + straight bangs + twin buns with red ribbons
     body.add(S(0.5), M(0, 1.8, -0.06, 0, 0, 0, 1.03, 0.86, 0.97), HR);
@@ -331,7 +332,7 @@ function parts(kind, lod) {
     for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2; body.add(S(0.07), M(Math.sin(a) * 0.62, 0.92, Math.cos(a) * 0.62), GD); }
     body.add(RB(0.3, 0.2, 0.08, 0.04), M(0, 0.68, 0.64), GD).add(TOR(0.07, 0.025, Math.PI * 2, 6, 14), M(0, 0.68, 0.69), LRD);
     const h = { y: 1.74, z: 0.03, R: 0.46 };
-    body.add(S(h.R), M(0, h.y, h.z), SK);
+    body.hi = body.parts.length; body.add(S(h.R), M(0, h.y, h.z), SK);
     face(body, h, { skin: SK, er: 0.115, ex: 0.17, ey: 1.76, browT: 0.05, browAng: 0.4, browCol: HR, mouth: 'grin', mw: 0.12, my: 1.52, cheekCol: 0xff8a7a });
     body.add(S(0.48), M(0, 1.84, -0.06, 0, 0, 0, 1.02, 0.82, 0.96), HR)
       .add(TOR(0.46, 0.07, Math.PI * 2, 8, 36), M(0, 1.95, 0.0, Math.PI / 2 - 0.12), LR).add(S(0.08), M(0.3, 2.0, -0.38), LR).add(CAP(0.06, 0.3), M(0.36, 1.84, -0.5, 0.5, 0, -0.6, 1, 1, 0.4), LR);
@@ -371,9 +372,44 @@ function parts(kind, lod) {
     arm.add(C(0.04, 0.04, 0.3, 8), M(0, 0.12, -0.12, -0.6), MTD).add(TOR(0.08, 0.025, Math.PI * 2, 6, 14), M(0, 0.12, -0.1, 0, 0, 0), MTD).add(S(0.12), M(0, 0.28, -0.28), OR);
     armPos = [0, 1.0, -0.75]; fx = 0.38; two = false;
   }
+  { const xb = new Builder(); backGear(kind, xb); if (xb.parts.length) { const at = body.hi ?? body.parts.length; body.parts.splice(at, 0, ...xb.parts); if (body.hi !== undefined) body.hi += xb.parts.length; } }
+  // head (everything added from the head sphere on) is its own mesh so it can nod, tilt and look around
+  let headG = null, pivot = null;
+  if (split && body.hi !== undefined && HEAD) { const hb = new Builder(); hb.parts = body.parts.splice(body.hi); headG = hb.build(); bigHead(headG, HEAD); pivot = [0, HEAD.y - HEAD.R * 0.8, HEAD.z * 0.5]; for (const g of [headG, headG.userData.outline]) if (g) { g.translate(-pivot[0], -pivot[1], -pivot[2]); g.computeBoundingSphere(); } }
   const bodyG = body.build(); if (HEAD) bigHead(bodyG, HEAD);
-  const P = { body: bodyG, foot: foot.build(), arm: buildArm(arm), armL: two ? armL.build() : null, fx, fy, armPos, melee };
+  const P = { body: bodyG, head: headG, pivot, foot: foot.build(), arm: buildArm(arm), armL: two ? armL.build() : null, fx, fy, armPos, melee };
+  for (const g of [P.body, P.head, P.foot, P.arm, P.armL]) if (g) ao(g);
   DET = 1; return (GEO[key] = P);
+}
+// back-side gear: reads well from the top-down game camera (heroes are mostly seen from behind / above)
+function backGear(kind, B) {
+  if (kind === 'chef') { // apron bow
+    for (const s of [-1, 1]) B.add(TOR(0.09, 0.035, Math.PI * 2, 6, 14), M(s * 0.1, 0.78, -0.6, 0, s * 0.5, 0, 1, 0.7, 1), 0xe8433a).add(CAP(0.035, 0.18, 6), M(s * 0.07, 0.62, -0.6, 0, 0, s * 0.3), 0xe8433a);
+    B.add(S(0.05), M(0, 0.78, -0.62), 0xc72f28);
+  } else if (kind === 'dj') { // studded belt
+    B.add(TOR(0.43, 0.045, Math.PI * 2, 6, 28), M(0, 0.6, 0, Math.PI / 2), 0x14111b);
+    for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 + 0.4; B.add(new THREE.OctahedronGeometry(0.04, 0), M(Math.sin(a) * 0.47, 0.6, Math.cos(a) * 0.47), 0xe8e8f4); }
+  } else if (kind === 'lumber') { // axe slung across the back
+    B.add(C(0.065, 0.07, 1.35, 8), M(0, 0.98, -0.9, 0.12, 0, -0.66), 0x8a5a2b).add(TOR(0.075, 0.025, Math.PI * 2, 4, 10), M(-0.27, 0.65, -0.88, Math.PI / 2, 0, -0.66), 0x4a2c1a);
+    B.add(RB(0.5, 0.4, 0.1, 0.06, 2), M(0.5, 1.42, -0.98, 0.12, 0, -0.66), 0xb9c4d6).add(RB(0.1, 0.44, 0.11, 0.04, 2), M(0.66, 1.3, -0.98, 0.12, 0, -0.66), 0xf2f6fb);
+  } else if (kind === 'ronin') { // straw kasa hanging on the back
+    B.add(C(0.06, 0.5, 0.2, 18), M(0, 0.98, -0.5, -1.35), 0xe3c46a).add(TOR(0.48, 0.03, Math.PI * 2, 4, 24), M(0, 0.95, -0.47, -1.35 + Math.PI / 2), 0xb8913a).add(CAP(0.02, 0.5, 4), M(0, 1.1, -0.36, 0.3), 0x8a5a2b);
+  } else if (kind === 'granny') { // bubbling potion tank backpack
+    for (const s of [-1, 1]) B.add(C(0.17, 0.17, 0.6, 14), M(s * 0.18, 0.9, -0.6), 0xd6f7ff).add(C(0.14, 0.14, 0.44, 12), M(s * 0.18, 0.86, -0.6), s < 0 ? 0x8dff5a : 0xc9a2ff)
+      .add(C(0.19, 0.19, 0.08, 14), M(s * 0.18, 1.22, -0.6), 0xc99a3a).add(C(0.19, 0.19, 0.08, 14), M(s * 0.18, 0.6, -0.6), 0xc99a3a).add(S(0.045), M(s * 0.18 + 0.05, 0.98, -0.75), 0xf4fff0);
+    B.add(C(0.04, 0.04, 0.36, 6), M(0, 1.3, -0.6, 0, 0, Math.PI / 2), 0xc99a3a).add(S(0.08), M(0, 1.38, -0.6), 0xff4f6f);
+    for (const s of [-1, 1]) B.add(CAP(0.03, 0.5, 4), M(s * 0.22, 1.0, -0.32, 0, 0, 0), 0x7b4fb8);
+  } else if (kind === 'kite') { // red scarf tails flowing back
+    for (const s of [-1, 1]) B.add(CAP(0.08, 0.5, 6), M(s * 0.1, 0.86, -0.5, -0.35, 0, s * 0.3, 1, 1, 0.45), 0xe63946).add(RB(0.16, 0.08, 0.06, 0.02, 2), M(s * 0.17, 0.6, -0.6, -0.35, 0, s * 0.3), 0xffd23f);
+    B.add(S(0.1), M(0, 1.12, -0.4, 0, 0, 0, 1.2, 0.8, 0.7), 0xe63946);
+  } else if (kind === 'lion') { // costume tail with a fur tuft
+    B.add(CAP(0.09, 0.4, 6), M(0, 0.62, -0.82, -1.0), 0xe63946).add(CAP(0.08, 0.3, 6), M(0, 0.92, -1.1, -0.3), 0xe63946).add(S(0.17), M(0, 1.14, -1.14), 0xfff6e8).add(S(0.1), M(0.08, 1.24, -1.08), 0xffc93c);
+  }
+}
+// baked soft occlusion: undersides and downward-facing surfaces a touch darker, gives the toon shading more volume
+function ao(g) {
+  const n = g.attributes.normal, c = g.attributes.color; if (!c) return;
+  for (let i = 0; i < n.count; i++) { const t = Math.min(1, Math.max(0, n.getY(i) * 0.6 + 0.65)), k = 0.8 + 0.2 * t * t * (3 - 2 * t); c.setXYZ(i, c.getX(i) * k, c.getY(i) * k, c.getZ(i) * k); }
 }
 // enlarge everything above the neck around the head centre (smooth blend over the neck) — chunkier, more readable heads
 function bigHead(g, h, K = 1.19) {
@@ -397,51 +433,64 @@ function buildArm(b) {
 }
 
 // lod=true for the in-game crowd (fewer segments), false for lobby / portraits / lineup close-ups
-export function makeBrawler(kind, lod = false) {
-  const P = parts(kind, lod), root = new THREE.Group(), inner = new THREE.Group(), torso = new THREE.Group(); root.add(inner); inner.add(torso);
+// split=false merges the head into the body (one mesh fewer) - used for the bot crowd, the player and lobby keep the nodding head
+export function makeBrawler(kind, lod = false, split = true) {
+  const P = parts(kind, lod, split), root = new THREE.Group(), inner = new THREE.Group(), torso = new THREE.Group(); root.add(inner); inner.add(torso);
   const OC = 0x14101c, OP = 0.07; // outline colour + depth push (silhouette-only lines)
   const body = outlined(P.body, heroMat(), 0.068, OC, OP); torso.add(body);
+  let head = null; if (P.head) { head = outlined(P.head, heroMat(), 0.068, OC, OP); head.position.set(...P.pivot); torso.add(head); }
   const fl = outlined(P.foot, heroMat(), 0.06, OC, OP), fr = outlined(P.foot, heroMat(), 0.06, OC, OP);
   fl.position.set(-P.fx, P.fy, 0); fr.position.set(P.fx, P.fy, 0); inner.add(fl, fr);
   const arm = outlined(P.arm, heroMat(), 0.06, OC, OP); arm.position.set(-P.armPos[0], P.armPos[1], P.armPos[2]); // weapon in the hero's right hand (screen-left when facing camera)
   torso.add(arm);
   let arm2 = null;
   if (P.armL) { arm2 = outlined(P.armL, heroMat(), 0.06, OC, OP); arm2.position.set(P.armPos[0], P.armPos[1], P.armPos[2]); torso.add(arm2); }
-  root.userData = { kind, inner, torso, body, fl, fr, arm, arm2, armBase: P.armPos.slice(), melee: P.melee, t: Math.random() * 6, kick: 0, kick2: 0, w: 0, lean: 0, roll: 0 };
+  root.userData = { kind, inner, torso, body, head, hp0: P.pivot, sup: 0, fl, fr, arm, arm2, armBase: P.armPos.slice(), melee: P.melee, t: Math.random() * 6, kick: 0, kick2: 0, w: 0, lean: 0, roll: 0 };
   return root;
 }
-// walk cycle (counter-twist, hip sway, contact squash), turn lean, idle breathing, attack recoil / slash lunge
+// walk cycle (counter-twist, hip sway, contact squash), turn lean, idle breathing + weight shift + look-around,
+// head follow-through, attack recoil / slash lunge, super hop-and-spin
 export function animBrawler(g, dt, speed) {
   const u = g.userData;
-  u.w += (Math.min(1, speed / 5) - u.w) * Math.min(1, dt * 9); const w = u.w; // smoothed run weight
+  u.w += (Math.min(1, speed / 5) - u.w) * Math.min(1, dt * 9); const w = u.w, iw = 1 - w; // smoothed run weight
   u.t += dt * (2.2 + 9.5 * w); u.it = (u.it || 0) + dt;
   const sn = Math.sin(u.t), cs = Math.cos(u.t), k8 = Math.min(1, dt * 8);
   // lean into turns
   let dy = g.rotation.y - (u.py ?? g.rotation.y); dy = Math.atan2(Math.sin(dy), Math.cos(dy)); u.py = g.rotation.y;
   const turn = dt > 0 ? Math.max(-1, Math.min(1, dy / dt / 9)) : 0; u.roll += (-turn * 0.17 * (0.35 + w) - u.roll) * k8;
   // feet: arc steps, toe lifts on the swing, heel plants at contact
-  u.fl.position.z = sn * 0.28 * w; u.fr.position.z = -sn * 0.28 * w;
-  u.fl.position.y = 0.12 + Math.max(0, cs) ** 1.5 * 0.18 * w; u.fr.position.y = 0.12 + Math.max(0, -cs) ** 1.5 * 0.18 * w;
-  u.fl.rotation.x = (-cs * 0.4 - Math.max(0, -sn) * 0.25) * w; u.fr.rotation.x = (cs * 0.4 - Math.max(0, sn) * 0.25) * w;
-  // torso: highest when feet pass, squash at foot contact, counter-twist, hip sway, idle breathing
-  const breath = Math.sin(u.it * 2.4), contact = Math.abs(sn) ** 4 * w;
-  const bob = Math.abs(cs) * 0.085 * w + breath * 0.018 * (1 - w);
-  u.lean += (0.14 * w - u.lean) * k8;
-  u.kick = Math.max(0, u.kick - dt * 5.5); u.kick2 = Math.max(0, u.kick2 - dt * 5.5);
+  u.fl.position.z = sn * 0.3 * w; u.fr.position.z = -sn * 0.3 * w;
+  u.fl.position.y = 0.12 + Math.max(0, cs) ** 1.5 * 0.2 * w; u.fr.position.y = 0.12 + Math.max(0, -cs) ** 1.5 * 0.2 * w;
+  u.fl.rotation.x = (-cs * 0.42 - Math.max(0, -sn) * 0.25) * w; u.fr.rotation.x = (cs * 0.42 - Math.max(0, sn) * 0.25) * w;
+  // torso: highest when feet pass, squash at foot contact, counter-twist, hip sway, idle breathing + slow weight shift
+  const breath = Math.sin(u.it * 2.4), shift = Math.sin(u.it * 0.85), contact = Math.abs(sn) ** 4 * w;
+  const bob = Math.abs(cs) * 0.09 * w + breath * 0.018 * iw;
+  u.lean += (0.16 * w - u.lean) * k8;
+  u.kick = Math.max(0, u.kick - dt * 5.5); u.kick2 = Math.max(0, u.kick2 - dt * 5.5); u.sup = Math.max(0, u.sup - dt * 2.2);
   const T = u.torso, k = u.kick, k2 = u.kick2, ke = k * k * (3 - 2 * k), km = Math.max(k, k2), sw = Math.sin(km * Math.PI);
-  let tz = 0, rx = u.lean, ry = -sn * 0.13 * w, sq = contact * 0.05 + ke * 0.04;
+  // super: crouch, hop, full spin, land (sup goes 1 -> 0)
+  const sp = 1 - u.sup, hop = u.sup > 0 ? Math.max(0, Math.sin(Math.min(1, sp * 1.25) * Math.PI)) : 0, crouch = u.sup > 0.85 ? (1 - u.sup) / 0.15 : 0;
+  let tz = 0, rx = u.lean, ry = -sn * 0.14 * w + shift * 0.05 * iw, sq = contact * 0.05 + ke * 0.04 + crouch * 0.12 - hop * 0.08;
   if (u.melee) { tz = (k + k2) * 0.28 * sw; ry += 0.55 * (k - k2) * sw; rx += 0.1 * sw; } // lunge + twist with the slash
   else if (u.kind !== 'dog') { tz = -ke * 0.12; rx -= ke * 0.16; } // gun kick: rock back
-  T.position.set(sn * 0.035 * w, bob - contact * 0.03, tz);
-  T.rotation.set(rx, ry, sn * 0.04 * w + Math.sin(u.it * 1.1) * 0.012 * (1 - w) + u.roll);
+  if (u.sup > 0 && u.spin) ry += (1 - (1 - Math.min(1, sp * 1.4)) ** 3) * Math.PI * 2;
+  T.position.set(sn * 0.035 * w + shift * 0.03 * iw, bob - contact * 0.03 + hop * 0.55, tz);
+  T.rotation.set(rx, ry, sn * 0.045 * w + shift * 0.025 * iw + u.roll);
   T.scale.set(1 + sq * 0.6, 1 - sq, 1 + sq * 0.6);
-  u.body.scale.set(1 - breath * 0.008 * (1 - w), 1 + breath * 0.012 * (1 - w), 1);
+  u.body.scale.set(1 - breath * 0.008 * iw, 1 + breath * 0.012 * iw, 1);
+  // head: lags the bob, keeps facing forward through the counter-twist, nods on shots, looks around when idle
+  if (u.head) {
+    const H = u.head, look = Math.sin(u.it * 0.55) * Math.sin(u.it * 0.23 + 1) * 0.32 * iw;
+    u.hl = (u.hl || 0) + ((bob - (u.hb || 0)) * 3 - (u.hl || 0)) * Math.min(1, dt * 12); u.hb = bob;
+    H.rotation.set(-u.lean * 0.55 + u.hl * 0.6 + ke * 0.22 - crouch * 0.15 + breath * 0.025 * iw, (u.melee || (u.sup > 0 && u.spin) ? 0 : -ry * 0.6) + look, -u.roll * 0.6 + sn * 0.05 * w + Math.sin(u.it * 0.7) * 0.04 * iw);
+    H.position.y = u.hp0[1] + breath * 0.01 * iw;
+  }
   const b = u.armBase, A = u.arm;
   A.position.y = b[1];
   if (u.kind === 'dog') { A.rotation.y = Math.sin(u.t * 3) * 0.5; A.position.z = b[2]; }
   else if (u.melee) { // wind-up and slash across, alternate direction for the 2nd hit
-    A.rotation.set(-0.6 * (k + k2) + sn * 0.15 * w - breath * 0.03 * (1 - w), 1.35 * (k - k2) * sw, 0); A.position.z = b[2] + (k + k2) * 0.25;
-  } else { A.position.z = b[2] - ke * 0.24 - sn * 0.05 * w; A.rotation.set(-ke * 0.5 + sn * 0.1 * w - breath * 0.03 * (1 - w), 0, cs * 0.05 * w); }
-  if (u.arm2) { const A2 = u.arm2; A2.position.y = b[1]; A2.rotation.x = -sn * 0.75 * w + breath * 0.05 * (1 - w) - (u.melee ? 0.5 * sw : 0.25 * ke); A2.rotation.z = 0.12 + Math.abs(sn) * 0.1 * w + Math.max(0, breath) * 0.04 * (1 - w); }
+    A.rotation.set(-0.6 * (k + k2) + sn * 0.15 * w - breath * 0.03 * iw - hop * 0.9, 1.35 * (k - k2) * sw, 0); A.position.z = b[2] + (k + k2) * 0.25;
+  } else { A.position.z = b[2] - ke * 0.24 - sn * 0.06 * w; A.rotation.set(-ke * 0.5 + sn * 0.12 * w - breath * 0.03 * iw - hop * 0.7, 0, cs * 0.05 * w); }
+  if (u.arm2) { const A2 = u.arm2; A2.position.y = b[1]; A2.rotation.x = -sn * 0.8 * w + breath * 0.05 * iw - (u.melee ? 0.5 * sw : 0.25 * ke) - hop * 1.6; A2.rotation.z = 0.12 + Math.abs(sn) * 0.1 * w + Math.max(0, breath) * 0.04 * iw + hop * 0.5; }
 }
-export function kickBrawler(g, alt) { const u = g.userData; if (alt && u.melee) u.kick2 = 1; else u.kick = 1; }
+export function kickBrawler(g, alt, sup) { const u = g.userData; if (sup) { u.sup = 1; u.spin = sup === 'spin'; u.kick = 1; } else if (alt && u.melee) u.kick2 = 1; else u.kick = 1; }

@@ -1,7 +1,7 @@
 // 英雄大乱斗 — bootstrap, lobby, input, camera, HUD
 import * as THREE from 'three';
 import { createLand } from './land.js';
-import { CHARS, ORDER, makeBrawler, animBrawler } from './chars.js';
+import { CHARS, ORDER, makeBrawler, animBrawler, kickBrawler } from './chars.js';
 import { makeFX } from './fx.js';
 import { createGame } from './game.js';
 import { clamp } from './util.js';
@@ -14,7 +14,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPrefere
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene(); let gameBg = new THREE.Color(0x2aa3e0); scene.background = gameBg;
-scene.add(new THREE.HemisphereLight(0xffffff, 0x8a9ab0, 1.5));
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8a9ab0, 1.5); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 2.0); sun.position.set(6, 12, 8); scene.add(sun);
 const camera = new THREE.PerspectiveCamera(40, 2, 1, 200);
 const FX = makeFX(scene);
@@ -25,7 +25,13 @@ lob.add(new THREE.HemisphereLight(0xffffff, 0x8a9ab0, 1.6)); const ls = new THRE
 const lcam = new THREE.PerspectiveCamera(30, 2, 0.1, 100);
 const podium = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 0.4, 40), new THREE.MeshToonMaterial({ color: 0xffd23f })); podium.position.y = -0.2; lob.add(podium);
 const podO = new THREE.Mesh(podium.geometry, new THREE.MeshBasicMaterial({ color: 0x1a1022, side: THREE.BackSide })); podO.scale.setScalar(1.04); podium.add(podO);
-let lobMesh = null, sel = localStorage.getItem('mdl_kind') || 'chef'; if (!CHARS[sel]) sel = 'chef';
+{ // podium trim: lighter top disc + rim band + little stars round the edge
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.04, 40), new THREE.MeshToonMaterial({ color: 0xffe680 })); top.position.y = 0.215; podium.add(top);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.06, 6, 48), new THREE.MeshToonMaterial({ color: 0xff8a1f })); band.rotation.x = Math.PI / 2; band.position.y = -0.02; podium.add(band);
+  const sg = new THREE.OctahedronGeometry(0.09, 0), sm = new THREE.MeshToonMaterial({ color: 0xffffff });
+  const st = new THREE.InstancedMesh(sg, sm, 10); for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; st.setMatrixAt(i, new THREE.Matrix4().makeTranslation(Math.sin(a) * 1.58, 0.06, Math.cos(a) * 1.58)); } podium.add(st);
+}
+let lobT = 0, lobKick = 3; let lobMesh = null, sel = localStorage.getItem('mdl_kind') || 'chef'; if (!CHARS[sel]) sel = 'chef';
 let opts = { n: 16, diff: 1, mode: localStorage.getItem('mdl_mode') || 'party' }; if (!['party', 'solo', 'duo'].includes(opts.mode)) opts.mode = 'party';
 const TROPHY_KEY = 'brawlTrophies';
 const TROPHY_SOLO = { 1: 10, 2: 8, 3: 7, 4: 6, 5: 4, 6: 2, 7: 2, 8: 1, 9: 0, 10: -1 };
@@ -75,7 +81,7 @@ function buildCards() {
 function showSel() {
   const c = CHARS[sel]; $('selName').textContent = c.name + ' · ' + c.title; $('selRole').textContent = `${c.role} · 武器「${c.weapon}」 · 大招「${c.superName}」`; $('selDesc').textContent = c.desc;
   $('selStats').textContent = `生命 ${c.hp}　射程 ${c.range}　装填 ${c.reload}s`;
-  if (lobMesh) lob.remove(lobMesh); lobMesh = makeBrawler(sel); lobMesh.scale.setScalar(1.15); lob.add(lobMesh);
+  if (lobMesh) lob.remove(lobMesh); lobMesh = makeBrawler(sel); lobMesh.scale.setScalar(1.15); lob.add(lobMesh); if (lobT > 0.5) kickBrawler(lobMesh, false, 'spin'); lobKick = lobT + 3.2;
 }
 for (const b of $('segN').children) b.onclick = () => { opts.n = +b.dataset.n; for (const x of $('segN').children) x.classList.toggle('on', x === b); };
 const MODE_SUB = { party: '派对吃鸡 · 最后一个站着的赢', solo: '经典单人 · 10人抢能量块', duo: '经典双人 · 5队抢能量块' };
@@ -108,7 +114,7 @@ function startMatch() {
   const map = Q.has('map') ? (+Q.get('map') || 0) % MAPS.length : mapIdx;
   G.cleanup(); G.setup({ kind: sel, n: opts.n, diff: opts.diff, mode: opts.mode, events: opts.events, map, fastZone: Q.has('fastzone'), god: Q.has('god') }); state = 'game'; paused = false; input.jumped = false;
   mapIdx = (map + 1) % MAPS.length; localStorage.setItem(MAP_KEY, mapIdx); showMapInfo(); // next match gets the next map
-  gameBg.setHex(G.world.bg); gad.n = 3; gad.cd = 0; emote.t = 0;
+  gameBg.setHex(G.world.bg); { const L = G.world.light; if (L) { hemi.color.setHex(L.sky); hemi.groundColor.setHex(L.gnd); hemi.intensity = L.hi; sun.color.setHex(L.sun); sun.intensity = L.si; } } gad.n = 3; gad.cd = 0; emote.t = 0;
   { const b = $('mapBan'); b.textContent = '本局地图：' + G.world.mapName; b.classList.add('show'); clearTimeout(b._t); b._t = setTimeout(() => b.classList.remove('show'), 2600); }
   $('lobby').classList.add('hidden'); $('hud').classList.remove('hidden'); stickRest(); $('end').classList.add('hidden'); $('pause').classList.add('hidden');
   $('gArmor').style.display = $('gHelm').style.display = G.classic ? 'none' : '';
@@ -346,13 +352,14 @@ function updateHud(dt) {
 }
 
 // ---------- main loop ----------
-let last = performance.now(), lobT = 0, frames = 0, fpsT = 0; window.fps = 0;
+let last = performance.now(), frames = 0, fpsT = 0; window.fps = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   let dt = Math.min(0.05, (now - last) / 1000); last = now; frames++; fpsT += dt; if (fpsT > 1) { window.fps = frames / fpsT; frames = 0; fpsT = 0; }
   if (state === 'lobby') {
-    lobT += dt; if (lobMesh) { lobMesh.rotation.y = Math.sin(lobT * 0.7) * 0.5 + 0.3; animBrawler(lobMesh, dt, 0); lobMesh.userData.inner.scale.y = 1 + Math.sin(lobT * 3) * 0.025; }
-    const wide = W / Hh; lcam.position.set(wide > 1.2 ? 3.4 : 0, 2.6, 11); lcam.lookAt(wide > 1.2 ? 3.4 : 0, 0.9, 0); lob.position.x = 0;
+    lobT += dt; if (lobMesh && lobT > lobKick) { lobKick = lobT + 3.6 + Math.random() * 2; kickBrawler(lobMesh, Math.random() < 0.5); }
+    if (lobMesh) { lobMesh.rotation.y = Math.sin(lobT * 0.7) * 0.5 + 0.3; animBrawler(lobMesh, dt, 0); lobMesh.userData.inner.scale.y = 1 + Math.sin(lobT * 3) * 0.025; }
+    const wide = W / Hh; lcam.position.set(wide > 1.2 ? 3.4 : 0, 2.3, 13.2); lcam.lookAt(wide > 1.2 ? 3.4 : 0, 1.3, 0); lob.position.x = 0;
     renderer.setClearColor(0x2b6cff, 1); renderer.render(lob, lcam); drawOverlay(dt); return;
   }
   if (!paused && G.world) {

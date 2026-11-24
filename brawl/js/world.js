@@ -151,31 +151,92 @@ export function buildWorld(scene, classic = false, mapId = 0) {
     ground: [['#4d3d63', '#4a3a5f'], ['#5b4a72', '#57476d'], ['#5f587d', '#5a5377']],
     patchD: 'rgba(18,8,34,.20)', patchL: 'rgba(150,120,190,.07)', line: 'rgba(15,6,30,.10)', hl: 'rgba(255,255,255,.03)',
     pond: '#74dc52', pondD: '#5cc541', pondHi: 'rgba(220,255,170,.55)', shore: '#2d5e34', voidC: '#1f1830', voidD: '#1d162d', cliff: '#120c1c',
+    pw: ['#4fb83a', '#74dc52', '#a6ee6e', '#e2ffb0'], vw: ['#18122a', '#1d162d', '#221a36', '#2b2242'], beach: '#2a2140', vcliff: '#120c1c', rim: [null, '#463760', '#4b4569'], strokeL: 'rgba(170,150,220,.16)', strokeD: 'rgba(10,0,25,.22)', wave: 'rgba(170,140,220,.20)',
     sea: 0x1d1730, bushH: [0.47, 0.025], bushS: 0.5, bushL: [0.46, 0.06], tuft: [0x2f9a96, 0x3fb3a8, 0x2a8a8f], pebble: [0x6f6690, 0x7c739c, 0x5f5880],
     walls: [0x9ea2d2, 0x8f94c6, 0xaaa7d6], wallsC: [0x9ea2d2, 0x8f94c6, 0xaaa7d6], crate: [0xe8708f, 0xa8405f], mm: { g: ['#4d3d63', '#5b4a72', '#5f587d'], 1: '#a7a7d6', 2: '#c56a4a', 3: '#c9a2ff', 4: '#2f9a96', 5: '#74dc52', v: '#211a33' },
   } : {
     ground: classic ? [['#86d957', '#7fd150'], ['#f3d68c', '#ebcb7c'], ['#c9c2d6', '#bdb5cc']] : [['#78d052', '#71c84b'], ['#f2d48b', '#eaca7d'], ['#c9c2d6', '#bdb5cc']],
     patchD: 'rgba(30,90,20,.12)', patchL: 'rgba(255,255,210,.09)', line: 'rgba(0,40,0,.10)', hl: 'rgba(255,255,255,.10)',
     pond: '#3db7f0', pondD: '#36aee8', pondHi: 'rgba(255,255,255,.35)', shore: '#f7e6b0', voidC: '#3db7f0', voidD: '#36aee8', cliff: '#f7e6b0',
+    pw: ['#2a9fe6', '#3db7f0', '#79d3f7', '#e9fbff'], vw: ['#2a9be0', '#36aee8', '#6ccdf3', '#f2fdff'], beach: '#f6db94', rim: [null, '#dcb466', '#a59dbb'], strokeL: 'rgba(200,255,150,.35)', strokeD: 'rgba(30,100,20,.20)', wave: 'rgba(255,255,255,.5)',
     sea: 0x2aa3e0, bushH: classic ? [0.24, 0.05] : [0.28, 0.08], bushS: classic ? 0.6 : 0.55, bushL: [0.5, 0.08], tuft: [0x4fae3a, 0x5fc244, 0x46a035], pebble: [0xb9b2c4, 0xa7a0b4, 0xcfc8d8],
     walls: [0xff8c5a, 0xf2a65a, 0xe76f51, 0xc8b6ff, 0x9bb7d4], wallsC: [0xaab6cc, 0xd99a58, 0xe2774e], crate: [0xd99a4e, 0x9c6230], mm: { g: ['#7fd957', '#f4d58d', '#c9c2d6'], 1: '#c0704a', 2: '#d99a4e', 3: '#7b3fb0', 4: '#2f8a3a', 5: '#3db7f0', v: '#3db7f0' },
   };
   // water outside the playable area is the "void" (sea / swamp mist), inside it is a pond
   const isVoid = (i, j) => classic ? (i < CO || j < CO || i >= CO + CS || j >= CO + CS) : (i < 2 || j < 2 || i >= N - 2 || j >= N - 2);
 
-  // ---------- ground texture: base tiles with slight per-tile shade, soft patches, painted decor ----------
-  const P = 16, cv = document.createElement('canvas'); cv.width = cv.height = N * P; const g = cv.getContext('2d');
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    const t = type[idx(i, j)], b = biome[idx(i, j)], X = i * P, Y = j * P;
-    if (t === T.WATER) {
-      const vd = isVoid(i, j); g.fillStyle = vd ? ((i + j) & 1 ? TH.voidC : TH.voidD) : ((i + j) & 1 ? TH.pond : TH.pondD); g.fillRect(X, Y, P, P);
-      if (!vd || !DUSK) { g.fillStyle = TH.pondHi; if ((i * 7 + j * 3) % 5 === 0) g.fillRect(X + 3, Y + 7, 7, 2); if (DUSK && !vd && rand() < 0.25) { g.beginPath(); g.arc(X + 4 + rand() * 8, Y + 4 + rand() * 8, 1.5 + rand() * 1.5, 0, 7); g.fill(); } }
-      continue;
+  // ---------- ground texture: per-pixel painted base with rounded shorelines / biome patches, then painted decor ----------
+  const P = 16, NP = N * P, cv = document.createElement('canvas'); cv.width = cv.height = NP; const g = cv.getContext('2d');
+  {
+    const hx = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+    const W8 = (i, j) => !inb(i, j) || type[idx(i, j)] === T.WATER;
+    const B1 = (i, j) => inb(i, j) && type[idx(i, j)] !== T.WATER && biome[idx(i, j)] === 1, B2 = (i, j) => inb(i, j) && type[idx(i, j)] !== T.WATER && biome[idx(i, j)] === 2;
+    const R = 7, H2 = P / 2;
+    // signed distance in pixels to the edge of a tile mask whose corners are rounded (convex cut, concave filleted); > 0 inside
+    function sd(mask, i, j, u, v) {
+      const sx = u < H2 ? -1 : 1, sy = v < H2 ? -1 : 1, dx = sx < 0 ? u + 0.5 : P - u - 0.5, dy = sy < 0 ? v + 0.5 : P - v - 0.5;
+      const A = mask(i + sx, j), B = mask(i, j + sy), D = mask(i + sx, j + sy);
+      if (mask(i, j)) {
+        if (!A && !B) return dx < R && dy < R ? R - Math.hypot(R - dx, R - dy) : Math.min(dx, dy);
+        let d = H2; if (!A) d = Math.min(d, dx); if (!B) d = Math.min(d, dy); if (A && B && !D) d = Math.min(d, Math.hypot(dx + R, dy + R) - R); return d;
+      }
+      if (A && B) return dx < R && dy < R ? Math.hypot(R - dx, R - dy) - R : -Math.min(dx, dy);
+      if (A) return -dx; if (B) return -dy;
+      if (D) return R - Math.hypot(dx + R, dy + R);
+      return -H2;
     }
-    g.fillStyle = TH.ground[b][(i + j) & 1]; g.fillRect(X, Y, P, P);
-    const v = rand(); if (v < 0.3) { g.fillStyle = v < 0.15 ? 'rgba(0,0,0,.035)' : 'rgba(255,255,255,.035)'; g.fillRect(X, Y, P, P); }
-    if (classic || b === 2) { g.fillStyle = TH.line; g.fillRect(X, Y + P - 1, P, 1); g.fillRect(X + P - 1, Y, 1, P); g.fillStyle = TH.hl; g.fillRect(X, Y, P, 1); }
+    const near = (mask, i, j) => { for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) if (mask(i + a, j + b)) return true; return false; };
+    const GC = TH.ground.map(p => p.map(hx)), RIM = TH.rim.map(c => c && hx(c));
+    const PW = TH.pw.map(hx), VW = TH.vw.map(hx), SH = hx(TH.shore), BE = hx(TH.beach);
+    const F1 = new Float32Array(N * N), F2 = new Float32Array(N * N); for (let q = 0; q < N * N; q++) if (type[q] !== T.WATER) { if (biome[q] === 1) F1[q] = 1; else if (biome[q] === 2) F2[q] = 1; }
+    const img = g.createImageData(NP, NP), D8 = img.data;
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const q = idx(i, j), nW = near(W8, i, j), n1 = near(B1, i, j), n2 = near(B2, i, j), par = (i + j) & 1, b0 = biome[q], tv = (rand() - 0.5) * 6;
+      const vd = isVoid(i, j) || (nW && !W8(i, j) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => inb(i + a, j + b) && type[idx(i + a, j + b)] === T.WATER && isVoid(i + a, j + b)));
+      for (let v = 0; v < P; v++) for (let u = 0; u < P; u++) {
+        let c, k = 1;
+        const dW = nW ? sd(W8, i, j, u, v) : -H2;
+        if (dW > 0) { // water: deep centre, lighter shallows, foam lip
+          const pal = vd ? VW : PW; c = dW > 7 ? pal[0] : dW > 3 ? pal[1] : dW > 1.3 ? pal[2] : pal[3];
+          if (dW > 7 && ((u * 3 + v * 7 + i * 5 + j * 11) % 37 === 0)) c = pal[2];
+        } else {
+          // biome patches: bilinear field of tile-centre samples -> smooth diagonal / curved edges with a thin rim
+          let b = 0, d = 1;
+          if (n1 || n2) {
+            const fx = (i * P + u + 0.5) / P - 0.5, fy = (j * P + v + 0.5) / P - 0.5, i0 = Math.floor(fx), j0 = Math.floor(fy), tx = fx - i0, ty = fy - j0;
+            const bl = (F) => { const f = (a, c) => inb(a, c) ? F[idx(a, c)] : 0; return (f(i0, j0) * (1 - tx) + f(i0 + 1, j0) * tx) * (1 - ty) + (f(i0, j0 + 1) * (1 - tx) + f(i0 + 1, j0 + 1) * tx) * ty; };
+            if (n2) { const e = bl(F2); if (e > 0.5) { b = 2; d = e - 0.5; } }
+            if (!b && n1) { const e = bl(F1); if (e > 0.5) { b = 1; d = e - 0.5; } }
+          }
+          c = GC[b][par]; k = 1 + tv / 255 * 2;
+          if (b && d < 0.11 && RIM[b]) c = RIM[b];
+          if (dW > -3.2 && !vd) c = SH; else if (vd && dW > -6) c = dW > -2 ? TH.vcliff ? hx(TH.vcliff) : BE : BE;
+        }
+        const o = ((j * P + v) * NP + i * P + u) * 4; D8[o] = c[0] * k; D8[o + 1] = c[1] * k; D8[o + 2] = c[2] * k; D8[o + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    // tile seams only on stone plazas / classic floor, where a tile is fully surrounded by its own kind
+    for (let j = 1; j < N - 1; j++) for (let i = 1; i < N - 1; i++) {
+      const q = idx(i, j), b = biome[q]; if (type[q] === T.WATER || !(classic || b === 2)) continue;
+      let ok = true; for (const [a, c] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const qq = idx(i + a, j + c); if (type[qq] === T.WATER || biome[qq] !== b) ok = false; } if (!ok) continue;
+      const X = i * P, Y = j * P; g.fillStyle = TH.line; g.fillRect(X, Y + P - 1, P, 1); g.fillRect(X + P - 1, Y, 1, P); g.fillStyle = TH.hl; g.fillRect(X, Y, P, 1);
+    }
+    // grass strokes: short lighter / darker blades painted on the plain ground
+    for (const [col, n] of [[TH.strokeL, 2], [TH.strokeD, 2]]) {
+      g.strokeStyle = col; g.lineWidth = 1.3; g.beginPath();
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const q = idx(i, j); if (type[q] === T.WATER || biome[q] !== 0) continue; for (let k = 0; k < n; k++) { const x = i * P + 2 + rand() * 12, y = j * P + 3 + rand() * 11, l = 2 + rand() * 2.5; g.moveTo(x, y); g.lineTo(x + (rand() - 0.5) * 2, y - l); } }
+      g.stroke();
+    }
+    // sea: little wave crests on the void, ripple rings on ponds
+    g.strokeStyle = TH.wave; g.lineWidth = 1.4; g.beginPath();
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const q = idx(i, j); if (type[q] !== T.WATER || rand() > (isVoid(i, j) ? 0.12 : 0.18)) continue;
+      const x = i * P + 3 + rand() * 9, y = j * P + 4 + rand() * 8; if (isVoid(i, j)) { g.moveTo(x, y); g.quadraticCurveTo(x + 3, y - 3, x + 6, y); } else { g.moveTo(x + 3, y); g.arc(x, y, 3, 0, Math.PI * 2); }
+    }
+    g.stroke();
   }
+
   // soft patches (darker hollows, lighter worn spots)
   for (let k = 0; k < N * N / 22; k++) {
     const i = ri(0, N - 1), j = ri(0, N - 1); if (type[idx(i, j)] === T.WATER) continue;
@@ -193,14 +254,6 @@ export function buildWorld(scene, classic = false, mapId = 0) {
       if (DUSK) { if (rand() < 0.6) continue; g.save(); g.translate(x, y); g.rotate(rand() * 3); g.scale(0.75, 0.75); g.globalAlpha = 0.7; g.fillStyle = '#e9e3f2'; g.fillRect(-3.5, -0.8, 7, 1.6); dot(-3.6, -1, 1.3, '#e9e3f2'); dot(-3.6, 1, 1.3, '#e9e3f2'); dot(3.6, -1, 1.3, '#e9e3f2'); dot(3.6, 1, 1.3, '#e9e3f2'); g.globalAlpha = 1; g.restore(); }
       else { const c = ['#fff6a8', '#ff9fd0', '#ffffff'][ri(0, 2)]; for (let k = 0; k < 4; k++) dot(x + Math.cos(k * 1.57) * 1.6, y + Math.sin(k * 1.57) * 1.6, 1.3, c); dot(x, y, 1, '#ffb000'); }
     }
-  }
-  // shoreline: pond rim / cliff edge round the void
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) if (type[idx(i, j)] === T.WATER) {
-    g.fillStyle = isVoid(i, j) ? TH.cliff : TH.shore; const w = isVoid(i, j) && DUSK ? 4 : 2, X = i * P, Y = j * P;
-    if (inb(i - 1, j) && type[idx(i - 1, j)] !== T.WATER) g.fillRect(X, Y, w, P);
-    if (inb(i + 1, j) && type[idx(i + 1, j)] !== T.WATER) g.fillRect(X + P - w, Y, w, P);
-    if (inb(i, j - 1) && type[idx(i, j - 1)] !== T.WATER) g.fillRect(X, Y, P, w);
-    if (inb(i, j + 1) && type[idx(i, j + 1)] !== T.WATER) g.fillRect(X, Y + P - w, P, w);
   }
   // soft contact shadow round the base of walls / props
   g.fillStyle = 'rgba(10,0,25,.18)';
@@ -241,13 +294,19 @@ void main(){ vec3 transformed = position + normalize(normal) * w; ${SWAY} }`,
 
   // ---------- prop geometries ----------
   const RND = (a, b) => a + rand() * (b - a);
-  const wallGeo = new Builder()
-    .add(new THREE.BoxGeometry(CELL, 0.22, CELL), M(0, 0.11, 0), 0x8a8a96)                       // plinth
-    .add(new THREE.BoxGeometry(CELL * 0.94, 1.3, CELL * 0.94), M(0, 0.85, 0), 0xdcdce4)           // block
-    .add(new THREE.BoxGeometry(CELL * 0.955, 0.06, CELL * 0.955), M(0, 0.86, 0), 0x9c9cab)         // mortar groove
-    .add(new THREE.BoxGeometry(CELL * 0.06, 0.62, CELL * 0.955), M(CELL * 0.18, 0.5, 0), 0xa8a8b6)  // vertical seam (lower course)
-    .add(new THREE.BoxGeometry(CELL * 0.99, 0.24, CELL * 0.99), M(0, 1.6, 0), 0xf2f2f8)            // cap slab
-    .add(new THREE.BoxGeometry(CELL * 0.78, 0.07, CELL * 0.78), M(0, 1.75, 0), 0xffffff).build();   // bevel top
+  // rounded box (smooth normals) for chunky toy-like props
+  const RBX = (w, h, d, r, seg = 2) => { const gq = new THREE.BoxGeometry(w, h, d, seg, seg, seg), p = gq.attributes.position, n = gq.attributes.normal, v = new THREE.Vector3(), c = new THREE.Vector3(); const hx = w / 2 - r, hy = h / 2 - r, hz = d / 2 - r; for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i); c.set(Math.max(-hx, Math.min(hx, v.x)), Math.max(-hy, Math.min(hy, v.y)), Math.max(-hz, Math.min(hz, v.z))); const nn = v.clone().sub(c).normalize(); v.copy(c).addScaledVector(nn, r); p.setXYZ(i, v.x, v.y, v.z); n.setXYZ(i, nn.x, nn.y, nn.z); } return gq; };
+  // vertical shade: darker at the foot, full colour at the top (fake ambient occlusion baked into vertex colours)
+  const vshade = (geo, y0, y1, lo = 0.72) => { const p = geo.attributes.position, c = geo.attributes.color; for (let i = 0; i < p.count; i++) { const t = Math.min(1, Math.max(0, (p.getY(i) - y0) / (y1 - y0))), k = lo + (1 - lo) * t; c.setXYZ(i, c.getX(i) * k, c.getY(i) * k, c.getZ(i) * k); } return geo; };
+  // walls: chamfered block + overhanging cap so the edges read soft, one staggered seam, light top plate; the outline hull skips the details
+  const OCT = (w, h, c) => { const sh = new THREE.Shape(), a = w / 2 - c, H = w / 2; sh.moveTo(a, H); sh.lineTo(H, a); sh.lineTo(H, -a); sh.lineTo(a, -H); sh.lineTo(-a, -H); sh.lineTo(-H, -a); sh.lineTo(-H, a); sh.lineTo(-a, H); sh.closePath(); const gq = new THREE.ExtrudeGeometry(sh, { depth: h, bevelEnabled: false }); gq.rotateX(-Math.PI / 2); gq.translate(0, -h / 2, 0); gq.deleteAttribute('uv'); return gq; };
+  const wallB = new Builder()
+    .add(new THREE.BoxGeometry(CELL, 0.2, CELL), M(0, 0.1, 0), 0x8a8a96)                             // plinth
+    .add(OCT(CELL * 0.95, 1.36, 0.13), M(0, 0.86, 0), 0xdcdce4)                                        // block with chamfered corners
+    .add(new THREE.BoxGeometry(CELL * 0.04, 0.5, CELL * 0.955), M(CELL * 0.2, 0.55, 0), 0xaaaab8, true)  // brick seam
+    .add(OCT(CELL * 1.0, 0.26, 0.15), M(0, 1.6, 0), 0xf4f4fa)                                          // cap slab
+    .add(new THREE.CircleGeometry(CELL * 0.4, 8).rotateX(-Math.PI / 2), M(0, 1.735, 0), 0xffffff, true); // top plate
+  const wallGeo = wallB.build(); vshade(wallGeo, 0, 1.75, 0.66);
   const crateGeo = new Builder().add(new THREE.BoxGeometry(1.25, 1.1, 1.25), M(0, 0.55, 0), TH.crate[0])
     .add(new THREE.BoxGeometry(1.29, 0.14, 1.29), M(0, 0.2, 0), TH.crate[1]).add(new THREE.BoxGeometry(1.29, 0.14, 1.29), M(0, 0.9, 0), TH.crate[1])
     .add(new THREE.BoxGeometry(0.16, 0.9, 1.28), M(0, 0.55, 0, 0, 0, 0.78), TH.crate[1]).add(new THREE.BoxGeometry(1.28, 0.9, 0.16), M(0, 0.55, 0, 0.78), TH.crate[1]).build();
@@ -260,7 +319,10 @@ void main(){ vec3 transformed = position + normalize(normal) * w; ${SWAY} }`,
     .add(new THREE.BoxGeometry(0.22, 0.2, 0.45), M(0, 0.1, -0.52, 0, 0.1, 0), 0x6a412c).build();
   const boxGeo = new Builder().add(new THREE.BoxGeometry(1.35, 1.25, 1.35), M(0, 0.63, 0), 0x5b2c83)
     .add(new THREE.BoxGeometry(1.4, 0.16, 1.4), M(0, 1.2, 0), 0xffc43d).add(new THREE.BoxGeometry(1.4, 0.16, 1.4), M(0, 0.1, 0), 0xffc43d)
-    .add(new THREE.OctahedronGeometry(0.32), M(0, 1.45, 0, 0, 0, 0, 1, 1.3, 1), 0xff8a1f).build();
+    .add(new THREE.OctahedronGeometry(0.32), M(0, 1.45, 0, 0, 0, 0, 1, 1.3, 1), 0xff8a1f)
+    .add(new THREE.OctahedronGeometry(0.17, 0), M(0, 0.66, 0.7, 0, 0, 0, 1, 1.25, 0.5), 0x9dff4a, true).add(new THREE.OctahedronGeometry(0.17, 0), M(0, 0.66, -0.7, 0, 0, 0, 1, 1.25, 0.5), 0x9dff4a, true)
+    .add(new THREE.OctahedronGeometry(0.17, 0), M(0.7, 0.66, 0, 0, 0, 0, 0.5, 1.25, 1), 0x9dff4a, true).add(new THREE.OctahedronGeometry(0.17, 0), M(-0.7, 0.66, 0, 0, 0, 0, 0.5, 1.25, 1), 0x9dff4a, true).build();
+  for (const [gq, h] of [[crateGeo, 1.1], [barrelGeo, 1.08], [stumpGeo, 0.9], [boxGeo, 1.3]]) vshade(gq, 0, h, 0.74);
   // grass clump: dark mound + ~16 tapered blades, shaded darker at the root (vertex colours are greys, the instance colour gives the hue)
   const bb = new Builder(); bb.add(new THREE.IcosahedronGeometry(0.62, 0), M(0, 0.18, 0, 0, 0, 0, 1.25, 0.55, 1.25), 0x8a8a8a);
   for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2 * 3 + RND(-0.2, 0.2), d = k < 6 ? RND(0, 0.25) : RND(0.25, 0.7), hgt = RND(0.8, 1.2), tilt = 0.1 + d * 0.4; bb.add(new THREE.ConeGeometry(0.1, hgt, 3, 1, true), M(Math.cos(a) * d, hgt / 2, Math.sin(a) * d, Math.sin(a) * tilt, RND(0, 3), -Math.cos(a) * tilt, 1, 1, 0.55), 0xffffff, k < 6 || k % 3 !== 0); } // only every 3rd outer blade gets an outline
@@ -295,7 +357,26 @@ void main(){ vec3 transformed = position + normalize(normal) * w; ${SWAY} }`,
     if (type[idx(i, j)] !== T.G) continue; const r = rand(); if (r > 0.16) continue;
     const ck = ((j / CH) | 0) * NC + ((i / CH) | 0), B = dB[ck] || (dB[ck] = new Builder()), x = wx(i) + RND(-0.55, 0.55), z = wx(j) + RND(-0.55, 0.55);
     if (r < 0.1) { const c = TH.tuft[ri(0, 2)]; for (let k = 0; k < 4; k++) { const a = k * 1.6 + RND(-0.3, 0.3), hh = RND(0.22, 0.38); B.add(new THREE.ConeGeometry(0.06, hh, 3, 1, true), M(x + Math.cos(a) * 0.06, hh / 2, z + Math.sin(a) * 0.06, Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35), c); } }
-    else { const s = RND(0.07, 0.13); B.add(new THREE.IcosahedronGeometry(1, 0), M(x, s * 0.35, z, 0, RND(0, 3), 0, s * 1.2, s * 0.6, s), TH.pebble[ri(0, 2)]); }
+    else if (r < 0.13) { const s = RND(0.07, 0.13); B.add(new THREE.IcosahedronGeometry(1, 0), M(x, s * 0.35, z, 0, RND(0, 3), 0, s * 1.2, s * 0.6, s), TH.pebble[ri(0, 2)]); }
+    else if (!DUSK) { // little flower clusters on the meadow
+      for (let k = 0; k < 2; k++) { const fx2 = x + RND(-0.25, 0.25), fz = z + RND(-0.25, 0.25), hh = RND(0.16, 0.26), c = [0xfff6a8, 0xff9fd0, 0xffffff, 0xb9a6ff][ri(0, 3)];
+        B.add(new THREE.ConeGeometry(0.025, hh, 3, 1, true), M(fx2, hh / 2, fz), 0x4f9e33).add(new THREE.OctahedronGeometry(0.075, 0), M(fx2, hh, fz, 0, RND(0, 3), 0, 1.3, 0.45, 1.3), c); }
+    } else { // glowing toadstools in the swamp
+      for (let k = 0; k < 2; k++) { const mx = x + RND(-0.25, 0.25), mz = z + RND(-0.25, 0.25), s = RND(0.7, 1.2), c = [0x5ff7e0, 0xff7ad9, 0xc9a2ff][ri(0, 2)];
+        B.add(new THREE.CylinderGeometry(0.035 * s, 0.05 * s, 0.2 * s, 5, 1, true), M(mx, 0.1 * s, mz), 0xe9e3f2).add(new THREE.ConeGeometry(0.12 * s, 0.1 * s, 6, 1, true), M(mx, 0.24 * s, mz), c); }
+    }
+  }
+  // water edge life: reeds / cattails on pond rims, lily pads on open ponds, rocks (meadow) or dead snags (swamp) along the outer shore
+  const isWt = (i, j) => inb(i, j) && type[idx(i, j)] === T.WATER, landN = (i, j) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => inb(i + a, j + b) && type[idx(i + a, j + b)] !== T.WATER);
+  for (let j = 1; j < N - 1; j++) for (let i = 1; i < N - 1; i++) {
+    if (!isWt(i, j)) continue; const vd = isVoid(i, j), edge = landN(i, j); if (vd && !edge) continue; const r = rand();
+    const ck = ((j / CH) | 0) * NC + ((i / CH) | 0), B = dB[ck] || (dB[ck] = new Builder()), x = wx(i) + RND(-0.35, 0.35), z = wx(j) + RND(-0.35, 0.35);
+    if (!vd && edge && r < 0.3) { for (let k = 0; k < 2; k++) { const rx2 = x + RND(-0.3, 0.3), rz = z + RND(-0.3, 0.3), hh = RND(0.5, 0.85), tl = RND(-0.15, 0.15); B.add(new THREE.ConeGeometry(0.03, hh, 3, 1, true), M(rx2, hh / 2, rz, tl, 0, tl), DUSK ? 0x2f9a96 : 0x5fa83a); if (k < 1) B.add(new THREE.CylinderGeometry(0.05, 0.05, 0.16, 4), M(rx2 + tl * hh * 0.5, hh * 0.8, rz - tl * hh * 0.5, tl, 0, tl), DUSK ? 0x5a3d6a : 0x8a5a2b); } }
+    else if (!vd && !edge && r < 0.22) { const s = RND(0.22, 0.34); B.add(new THREE.CircleGeometry(s, 7, 0.5, Math.PI * 1.75).rotateX(-Math.PI / 2), M(x, 0.03, z, 0, RND(0, 6), 0), DUSK ? 0x3c8f4a : 0x4fb83a); if (rand() < 0.3) B.add(new THREE.OctahedronGeometry(0.08, 0), M(x, 0.08, z, 0, 0, 0, 1.2, 0.7, 1.2), DUSK ? 0xff7ad9 : 0xffb3da); }
+    else if (vd && r < 0.16) {
+      if (!DUSK) { const s = RND(0.25, 0.5); B.add(new THREE.IcosahedronGeometry(s, 0), M(x, s * 0.2, z, RND(0, 3), RND(0, 3), 0, 1.2, 0.7, 1), 0xb9b2c4); }
+      else { const hh = RND(0.6, 1.1); B.add(new THREE.CylinderGeometry(0.04, 0.1, hh, 5), M(x, hh / 2 - 0.1, z, RND(-0.3, 0.3), 0, RND(-0.3, 0.3)), 0x3a2c4a).add(new THREE.CylinderGeometry(0.02, 0.04, hh * 0.4, 4), M(x + 0.12, hh * 0.7, z, 0, 0, -0.9), 0x3a2c4a); }
+    }
   }
   for (const ck in dB) ground.add(new THREE.Mesh(dB[ck].build(), vcMat()));
 
@@ -307,6 +388,7 @@ void main(){ vec3 transformed = position + normalize(normal) * w; ${SWAY} }`,
   const zero = new THREE.Matrix4().makeScale(0, 0, 0);
   const W = {
     type, hp, inst, I, mm, mg, ground, sea, bushU, map: MAP, mapName: MAPS[MAP].name, bg: TH.sea,
+    light: DUSK ? { sky: 0xe0d2ff, gnd: 0x4a3a6a, hi: 1.45, sun: 0xffd6ec, si: 1.9 } : { sky: 0xffffff, gnd: 0x8a9ab0, hi: 1.5, sun: 0xfff3dc, si: 2.05 },
     at: (x, z) => { const i = cx(x), j = cz(z); return inb(i, j) ? type[idx(i, j)] : T.WATER; },
     idx, inb,
     remove(i, j) { const q = idx(i, j), t = type[q], e = I[keyOf(i, j, t)]; if (!e) return; const k = inst[q]; if (k >= 0) { e.m.setMatrixAt(k, zero); e.m.instanceMatrix.needsUpdate = true; if (e.o) { e.o.setMatrixAt(k, zero); e.o.instanceMatrix.needsUpdate = true; } } type[q] = T.G; inst[q] = -1; mg.fillStyle = mcol.g[biome[q]]; mg.fillRect(i, j, 1, 1); },
