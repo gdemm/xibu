@@ -22,6 +22,9 @@ select,.btn{font:inherit;font-size:14px;border:0;border-radius:10px;padding:7px 
 #wrap{flex:1;min-height:0;position:relative;overflow:hidden;touch-action:none;border-radius:14px}
 #zoom{position:absolute;right:6px;bottom:6px;display:flex;flex-direction:column;gap:6px;z-index:2}
 #zoom button{width:40px;height:40px;border:0;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 2px 0 #e6d3bd;font-size:20px;color:#4a3a2e}
+#ref{position:absolute;left:6px;top:6px;z-index:3;background:#fff;border-radius:10px;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,.18);display:none;text-align:center;font-size:10px;color:#8a705a}
+#ref canvas{display:block;width:84px;height:84px;image-rendering:pixelated;border-radius:6px}
+#ref.big canvas{width:200px;height:200px}
 #zhint{position:absolute;left:8px;bottom:8px;font-size:11px;color:#a08a74;background:rgba(255,255,255,.8);padding:2px 8px;border-radius:10px;z-index:2;pointer-events:none}
 canvas#board{position:absolute;left:0;top:0;touch-action:none;border-radius:14px;box-shadow:0 4px 0 #c9b6a0,0 6px 18px rgba(0,0,0,.12);background:#f4f4f2}
 #tools{display:flex;gap:6px;padding:6px 0;justify-content:space-between}
@@ -62,7 +65,7 @@ canvas#board{position:absolute;left:0;top:0;touch-action:none;border-radius:14px
     <button class="btn" id="bAuto">▶ 自动拼</button>
     <span id="prog"></span>
   </div>
-  <div id="wrap"><canvas id="board"></canvas><div id="zoom"><button id="zin">＋</button><button id="zout">－</button><button id="zfit" style="font-size:15px">⊡</button></div><div id="zhint">双指拖动/缩放</div></div>
+  <div id="wrap"><canvas id="board"></canvas><div id="zoom"><button id="zin">＋</button><button id="zout">－</button><button id="zfit" style="font-size:15px">⊡</button></div><div id="ref"><canvas id="refc"></canvas><span id="reft">参考图 · 点我放大</span></div><div id="zhint">双指拖动/缩放</div></div>
   <div id="tools">
     <button class="btn on" data-t="pen"><b>🫘</b>放豆</button>
     <button class="btn" data-t="erase"><b>🧽</b>拿掉</button>
@@ -207,7 +210,7 @@ function fitArt(){const w=$('#wrap'),W=w.clientWidth,H=w.clientHeight;FIT=Math.f
  if(x1<0){Z=1;return}x0=Math.max(0,x0-1);y0=Math.max(0,y0-1);x1=Math.min(N-1,x1+1);y1=Math.min(N-1,y1+1);const bw=x1-x0+1,bh=y1-y0+1,c=Math.min((W-8)/bw,(H-8)/bh);Z=Math.max(1,Math.min(6,c*N/FIT));const cc=FIT*Z/N;OX=W/2-(x0+bw/2)*cc;OY=H/2-(y0+bh/2)*cc}
 function firstTodo(){return target?target.findIndex((t,i)=>t>=0&&grid[i]!==t):-1}
 function clampPos(){const w=$('#wrap'),sz=FIT*Z,W=w.clientWidth,H=w.clientHeight;OX=sz<=W?(W-sz)/2:Math.min(0,Math.max(W-sz,OX));OY=sz<=H?(H-sz)/2:Math.min(0,Math.max(H-sz,OY))}
-function place(){clampPos();const sz=FIT*Z;cv.style.width=cv.style.height=sz+'px';cv.style.left=OX+'px';cv.style.top=OY+'px'}
+function place(){clampPos();const sz=FIT*Z;cv.style.width=cv.style.height=sz+'px';cv.style.left=OX+'px';cv.style.top=OY+'px';if(window.drawRef&&refc)try{drawRef()}catch(_){}}
 function layout(){const w=$('#wrap');if(zoomN!==N)autoZoom();else FIT=Math.floor(Math.min(w.clientWidth,w.clientHeight)-4);place();const sz=FIT*Z,dpr=Math.min(2,devicePixelRatio||1),px=Math.min(4096,Math.round(sz*dpr));cell=sz/N;cv.width=cv.height=px;ctx.setTransform(px/sz,0,0,px/sz,0,0);draw()}
 function zoomAt(nz,cx,cy){const r=$('#wrap').getBoundingClientRect();cx-=r.left;cy-=r.top;const px=(cx-OX)/(FIT*Z),py=(cy-OY)/(FIT*Z);Z=Math.max(1,Math.min(6,nz));OX=cx-px*FIT*Z;OY=cy-py*FIT*Z}
 function bead(x,y,col,r,ghost){const cx=(x+.5)*cell,cy=(y+.5)*cell,R=cell*.46;ctx.beginPath();ctx.arc(cx,cy,R,0,7);ctx.fillStyle=col;ctx.globalAlpha=ghost?.28:1;ctx.fill();ctx.globalAlpha=1;
@@ -219,7 +222,7 @@ function draw(){const s=cell*N;ctx.clearRect(0,0,s,s);ctx.fillStyle='#f4f4f2';ct
   else{ctx.beginPath();ctx.arc((x+.5)*cell,(y+.5)*cell,cell*.13,0,7);ctx.fillStyle='#d6d6d0';ctx.fill()}
   if(target&&v>=0&&target[i]!==v){ctx.strokeStyle='#e0302e';ctx.lineWidth=2;ctx.beginPath();const a=x*cell+cell*.2,b=y*cell+cell*.2,c=cell*.6;ctx.moveTo(a,b);ctx.lineTo(a+c,b+c);ctx.stroke()}}
  if(N>16){ctx.strokeStyle='rgba(0,0,0,.06)';ctx.lineWidth=1;for(let k=0;k<=N;k+=N%2?N>>1:8){}}
- status()}
+ status();drawRef()}
 function status(){const used=grid.filter(v=>v>=0).length;
  if(target){let need=0,ok=0;target.forEach((t,i)=>{if(t>=0){need++;if(grid[i]===t)ok++}});const wrong=grid.filter((v,i)=>v>=0&&target[i]!==v).length;
   $('#prog').textContent=`${PATS[curPat]?PATS[curPat].name:'照片'} ${ok}/${need}`+(wrong?` · ${wrong}颗放错`:'');
@@ -237,7 +240,7 @@ function fill(i){const from=grid[i],to=cur;if(from===to)return;const st=[i];whil
 let down=false,last=-1;
 const PT=new Map();let gest=null,stroke=null;
 const W$=$('#wrap');
-W$.addEventListener('pointerdown',e=>{if(e.target.closest('#zoom'))return;try{W$.setPointerCapture(e.pointerId)}catch(_){}PT.set(e.pointerId,{x:e.clientX,y:e.clientY});
+W$.addEventListener('pointerdown',e=>{if(e.target.closest('#zoom,#ref'))return;try{W$.setPointerCapture(e.pointerId)}catch(_){}PT.set(e.pointerId,{x:e.clientX,y:e.clientY});
  if(PT.size===2){ // 第二根手指：取消刚开始的这一笔，进入拖动/缩放
   if(down&&stroke){grid=stroke;undo.pop();draw()}down=false;stroke=null;
   const [p,q]=[...PT.values()];gest={d:Math.hypot(p.x-q.x,p.y-q.y)||1,z:Z,mx:(p.x+q.x)/2,my:(p.y+q.y)/2,ox:OX,oy:OY};return}
@@ -301,6 +304,21 @@ $('#bAuto').onclick=()=>{if(auto){stopAuto();save();return}
  if(!order.length){status.done=false;draw();return}
  $('#bAuto').textContent='⏸ 暂停';$('#bAuto').classList.add('on');let k=0;const per=Math.max(1,Math.ceil(order.length/120));
  auto=setInterval(()=>{for(let j=0;j<per&&k<order.length;j++,k++){const i=order[k];grid[i]=target[i];cur=target[i]}draw();if(k>=order.length){stopAuto();save()}},30)};
+
+const refc=document.getElementById('refc'),rx=refc.getContext('2d');
+function drawRef(){const R=$('#ref');if(!target){R.style.display='none';return}R.style.display='block';
+ let x0=N,y0=N,x1=-1,y1=-1;target.forEach((v,i)=>{if(v>=0){const x=i%N,y=(i/N)|0;x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y)}});if(x1<0){R.style.display='none';return}
+ const n=Math.max(x1-x0+1,y1-y0+1),k=Math.max(4,Math.floor(400/n)),S=n*k;refc.width=refc.height=S;rx.fillStyle='#fff';rx.fillRect(0,0,S,S);
+ const ox=x0-Math.floor((n-(x1-x0+1))/2),oy=y0-Math.floor((n-(y1-y0+1))/2);
+ target.forEach((v,i)=>{if(v<0)return;const x=(i%N-ox)*k,y=(((i/N)|0)-oy)*k;rx.fillStyle=PAL[v][1];rx.fillRect(x,y,k,k);if(grid[i]===v){}});
+ // 已拼好的打勾淡化不需要，画当前可视区域框
+ const w=$('#wrap'),cc=FIT*Z/N,vx=(-OX)/cc-ox,vy=(-OY)/cc-oy,vw=w.clientWidth/cc,vh=w.clientHeight/cc;
+ if(Z>1.05){rx.strokeStyle='#e0302e';rx.lineWidth=Math.max(3,k*.4);rx.strokeRect(vx*k,vy*k,vw*k,vh*k)}
+ drawRef.map={ox,oy,n}}
+$('#ref').onclick=e=>{const R=$('#ref');if(!R.classList.contains('big')){R.classList.add('big');$('#reft').textContent='点图跳到那里 · 点文字收起';return}
+ if(e.target.id==='reft'){R.classList.remove('big');$('#reft').textContent='参考图 · 点我放大';return}
+ const m=drawRef.map,r=refc.getBoundingClientRect(),gx=(e.clientX-r.left)/r.width*m.n+m.ox,gy=(e.clientY-r.top)/r.height*m.n+m.oy,w=$('#wrap'),cc=FIT*Z/N;
+ if(Z<1.5){Z=Math.max(1,Math.min(5,26*N/FIT))}const c2=FIT*Z/N;OX=w.clientWidth/2-gx*c2;OY=w.clientHeight/2-gy*c2;layout()};
 function openM(){$('#msk').classList.add('show')}function closeM(){$('#msk').classList.remove('show')}
 $('#msk').onclick=e=>{if(e.target.id==='msk')closeM()};
 // ⤢ 全屏 / ✕ 退出
