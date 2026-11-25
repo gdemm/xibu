@@ -15,7 +15,7 @@ import { PED_LOOKS } from './pedmodels.js';
 import { playerJump, airStep, updateDrop } from './drop.js';
 import { partyLook, toonify } from './party.js';
 import { spawnVehicles, driveVehicle, flyVehicle, poseVehicle, inFootprint, vehicleBox, exitSpot } from './vehicles.js';
-import { autoDrive, resetAuto } from './autodrive.js';
+import { autoDrive, resetAuto, routePath } from './autodrive.js';
 import { lifePhone, lifeRadio } from './freelife.js';
 import { setupFree, updateFree, freeKilled, freeShot, freeNoise, freeCleanup, crime as freeCrime, freeRobStart, freeRobStop, toggleMask } from './freeroam.js';
 import { setupWanted, updateWanted, addStars, addCash, shotCops, canJack, jack, robStart, robStop, COP_ENTITY } from './wanted.js';
@@ -475,13 +475,17 @@ function updateCarButton() {
   b.classList.toggle('hidden', !show); if (show) b.textContent = P.inCar ? '下车' : nearestCar()?.driver ? '抢车' : '上车';
   const hint = $('carHint'); if (hint) { hint.classList.toggle('hidden', !show || isTouch); if (show) hint.textContent = (P.inCar ? 'F 下车' : 'F 上车 ' + nearestCar()?.T.name); }
   document.body.classList.toggle('driving', !!P.inCar); document.body.classList.toggle('heli', !!P.inCar?.T.fly);
-  const ab = $('bAuto'); if (ab) ab.classList.toggle('hidden', !(P.inCar && !P.inCar.T.fly && G.br && G.player?.alive));
+  const jobOn = G.free && G.life?.job;
+  const ab = $('bAuto'); if (ab) { ab.classList.toggle('hidden', !(G.player?.alive && ((P.inCar && !P.inCar.T.fly && (G.br || (jobOn && !P.inCar.T.water))) || (!P.inCar && jobOn)))); if (!P.auto) ab.textContent = P.inCar ? '自动驾驶' : '自动寻路'; ab.classList.toggle('foot', !P.inCar); }
+  if (P.auto && G.free && !jobOn) setAuto(false, '任务结束，自动寻路停止');
 }
+const l0 = (a, b) => Math.hypot(a, b);
 function setAuto(on, msg) {
-  if (on && (!P.inCar || P.inCar.T.fly || !G.br)) return;
-  P.auto = !!on; resetAuto(P.inCar);
-  const b = $('bAuto'); if (b) { b.classList.toggle('on', P.auto); b.textContent = P.auto ? '自动中' : '自动驾驶'; }
-  if (msg || on) HUD.centerMsg(msg || '自动驾驶 · 沿公路开往安全区，碰摇杆接管', 1600);
+  const jobOn = G.free && G.life?.job;
+  if (on && !(jobOn ? (!P.inCar || (!P.inCar.T.fly && !P.inCar.T.water)) : (P.inCar && !P.inCar.T.fly && G.br))) return;
+  P.auto = !!on; resetAuto(P.inCar); P.autoPath = null;
+  const b = $('bAuto'); if (b) { b.classList.toggle('on', P.auto); b.textContent = P.auto ? '自动中' : (P.inCar ? '自动驾驶' : '自动寻路'); }
+  if (msg || on) HUD.centerMsg(msg || (jobOn ? (P.inCar ? '自动驾驶 · 沿公路开往任务点，碰摇杆接管' : '自动寻路 · 沿路跑向任务点，碰摇杆取消') : '自动驾驶 · 沿公路开往安全区，碰摇杆接管'), 1600);
 }
 function updateDriving(dt) {
   const p = G.player, v = P.inCar;
@@ -490,6 +494,7 @@ function updateDriving(dt) {
   // 自动驾驶: any manual throttle / steering takes the wheel back
   if (P.auto) {
     if (Math.abs(thr) > 0.15 || Math.abs(st) > 0.1 || v.T.fly) setAuto(false, '已切换手动驾驶');
+    else if (G.free && G.life?.job) { const t = G.life.job.tgt; const r = autoDrive(v, dt, G.map, G.vehicles, { x: t.x, z: t.z }, { arrive: 4, arriveMsg: '已到达任务点' }); thr = r.thr; st = r.st; if (r.done && !G.life.job) setAuto(false, r.msg); else if (r.done) { thr = 0; st = 0; } }
     else { const B = G.br, z = B ? (B.next && B.stage !== 'final' ? B.next.c : B.c) : null;
       if (!z) setAuto(false); else { const r = autoDrive(v, dt, G.map, G.vehicles, { x: z.x, z: z.y }); thr = r.thr; st = r.st; if (r.done) setAuto(false, r.msg); } }
   }
@@ -677,10 +682,22 @@ function updatePlayer(dt) {
   if (P.keys.KeyW) fz += 1; if (P.keys.KeyS) fz -= 1; if (P.keys.KeyD) fx += 1; if (P.keys.KeyA) fx -= 1;
   fx += P.joyX; fz += -P.joyY;
   if (P.runLock) { fx = 0; fz = 1; }
+  // 自由模式任务: 自动寻路 (on foot) - follow the road route to the job target, any stick input cancels
+  if (P.auto && !P.inCar) {
+    if (l0(fx, fz) > 0.15) setAuto(false, '已取消自动寻路');
+    else if (G.free && G.life?.job) {
+      const t = G.life.job.tgt;
+      if (!P.autoPath || (P.autoRe -= dt) < 0 || Math.hypot(P.autoPath.tx - t.x, P.autoPath.tz - t.z) > 3) { P.autoPath = { pts: routePath(G.map, p.pos.x, p.pos.z, t.x, t.z), i: 0, tx: t.x, tz: t.z }; P.autoRe = 4; }
+      const A = P.autoPath; let w = A.pts[A.i];
+      while (w && A.i < A.pts.length - 1 && Math.hypot(w.x - p.pos.x, w.z - p.pos.z) < 2.2) w = A.pts[++A.i];
+      if (Math.hypot(t.x - p.pos.x, t.z - p.pos.z) < 2.5) { fx = 0; fz = 0; }
+      else if (w) { const want = Math.atan2(-(w.x - p.pos.x), -(w.z - p.pos.z)); const dy = Math.atan2(Math.sin(want - p.yaw), Math.cos(want - p.yaw)); p.yaw += dy * Math.min(1, dt * 6); fx = 0; fz = 1; P.autoRun = true; }
+    }
+  }
   const l = Math.hypot(fx, fz); if (l > 1) { fx /= l; fz /= l; }
   const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
   let speed = G.weapon.melee ? 6.8 : G.weapon.id === 'sniper' ? 5.4 : 6.0;
-  const running = (P.sprint || P.runLock || P.keys.ShiftLeft) && fz > 0.5 && !p.crouch && !P.scoped;
+  const running = (P.sprint || P.runLock || P.keys.ShiftLeft || (P.auto && !P.inCar)) && fz > 0.5 && !p.crouch && !P.scoped;
   if (running) speed *= 1.45; p.running = running;
   if (p.crouch) speed *= 0.5; if (P.scoped) speed *= 0.55; if (P.draw > 0) speed *= 0.7;
   const mx = (-sy * fz + cy * fx) * speed * dt, mz = (-cy * fz - sy * fx) * speed * dt;

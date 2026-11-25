@@ -68,7 +68,7 @@ export function autoDrive(v, dt, map, vehicles, dest, opt = {}) {
   // advance past waypoints we've reached (or that are behind us on the way to the next one)
   while (A.wp < P.length - 1) { const w = P[A.wp]; if (Math.hypot(w.x - v.pos.x, w.z - v.pos.z) < 5 + Math.abs(v.speed) * 0.25) A.wp++; else break; }
   const last = P[P.length - 1], toEnd = Math.hypot(last.x - v.pos.x, last.z - v.pos.z);
-  if (toEnd < (opt.arrive || 6)) return { thr: v.speed > 0.5 ? -1 : 0, st: 0, done: Math.abs(v.speed) < 0.6, msg: '已到达安全区，自动驾驶结束' };
+  if (toEnd < (opt.arrive || 6)) return { thr: v.speed > 0.5 ? -1 : 0, st: 0, done: Math.abs(v.speed) < 0.6, msg: opt.arriveMsg || '已到达安全区，自动驾驶结束' };
   const w = P[A.wp], fx = -Math.sin(v.yaw), fz = -Math.cos(v.yaw);
   // keep to the right-hand lane on road legs (target shifted 1.7 m right of the leg's direction)
   // pure pursuit: aim at a point ~9 m (+ speed) ahead along the current leg, shifted into the lane
@@ -103,5 +103,11 @@ export function autoDrive(v, dt, map, vehicles, dest, opt = {}) {
   const st = Math.max(-1, Math.min(1, -err * 2.2));
   const thr = Math.max(-1, Math.min(1, (tgt - v.speed) / 3));
   return { thr, st, done: false };
+}
+// GPS route (road waypoints then the target) for the minimap / on-foot auto-path
+export function routePath(map, sx, sz, tx, tz) {
+  if (!map.roads?.length) return [{ x: tx, z: tz }];
+  if (GRAPH_ROADS !== map.roads) { GRAPH = buildGraph(map.roads); GRAPH_ROADS = map.roads; }
+  return route(GRAPH, sx, sz, tx, tz);
 }
 export function resetAuto(v) { if (v) v.auto = null; }

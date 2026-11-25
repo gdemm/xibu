@@ -6,6 +6,7 @@
 //  - 沼泽(海上, 开船能到) + 鳄鱼; 也有鳄鱼溜进城里的沙滩和泳池
 import * as THREE from 'three';
 import { spawnVehicles } from './vehicles.js';
+import { routePath } from './autodrive.js';
 
 const $ = (id) => document.getElementById(id);
 const R = (a, b) => a + Math.random() * (b - a);
@@ -424,7 +425,9 @@ export function lifeMinimap(G, ctx, mx, mz) {
   const L = G.life; if (!L) return;
   ctx.save();
   for (const a of L.gators) if (a.alive) { ctx.fillStyle = '#4a7a2a'; ctx.fillRect(mx(a.m.position.x) - 2, mz(a.m.position.z) - 1, 4, 2); }
-  if (L.job) { const p = G.player.pos, t = L.job.tgt; ctx.strokeStyle = '#ff2bd6'; ctx.lineWidth = 2.5; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(mx(p.x), mz(p.z)); ctx.lineTo(mx(t.x), mz(t.z)); ctx.stroke(); ctx.setLineDash([]);
+  if (L.job) { const p = G.player.pos, t = L.job.tgt;
+    if (!L.gps || G.now - L.gps.at > 1 || L.gps.tx !== t.x || L.gps.tz !== t.z) L.gps = { at: G.now, tx: t.x, tz: t.z, pts: routePath(G.map, p.x, p.z, t.x, t.z) };
+    ctx.strokeStyle = '#ff2bd6'; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(mx(p.x), mz(p.z)); for (const w of L.gps.pts) ctx.lineTo(mx(w.x), mz(w.z)); ctx.stroke();
     ctx.fillStyle = '#ffd24a'; ctx.beginPath(); ctx.arc(mx(t.x), mz(t.z), 4.5, 0, 7); ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke(); }
   ctx.restore();
 }
