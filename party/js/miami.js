@@ -7,7 +7,7 @@
 // ONE mesh, neon in a few unlit chunk meshes, all signs in ONE textured mesh; collision boxes carry no geometry.
 import * as THREE from 'three';
 import { canvasTex, noise, navCore, lodUpdate } from './island.js';
-import { Bucket, Grid, mat4, BOX, CYL8, ICO, PLANE, WEDGES, PETALS, UMB_COLS } from './islanddeco.js';
+import { Bucket, Grid, mat4, BOX, CYL8, CYL10, ICO, PLANE, WEDGES, PETALS, UMB_COLS } from './islanddeco.js';
 import { PropSet, propSize, hasProps } from './props.js';
 
 export const MIAMI = { minX: -150, maxX: 150, minZ: -130, maxZ: 130 };
@@ -124,6 +124,39 @@ export function buildMiami(scene, quality, seaCol = 0x0fb8c6) {
       // art-deco: horizontal racing stripes + neon tube along the roofline on the street side
       if (o.deco === 'deco') { wp(ax, fixed, (a0 + a1) / 2, h - 0.9, a1 - a0, 0.22, 0.08, sg * (t / 2 + 0.05), 0xffffff); wp(ax, fixed, (a0 + a1) / 2, h - 1.3, a1 - a0, 0.12, 0.08, sg * (t / 2 + 0.05), col === 0xfff1f5 ? 0x9fe3d6 : 0xffffff); }
       if (o.neon && gaps.length) { const nc = o.neon; wp(ax, fixed, (a0 + a1) / 2, h + 0.2, a1 - a0 + 0.4, 0.12, 0.12, sg * 0.42, nc, N(cx, cz)); for (const pp of [a0 + 0.2, a1 - 0.2]) wp(ax, fixed, pp, h / 2, 0.12, h, 0.12, sg * 0.42, nc, N(cx, cz)); }
+    }
+    // 2026-11-25 GTA6 式海滨大道外观: 圆角楼角 + 阶梯顶冠 + 舷窗 + 阳台栏杆 + 双色壁柱; 住宅: 陶土瓦坡顶 + 白拱门廊
+    if (o.deco === 'deco') {
+      const acc = col === 0xfff1f5 ? 0x52dcc8 : col === 0x52dcc8 ? 0xff8fb4 : 0xfff1f5;
+      const sw = walls.find(w => w[4].length) || walls[1], [sax, sfx, sa0, sa1, , ssg] = sw;
+      // rounded corners on the street front (visual only)
+      for (const ca of [sa0, sa1]) { const px = sax === 'x' ? ca : sfx, pz = sax === 'x' ? sfx : ca;
+        bk.add(CYL10, mat4(px, h / 2, pz, 0, 0, 0, 1.15, h, 1.15), col);
+        for (const ry of h > 6 ? [2.6, 5.4] : [2.6]) dk.add(CYL10, mat4(px, ry, pz, 0, 0, 0, 1.25, 0.22, 1.25), 0xffffff);
+        bk.add(CYL10, mat4(px, h + 0.35, pz, 0, 0, 0, 1.3, 0.5, 1.3), 0xffffff);
+        if (o.neon) N(cx, cz).add(CYL10, mat4(px, h + 0.66, pz, 0, 0, 0, 1.34, 0.1, 1.34), o.neon); }
+      // two-tone pilasters between the windows
+      for (let p = sa0 + 3.8; p <= sa1 - 3.8; p += 7.2) wp(sax, sfx, p, h / 2, 0.55, h, 0.18, ssg * (t / 2 + 0.06), acc);
+      // porthole windows in a band above the door
+      for (let p = sa0 + 2.5; p <= sa1 - 2.5; p += 2.2) { const px = sax === 'x' ? p : sfx + ssg * (t / 2 + 0.02), pz = sax === 'x' ? sfx + ssg * (t / 2 + 0.02) : p;
+        if (h > 6) dk.add(CYL10, mat4(px, h - 2.2, pz, sax === 'x' ? Math.PI / 2 : 0, 0, sax === 'x' ? 0 : Math.PI / 2, 0.38, 0.1, 0.38), 0x5fb4e8); }
+      // balconies with white railings (tall ones)
+      if (h > 6) for (let p = sa0 + 2; p <= sa1 - 2; p += 3.6) { if (sw[4].some(g => Math.abs(p - g) < door / 2 + 1.2)) continue;
+        wp(sax, sfx, p, 3.35, 2.4, 0.16, 1.1, ssg * 0.75, 0xffffff); wp(sax, sfx, p, 3.85, 2.4, 0.08, 0.08, ssg * 1.28, 0xffffff); wp(sax, sfx, p, 3.6, 2.4, 0.5, 0.04, ssg * 1.3, acc); }
+      // stepped ziggurat crown on the taller hotels
+      if (h > 6 && !o.fin) { let sw2 = Math.min(w, d) * 0.5;
+        for (let k = 0; k < 3; k++) { box(bk, cx, h + 0.9 + k * 0.7, cz, sw2, 0.7, sw2 * 0.6, k % 2 ? acc : 0xffffff); sw2 *= 0.72; }
+        if (o.neon) box(N(cx, cz), cx, h + 3.05, cz, sw2 * 1.45, 0.1, sw2 * 0.9, o.neon); }
+    }
+    if (o.deco === 'house') {
+      const tc = [0xc8643c, 0xb85a36, 0xd27448][(rand() * 3) | 0], ov = 0.5, rh = Math.min(w, d) * 0.28;
+      // hip-ish tile roof: two sloped slabs along the long side + end caps
+      const ang = Math.atan(rh / ((w >= d ? d : w) / 2));
+      if (w >= d) for (const sd of [-1, 1]) bk.add(BOX, mat4(cx, h + 0.45 + rh / 2, cz + sd * d / 4, -sd * ang, 0, 0, w + ov * 2, 0.22, (d / 2) / Math.cos(ang) + ov), tc);
+      else for (const sd of [-1, 1]) bk.add(BOX, mat4(cx + sd * w / 4, h + 0.45 + rh / 2, cz, 0, 0, sd * ang, (w / 2) / Math.cos(ang) + ov, 0.22, d + ov * 2), tc);
+      // white arcade porch on the door side
+      const sw = walls.find(w2 => w2[4].length) || walls[1], [sax, sfx, , , gaps, ssg] = sw, g0 = gaps[0];
+      if (g0 != null) { for (const sd of [-1.6, 1.6]) wp(sax, sfx, g0 + sd, 1.35, 0.3, 2.7, 0.3, ssg * 1.4, 0xffffff); wp(sax, sfx, g0, 2.85, 3.9, 0.3, 1.6, ssg * 0.85, 0xffffff); wp(sax, sfx, g0, 3.05, 4.3, 0.14, 1.9, ssg * 0.95, tc); }
     }
     // art-deco centre fin on the street front with a neon edge
     if (o.fin) { const [ax, fixed, a0, a1, , sg] = walls.find(w => w[4].length) || walls[0]; const mid = (a0 + a1) / 2;

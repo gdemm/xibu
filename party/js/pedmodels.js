@@ -48,10 +48,10 @@ export function posePed(P, i, ped, far, dt = 1 / 60, pp = null) {
   u.acc = (u.acc || 0) + dt;
   if (lo && (P.frame + i) % 3) return;
   const step = u.acc; u.acc = 0;
-  const run = ped.fleeT > 0, mv = ped.moving;
+  const run = ped.fleeT > 0 || ped.fight > 0 || ped.jog, mv = ped.moving;
   const mx = mv ? Math.sin(ped.yaw) : 0, mz = mv ? Math.cos(ped.yaw) : 0;
   u.phoneMesh.visible = !!ped.phone;
-  animateSoldier(g, Math.min(step, 0.1), { moveX: mx, moveZ: mz, speed: mv ? (run ? 4.2 : 1.2) : 0, yaw: g.rotation.y, wep: 'none', firing: false, crouch: false, aim: false, pitch: 0, reload: -1, ground: true, vy: 0 });
+  animateSoldier(g, Math.min(step, 0.1), { moveX: mx, moveZ: mz, speed: mv ? (run ? 4.2 : 1.2) : 0, yaw: g.rotation.y, wep: 'none', cheer: !!ped.cheer && !mv, firing: false, crouch: false, aim: false, pitch: 0, reload: -1, ground: true, vy: 0 });
 }
 export function flushPeds(P) { P.frame++; }
 export function disposePeds(P, scene) {

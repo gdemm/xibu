@@ -16,6 +16,7 @@ import { playerJump, airStep, updateDrop } from './drop.js';
 import { partyLook, toonify } from './party.js';
 import { spawnVehicles, driveVehicle, flyVehicle, poseVehicle, inFootprint, vehicleBox, exitSpot } from './vehicles.js';
 import { autoDrive, resetAuto } from './autodrive.js';
+import { lifePhone, lifeRadio } from './freelife.js';
 import { setupFree, updateFree, freeKilled, freeShot, freeNoise, freeCleanup, crime as freeCrime, freeRobStart, freeRobStop, toggleMask } from './freeroam.js';
 import { setupWanted, updateWanted, addStars, addCash, shotCops, canJack, jack, robStart, robStop, COP_ENTITY } from './wanted.js';
 import { sfx, unlockAudio } from './audio.js';
@@ -805,6 +806,8 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') { if (!ejectOrOpen()) toggleCar(); }
   if (e.code === 'KeyG' && P.inCar) setAuto(!P.auto);
   if (e.code === 'KeyH' && !e.repeat && G.wanted) robStart(G);
+  if (e.code === 'KeyP' && !e.repeat && G.free) lifePhone(G);
+  if (e.code === 'KeyY' && !e.repeat && G.free) lifeRadio(G, WH);
   if (e.code === 'KeyV') toggleView();
   if (e.code === 'KeyB' && !e.repeat) toggleBag();
   if (e.code === 'KeyE' && !e.repeat) pickNear();
@@ -844,6 +847,8 @@ function btnDown(btn, el) {
   else if (btn === 'auto') setAuto(!P.auto);
   else if (btn === 'rob') robStart(G);
   else if (btn === 'mask') toggleMask(G);
+  else if (btn === 'phone') { if (G.free) lifePhone(G); }
+  else if (btn === 'radio') { if (G.free) lifeRadio(G, WH); }
   else if (btn === 'lead') swapLead();
   else if (btn === 'eject') ejectOrOpen();
   else if (btn === 'view') toggleView();

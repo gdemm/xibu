@@ -3,6 +3,7 @@
 // 核心: 目击才报警 (crime), 6 星通缉 + 身份特征 (脸/衣/车), 路人 (InstancedMesh),
 //       便利店摄像头 / 珠宝店二选一 / 运钞车 / 安全屋存款 / 医院复活.
 import * as THREE from 'three';
+import { setupLife, updateLife, lifeCleanup, lifeCrime, lifeShot, lifeMinimap } from './freelife.js';
 import { addStars, addCash, refreshWantedHud } from './wanted.js';
 import { spawnVehicles, driveVehicle, poseVehicle, vehicleBox, inFootprint } from './vehicles.js';
 import { autoDrive, resetAuto } from './autodrive.js';
@@ -82,6 +83,7 @@ function addMarker(G, scene, x, z, color, text, kind) {
 }
 
 export function freeCleanup(G, scene) {
+  lifeCleanup(G, scene);
   const F = G.freeState; if (!F) return;
   for (const l of F.locs || []) { if (l.ring) { scene.remove(l.ring); l.ring.geometry?.dispose?.(); l.ring.material?.dispose?.(); } if (l.sp) { scene.remove(l.sp); l.sp.material?.map?.dispose?.(); l.sp.material?.dispose?.(); } }
   for (const c of F.cams || []) if (c.m) { scene.remove(c.m); }
@@ -212,6 +214,7 @@ export function setupFree(G, h) {
   if (G.ammo && G.ammo.pistol) { G.ammo.pistol.mag = Math.max(1, h.WEAPONS?.pistol?.mag || 12); G.ammo.pistol.reserve = Math.max(24, h.WEAPONS?.pistol?.reserve || 48); }
   h.setWeapon?.('pistol', true);
   refreshWantedHud(G);
+  setupLife(G, h, F);
 }
 
 // ---------------- pedestrians ----------------
@@ -275,7 +278,7 @@ function updatePeds(G, dt, h) {
     } else if (p.idleT > 0) {
       p.idleT -= dt;
     } else {
-      speed = 1.2;
+      speed = p.jog ? 3.0 : 1.2;
       if (Math.hypot(tx - p.pos.x, tz - p.pos.z) < 0.6) {
         pickNeighbor(G, p); tx = p.tgt.x; tz = p.tgt.z;
         if (p.look?.talker && Math.random() < 0.3) { p.idleT = 6 + Math.random() * 8; p.phone = Math.random() < 0.6; }
@@ -375,6 +378,7 @@ export function crime(G, h, n, why, pos, force = false) {
   if (car) { W.traits.car = true; W.carRef = car; }
   W.hollow = !!G.freeMask;
   addStars(G, h, n, why);
+  lifeCrime(G, why, n);
   scare(G, at, 26);
   return true;
 }
@@ -383,6 +387,7 @@ export function crime(G, h, n, why, pos, force = false) {
 export function freeShot(G, h, origin, dir, w) {
   const F = G.freeState; if (!F || w.melee) return;
   const wallD = G.map.rayWorld(origin, dir, w.range || 120);
+  if (lifeShot(G, h, origin, dir, w, wallD)) return;
   _ray.set(origin, dir);
   for (const c of F.cams) {
     if (c.broken) continue;
@@ -636,6 +641,7 @@ export function updateFree(G, dt, h) {
   updateArmored(G, dt, h);
   updateTraffic(G, dt, h);
   updateLocations(G, dt, h);
+  updateLife(G, dt, h);
   // pedestrians run over by the player's car
   if (h.inCar?.() && Math.abs(h.inCar().speed) > 4 && G.now > (F.runT || 0)) {
     const v = h.inCar();
@@ -682,6 +688,7 @@ export function freeMinimap(G, ctx, mx, mz, sx, sz) {
   for (const ped of F.peds) if (ped.alive) dot(ped.pos.x, ped.pos.z, '#ffffff', 1.3);
   ctx.fillStyle = '#9aa0a8';
   for (const c of F.traffic || []) if (c.civ && !c.dead) ctx.fillRect(mx(c.pos.x) - 2, mz(c.pos.z) - 2, 4, 4);
+  lifeMinimap(G, ctx, mx, mz);
   if (G.wanted?.stars > 0 && G.wanted.hasSeen) dot(G.wanted.lastSeen.x, G.wanted.lastSeen.y, '#ff2bd6', 2);
   ctx.restore();
 }
