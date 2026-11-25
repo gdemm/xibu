@@ -261,7 +261,7 @@ export function exitSpot(v, free, support) {
 
 // ---------------- 迈阿密 cars: each one merged into ONE vertex-coloured mesh + ONE glass mesh (2 draw calls; police +2 lights +1 decal) ----------------
 const CARS = { coupe: 1, muscle: 1, convert: 1, police: 1, pickup: 1 };
-const CARMAT = new THREE.MeshLambertMaterial({ vertexColors: true }), GLASSMAT = new THREE.MeshLambertMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.55 });
+const CARMAT = new THREE.MeshLambertMaterial({ vertexColors: true }), GLASSMAT = new THREE.MeshLambertMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.38, depthWrite: false });
 const SIREN_R = new THREE.MeshBasicMaterial({ color: 0xff2a3a }), SIREN_B = new THREE.MeshBasicMaterial({ color: 0x2a6bff }), SIREN_OFF = new THREE.MeshLambertMaterial({ color: 0x5a5f6a });
 let POLICE_TEX = null;
 function policeTex() {
@@ -279,6 +279,8 @@ function carGeo(type, color) {
     if (list === P) { col.set(c); const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = col.r; a[i * 3 + 1] = col.g; a[i * 3 + 2] = col.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); } list.push(g); };
   const bx = (w, h, d, x, y, z, c, rx = 0) => add(P, new THREE.BoxGeometry(w, h, d), x, y, z, c, rx);
   const gl = (w, h, d, x, y, z, rx = 0) => add(G, new THREE.BoxGeometry(w, h, d), x, y, z, 0, rx);
+  // hollow cabin (roof slab + corner pillars + seat backs) so the driver shows through the glass; was a solid block
+  const cab = (w, h, d, x, y, z, c) => { bx(w, 0.07, d, x, y + h / 2 - 0.035, z, c); for (const sx of [-1, 1]) for (const sz of [-1, 1]) bx(0.07, h, 0.08, x + sx * (w / 2 - 0.035), y, z + sz * (d / 2 - 0.04), c); for (const sx of [-1, 1]) bx(w / 2 - 0.12, h * 0.75, 0.08, x + sx * w / 4, y - h * 0.12, z + d / 2 - 0.12, 0x2a2c30); };
   const CHROME = 0xd8dde4, DARK = 0x22252b, TIRE = 0x1b1c1f, LIGHT = 0xfff6c8, TAIL = 0xff2244;
   const wheel = (x, z, r = 0.38, w = 0.3) => { add(P, new THREE.CylinderGeometry(r, r, w, 10), x, r, z, TIRE, 0, 0, Math.PI / 2); add(P, new THREE.CylinderGeometry(r * 0.55, r * 0.55, w + 0.02, 8), x, r, z, CHROME, 0, 0, Math.PI / 2); };
   const T = VTYPES[type], L = T.len * 2, W = T.wid * 2;
@@ -309,11 +311,11 @@ function carGeo(type, color) {
     } }
   if (type === 'coupe') {         // low wedge: sloped hood, short fastback cabin, wing
     bx(W - 0.04, 0.14, 1.3, 0, lowY + 0.3, -L / 2 + 0.75, body, -0.12);
-    bx(W - 0.3, 0.42, 1.5, 0, lowY + 0.46, 0.35, body); gl(W - 0.34, 0.4, 0.06, 0, lowY + 0.45, -0.45, -0.75); gl(W - 0.2, 0.32, 1.1, 0, lowY + 0.48, 0.35);
+    cab(W - 0.3, 0.42, 1.5, 0, lowY + 0.46, 0.35, body); gl(W - 0.34, 0.4, 0.06, 0, lowY + 0.45, -0.45, -0.75); gl(W - 0.2, 0.32, 1.1, 0, lowY + 0.48, 0.35);
     bx(W - 0.1, 0.06, 0.4, 0, lowY + 0.62, L / 2 - 0.25, dark2); for (const s of [-1, 1]) bx(0.06, 0.3, 0.2, s * 0.6, lowY + 0.45, L / 2 - 0.25, dark2);
     for (const s of [-1, 1]) bx(0.04, 0.08, L * 0.7, s * (W / 2 + 0.01), lowY + 0.05, 0, 0xffffff);
   } else if (type === 'muscle') { // long hood with scoop, twin racing stripes, chrome
-    bx(W - 0.3, 0.46, 1.5, 0, lowY + 0.52, 0.45, body); gl(W - 0.34, 0.42, 0.06, 0, lowY + 0.52, -0.35, -0.55); gl(W - 0.22, 0.34, 1.2, 0, lowY + 0.54, 0.45);
+    cab(W - 0.3, 0.46, 1.5, 0, lowY + 0.52, 0.45, body); gl(W - 0.34, 0.42, 0.06, 0, lowY + 0.52, -0.35, -0.55); gl(W - 0.22, 0.34, 1.2, 0, lowY + 0.54, 0.45);
     bx(0.5, 0.14, 0.7, 0, lowY + 0.35, -L / 2 + 1.0, DARK);
     for (const s of [-0.22, 0.22]) { bx(0.16, 0.02, L + 0.01, s, lowY + 0.3, 0, 0xffffff); bx(0.16, 0.02, 1.5, s, lowY + 0.76, 0.45, 0xffffff); }
     for (const s of [-1, 1]) bx(0.03, 0.06, L * 0.8, s * (W / 2 + 0.01), lowY - 0.05, 0, CHROME);
@@ -322,11 +324,11 @@ function carGeo(type, color) {
     for (const z of [0.05, 0.85]) for (const s of [-1, 1]) { bx(0.55, 0.12, 0.55, s * 0.42, lowY + 0.3, z, 0xf4efe6); bx(0.55, 0.5, 0.12, s * 0.42, lowY + 0.5, z + 0.28, 0xf4efe6); }
     bx(W - 0.3, 0.05, 0.1, 0, lowY + 0.27, L / 2 - 0.5, CHROME); bx(0.4, 0.28, 0.08, -0.42, lowY + 0.38, -0.25, DARK);
   } else if (type === 'police') { // sedan, two-tone doors, push bar
-    bx(W - 0.3, 0.48, 1.9, 0, lowY + 0.48, 0.2, body); gl(W - 0.34, 0.42, 0.06, 0, lowY + 0.48, -0.78, -0.6); gl(W - 0.22, 0.36, 1.6, 0, lowY + 0.5, 0.2); gl(W - 0.34, 0.4, 0.06, 0, lowY + 0.48, 1.18, 0.6);
+    cab(W - 0.3, 0.48, 1.9, 0, lowY + 0.48, 0.2, body); gl(W - 0.34, 0.42, 0.06, 0, lowY + 0.48, -0.78, -0.6); gl(W - 0.22, 0.36, 1.6, 0, lowY + 0.5, 0.2); gl(W - 0.34, 0.4, 0.06, 0, lowY + 0.48, 1.18, 0.6);
     for (const s of [-1, 1]) bx(0.04, 0.5, 2.2, s * (W / 2 + 0.01), lowY, 0.1, 0x1b2a6b);
     bx(W - 0.4, 0.4, 0.1, 0, lowY - 0.05, -L / 2 - 0.22, DARK); bx(W - 0.5, 0.08, 0.6, 0, lowY + 0.76, 0.0, DARK);   // push bar + light bar base
   } else if (type === 'pickup') { // tall cab + open bed with side walls
-    bx(W - 0.1, 0.62, 1.4, 0, lowY + 0.66, -0.35, body); gl(W - 0.14, 0.48, 0.06, 0, lowY + 0.66, -1.08, -0.3); gl(W - 0.04, 0.4, 1.0, 0, lowY + 0.7, -0.35);
+    cab(W - 0.1, 0.62, 1.4, 0, lowY + 0.66, -0.35, body); gl(W - 0.14, 0.48, 0.06, 0, lowY + 0.66, -1.08, -0.3); gl(W - 0.04, 0.4, 1.0, 0, lowY + 0.7, -0.35);
     for (const s of [-1, 1]) bx(0.08, 0.4, 1.9, s * (W / 2 - 0.04), lowY + 0.45, L / 2 - 1.0, body); bx(W, 0.4, 0.08, 0, lowY + 0.45, L / 2 - 0.04, body); bx(W - 0.16, 0.04, 1.9, 0, lowY + 0.27, L / 2 - 1.0, DARK);
     bx(W - 0.1, 0.08, 0.08, 0, lowY + 1.05, -0.9, CHROME);
   }
@@ -336,9 +338,31 @@ function carGeo(type, color) {
   return (CARGEO[key] = { body: merge(P), glass: merge(G) });
 }
 const NEONUNDER = [0xff2bd6, 0x28e8ff, 0x7dff4a, 0xffe600];
+// 2026-11-25 seated driver (shown while an NPC drives; hidden when empty or the player is at the wheel)
+// [x, z, head height above the car's floor line lowY] — head sits just under each roof
+const DRV_SEAT = { coupe: [0.36, 0.2, 0.45], muscle: [0.36, 0.3, 0.52], convert: [0.42, 0.1, 0.55], police: [0.38, -0.05, 0.5], pickup: [0.38, -0.3, 0.74] };
+const DRV_SKIN = [0xffe0c4, 0xf2c6a0, 0xd9a27a, 0xb97c55, 0x8d5a3b], DRV_HAIR = [0x1a1410, 0x3b2616, 0x6b4426, 0xc89a52, 0x9a2a2a, 0x2a2a2a], DRV_SHIRT = [0xff8fb4, 0x52dcc8, 0xffcc6e, 0xb194ff, 0x6fc4ff, 0xffffff, 0xff5fa0];
+const DRV_GEO = { torso: new THREE.BoxGeometry(0.34, 0.4, 0.22), head: new THREE.SphereGeometry(0.12, 12, 10), hair: new THREE.SphereGeometry(0.128, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), arm: new THREE.BoxGeometry(0.08, 0.08, 0.34), wheel: new THREE.TorusGeometry(0.15, 0.025, 6, 16), cap: new THREE.CylinderGeometry(0.13, 0.13, 0.06, 12), brim: new THREE.BoxGeometry(0.2, 0.02, 0.12), shades: new THREE.BoxGeometry(0.2, 0.04, 0.03) };
+const DRV_MAT = {}; const drvMat = (c) => DRV_MAT[c] || (DRV_MAT[c] = new THREE.MeshLambertMaterial({ color: c }));
+const rpick = (a) => a[(Math.random() * a.length) | 0];
+function makeDriver(type) {
+  const seat = DRV_SEAT[type]; if (!seat) return null;
+  const lowY = type === 'pickup' ? 0.75 : 0.6, g = new THREE.Group(), cop = type === 'police';
+  const skin = drvMat(rpick(DRV_SKIN)), shirt = drvMat(cop ? 0x1b2a6b : rpick(DRV_SHIRT)), hair = drvMat(rpick(DRV_HAIR));
+  const M = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); g.add(o); return o; };
+  const by = lowY + seat[2] - 0.33;
+  M(DRV_GEO.torso, shirt, 0, by, 0);
+  M(DRV_GEO.head, skin, 0, by + 0.33, -0.01);
+  if (cop) { M(DRV_GEO.cap, drvMat(0x1b2a6b), 0, by + 0.44, 0); M(DRV_GEO.brim, drvMat(0x111111), 0, by + 0.42, -0.1); }
+  else { const h = M(DRV_GEO.hair, hair, 0, by + 0.34, 0.01); h.rotation.x = -0.25; if (Math.random() < 0.45) M(DRV_GEO.shades, drvMat(0x111111), 0, by + 0.35, -0.115); }
+  for (const s of [-1, 1]) { const a = M(DRV_GEO.arm, shirt, s * 0.15, by + 0.1, -0.2); a.rotation.x = 0.35; M(DRV_GEO.head, skin, s * 0.12, by + 0.06, -0.38).scale.setScalar(0.3); }
+  const w = M(DRV_GEO.wheel, drvMat(0x222222), 0, by + 0.08, -0.42); w.rotation.x = -0.35;
+  g.position.set(seat[0], 0, seat[1]); g.visible = false; return g;
+}
 function carMesh(type, color) {
   const { body, glass } = carGeo(type, color), g = new THREE.Group();
   g.add(new THREE.Mesh(body, CARMAT)); if (glass) g.add(new THREE.Mesh(glass, GLASSMAT));
+  { const d = makeDriver(type); if (d) { g.add(d); g.userData.drv = d; } }
   g.userData.wheels = []; g.userData.car = true;
   if (type === 'police') {
     const T = VTYPES.police, W = T.wid * 2, y = 0.6 + 0.76 + 0.09;

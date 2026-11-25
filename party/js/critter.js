@@ -532,6 +532,8 @@ function nextChar() { if (!DECK.length) DECK = CHARS.slice().sort(() => Math.ran
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v, lerp = (a, b, k) => a + (b - a) * k;
 
 // skin: 'blue' | 'red' (team tint + team hat where it fits) | 'player' | anything else (random party look)
+// 2026-11-25 user: 人物太丑, 跟煤气罐一样 -> less chibi: taller + slimmer body, smaller head (applied on top of the KayKit rig)
+const PROP = { head: 0.74, leg: 1.2 };
 export function createSoldier(skin = 'party', variant) {
   if (!T.ok) return BEAN.createSoldier(skin, variant);
   const team = skin === 'blue' || skin === 'red';
@@ -567,18 +569,23 @@ export function createSoldier(skin = 'party', variant) {
   if (exGeo && meshes[0]) { extras = new THREE.SkinnedMesh(exGeo, critterMaterial()); extras.bind(meshes[0].skeleton, meshes[0].bindMatrix); extras.boundingSphere = meshes[0].boundingSphere; meshes[0].parent.add(extras); }
   const bones = {}; model.traverse(o => { if (o.isBone) bones[o.name] = o; });
   const rest = { upperlegl: bones.upperlegl.quaternion.clone(), upperlegr: bones.upperlegr.quaternion.clone() };
+  { // longer legs (uniform bone scale keeps the gun/hand hierarchy unskewed); lift the body so the feet stay on the ground
+    g.updateMatrixWorld(true); const hy = bones.upperlegl.getWorldPosition(new THREE.Vector3()).y, fy = bones.footl.getWorldPosition(new THREE.Vector3()).y;
+    bones.upperlegl.scale.setScalar(PROP.leg); bones.upperlegr.scale.setScalar(PROP.leg); model.position.y += (hy - fy) * (PROP.leg - 1); bones.head.scale.setScalar(PROP.head); }
   // toy blaster in the right hand slot, barrel straight ahead in the holding pose
   const gunT = T.blasters[gunId];
   const gun = gunT.scene.clone(); const gs = GUN_LEN * (STYLE?.gunK ?? 1) / SCALE / (gunT.box.max.z - gunT.box.min.z);
   gun.scale.setScalar(gs);
   const gunPivot = new THREE.Group(); gunPivot.quaternion.copy(T.gunQ); gunPivot.position.copy(T.gunOff);
-  gun.position.set(0, -(gunT.box.min.y + (gunT.box.max.y - gunT.box.min.y) * 0.3) * gs, -(gunT.box.min.z + (gunT.box.max.z - gunT.box.min.z) * (ASSETS ? 0.3 : 0.4)) * gs);
+  // 2026-11-25 fix: the blaster glb's barrel is -Z, so it was held backwards (grip forward). Turn it 180° and grip it near the rear.
+  gun.rotation.y = Math.PI;
+  gun.position.set(0, -(gunT.box.min.y + (gunT.box.max.y - gunT.box.min.y) * 0.3) * gs, (gunT.box.max.z - (gunT.box.max.z - gunT.box.min.z) * (ASSETS ? 0.3 : 0.4)) * gs);
   gunPivot.add(gun); bones.handslotr.add(gunPivot);
   // bow (shown instead of the blaster when the owner carries 弓箭): held in the LEFT fist, arm swung out to the side so it reads
   // from behind; ~1.3 m tall with chunky limbs; the string is pulled toward the right fist while charging (see bowPose)
   const bow = makeBow(BOW3_S / SCALE, BOW3_TH); bow.visible = false; bones.handslotl.add(bow);
   const muzzle = new THREE.Mesh(flashGeo(), flashMat);
-  muzzle.position.set(0, (gunT.box.max.y - gunT.box.min.y) * 0.62 * gs + gun.position.y, gunT.box.max.z * gs + gun.position.z + 0.01);
+  muzzle.position.set(0, (gunT.box.max.y - gunT.box.min.y) * 0.62 * gs + gun.position.y, -gunT.box.min.z * gs + gun.position.z + 0.01);
   muzzle.rotation.set(0, Math.PI, 0); muzzle.scale.setScalar(0.9 / SCALE); muzzle.visible = false; gunPivot.add(muzzle);
   // hat on the head bone (head-bone space is upright in the rest pose)
   let hatMesh = null;
@@ -740,6 +747,7 @@ export function animateSoldier(g, dt, o) {
   u.acc += dt;
   if (u.lo && u.acc < 1 / 15) return;
   u.mixer.update(u.acc); u.acc = 0;
+  if (u.bones.head) { u.bones.head.scale.setScalar(PROP.head); u.bones.upperlegl.scale.setScalar(PROP.leg); u.bones.upperlegr.scale.setScalar(PROP.leg); }
   // --- whole-body: yaw lag, lean into turns, a little forward lean when running, sky-dive tilt, landing squash
   u.diveK = ease(u.diveK, o.air === 'fall' ? 1 : 0, 8, dt);
   u.lean = ease(u.lean, moving ? clamp(u.yawRate * 0.05 * Math.min(1, gs / 4), -0.14, 0.14) : 0, 8, dt);

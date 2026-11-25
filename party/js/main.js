@@ -1163,7 +1163,7 @@ function loop(ts) {
   if (G.vehicles?.length) {   // 2026-11 扩图: parked vehicles far in the fog are skipped (26 on the bigger island; most are many-part meshes)
     const vd = { low: 90, mid: 105, high: 180 }[S.quality] || 105, vd2 = vd * vd, cx = camera.position.x, cz = camera.position.z;
     for (const v of G.vehicles) {
-      const dx = v.pos.x - cx, dz = v.pos.z - cz, d2 = dx * dx + dz * dz; v.mesh.visible = !!v.driver || d2 < vd2;
+      const dx = v.pos.x - cx, dz = v.pos.z - cz, d2 = dx * dx + dz * dz; v.mesh.visible = !!v.driver || d2 < vd2; { const dm = v.mesh.userData.drv; if (dm) dm.visible = !!v.driver && v.driver !== G.player && !v.dead; }
       const u = v.mesh.userData; if (u.lo) { const near = !!v.driver || d2 < 1600; u.hi.visible = near; u.lo.visible = !near; }   // simplified Kenney car beyond 40 m
     }
   }
