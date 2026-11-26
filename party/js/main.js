@@ -998,15 +998,19 @@ document.addEventListener('pointerdown', (e) => {
 }, true);
 // ---------------- HUD custom layout ----------------
 let hudSel = null, hudDrag = null, hudReturnSettings = false;
-function hudControls() { return [...document.querySelectorAll('#touch .tb, #touch #joyBase')].filter(e => !['bCar', 'bUp', 'bDown', 'bEject', 'bAuto', 'bRob'].includes(e.id)); }
+// every touch button (including ones added later) is part of the custom layout
+function hudControls() { return [...document.querySelectorAll('#touch .tb, #touch #joyBase')]; }
 function normControl(el) {
   const cs = getComputedStyle(el), l = parseFloat(cs.left), t = parseFloat(cs.top);
   el.style.left = (isFinite(l) ? l : 0) + 'px'; el.style.top = (isFinite(t) ? t : 0) + 'px';
   el.style.right = ''; el.style.bottom = '';
 }
+// situational buttons (vehicle / job only) share spots with on-foot buttons; while editing, park untouched ones in a free row
+const HUD_CTX = ['bCar', 'bAuto', 'bRob', 'bUp', 'bDown', 'bEject'];
 function normalizeAll() {
-  const [W, H] = viewSize();
+  const [W, H] = viewSize(); let ci = 0;
   for (const el of hudControls()) {
+    if (HUD_CTX.includes(el.id) && !HUDL[el.id]) { const w = Math.max(el.offsetWidth || 0, 72); el.style.left = (W * 0.2 + ci) + 'px'; el.style.top = (H * 0.46) + 'px'; el.style.right = el.style.bottom = ''; ci += w + 14; continue; }
     if (el.id === 'joyBase' && !HUDL.joyBase && !el.style.left) { el.style.left = (W * 0.18) + 'px'; el.style.top = (H * 0.72) + 'px'; }
     normControl(el);
   }
@@ -1047,7 +1051,7 @@ function exitHudEdit(saved) {
   hudEdit = false; hudDrag = null; hudSel = null;
   document.body.classList.remove('hudEdit');
   $('hudEditBar').classList.add('hidden');
-  for (const el of hudControls()) el.classList.remove('sel', 'pressed');
+  for (const el of hudControls()) { el.classList.remove('sel', 'pressed'); delete el.dataset.touched; }
   if (saved) applyHudLayout();
   else {
     for (const el of hudControls()) { el.style.left = el.style.top = el.style.right = el.style.bottom = el.style.transform = el.style.opacity = ''; }
@@ -1059,13 +1063,14 @@ function exitHudEdit(saved) {
 }
 function resetHudLayout() {
   HUDL = {}; try { localStorage.removeItem('party_hud_layout'); } catch (e) {}
-  for (const el of hudControls()) { el.style.left = el.style.top = el.style.right = el.style.bottom = el.style.transform = el.style.opacity = ''; }
+  for (const el of hudControls()) { delete el.dataset.touched; el.style.left = el.style.top = el.style.right = el.style.bottom = el.style.transform = el.style.opacity = ''; }
   hudSel = null; normalizeAll(); updateHudEditSel();
 }
 function saveHudLayout() {
   const [W, H] = viewSize(), out = {};
   for (const el of hudControls()) {
     const l = parseFloat(el.style.left), t = parseFloat(el.style.top); if (!isFinite(l) || !isFinite(t)) continue;
+    if (HUD_CTX.includes(el.id) && !HUDL[el.id] && !el.dataset.touched) { el.style.left = el.style.top = el.style.transform = el.style.opacity = ''; continue; }
     const m = el.style.transform.match(/scale\(([\d.]+)\)/); const sc = m ? +m[1] : 1;
     const op = el.style.opacity ? +el.style.opacity : (el.id === 'joyBase' ? 0.55 : 1);
     out[el.id] = { x: +(l / W * 100).toFixed(2), y: +(t / H * 100).toFixed(2), scale: sc, opacity: op };
@@ -1078,7 +1083,7 @@ touchLayer.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   const el = e.target.closest?.('.tb, #joyBase');
   if (!el) { hudSel = null; updateHudEditSel(); return; }
-  hudSel = el; updateHudEditSel();
+  hudSel = el; el.dataset.touched = '1'; updateHudEditSel();
   const p = gameXY(e.clientX, e.clientY);
   hudDrag = { el, joy: el.id === 'joyBase', sx: p.x, sy: p.y, l: parseFloat(el.style.left) || 0, t: parseFloat(el.style.top) || 0 };
   el.setPointerCapture?.(e.pointerId);

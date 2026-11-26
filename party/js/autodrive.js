@@ -34,6 +34,7 @@ function nearestOnRoads(G, x, z) {
 function lineNodes(G, i) { const L = G.lines[i]; return G.nodes.map((n, k) => [k, n]).filter(([, n]) => L.h ? Math.abs(n.z - L.c) < 0.6 && n.x >= L.a - 4 && n.x <= L.b + 4 : Math.abs(n.x - L.c) < 0.6 && n.z >= L.a - 4 && n.z <= L.b + 4).map(([k]) => k); }
 function route(G, sx, sz, tx, tz) {
   const s = nearestOnRoads(G, sx, sz), t = nearestOnRoads(G, tx, tz);
+  if (!s || !t) return [{ x: tx, z: tz }];
   const pts = [];
   if (s.d > 3) pts.push({ x: s.x, z: s.z, road: 1 });
   if (s.i === t.i) { pts.push({ x: t.x, z: t.z, road: 1 }); }
@@ -60,6 +61,7 @@ const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 export function autoDrive(v, dt, map, vehicles, dest, opt = {}) {
   if (!map.roads?.length) return { thr: 0, st: 0, done: true, msg: '这张地图没有道路' };
   if (GRAPH_ROADS !== map.roads) { GRAPH = buildGraph(map.roads); GRAPH_ROADS = map.roads; }
+  if (!Number.isFinite(v.pos.x) || !Number.isFinite(v.pos.z)) return { thr: 0, st: 0, done: false };
   const A = v.auto || (v.auto = {});
   if (!A.path || Math.hypot(A.dest.x - dest.x, A.dest.z - dest.z) > 15 || (A.repath -= dt) < 0) {
     A.path = route(GRAPH, v.pos.x, v.pos.z, dest.x, dest.z); A.dest = { x: dest.x, z: dest.z }; A.repath = 6; A.wp = 0;
@@ -78,6 +80,23 @@ export function autoDrive(v, dt, map, vehicles, dest, opt = {}) {
     const along = Math.min(ll, Math.max(0, (v.pos.x - pw.x) * ux + (v.pos.z - pw.z) * uz) + 9 + Math.abs(v.speed) * 0.4);
     wx = pw.x + ux * along - uz * 1.7; wz = pw.z + uz * along + ux * 1.7;
   }
+  // bypass: a stopped / slow car sits in our way -> drive to a point beside and past it, then rejoin the lane
+  const Lx = -Math.cos(v.yaw), Lz = Math.sin(v.yaw);                    // left of our heading
+  A.bypT = (A.bypT || 0) - dt; A.badT = (A.badT || 0) - dt;
+  if (!(A.bypT > 0)) {
+    A.byp = null; let blk = null, bd = 6 + Math.abs(v.speed) * 0.9;
+    for (const o of vehicles) { if (o === v || Math.abs(o.speed || 0) > 2.5 || !o.T) continue;
+      const ox = o.pos.x - v.pos.x, oz = o.pos.z - v.pos.z, al = ox * fx + oz * fz, lat = ox * Lx + oz * Lz;
+      if (al > 0 && al < bd && Math.abs(lat) < o.T.wid + v.T.wid + 0.7) { bd = al; blk = { o, lat }; } }
+    if (blk) {
+      const o = blk.o, clear = o.T.wid + v.T.wid + 1.3, eye = { x: v.pos.x, y: 0.9, z: v.pos.z };
+      const cand = [1, -1].map(sd => { const bx = o.pos.x + Lx * sd * clear + fx * (o.T.len + 3), bz = o.pos.z + Lz * sd * clear + fz * (o.T.len + 3), dx = bx - v.pos.x, dz = bz - v.pos.z, dl = Math.hypot(dx, dz) || 1;
+        const free = map.rayWorld(eye, { x: dx / dl, y: 0, z: dz / dl }, dl) >= dl - 0.5; return { sd, bx, bz, free, pref: (sd > 0 ? 0.5 : 0) - sd * blk.lat - (A.badT > 0 && A.bad === sd ? 6 : 0) }; });
+      const pick = cand.filter(c => c.free).sort((a, b) => b.pref - a.pref)[0] || cand.sort((a, b) => b.pref - a.pref)[0];
+      A.byp = { x: pick.bx, z: pick.bz, sd: pick.sd }; A.bypT = 4.5;
+    }
+  }
+  if (A.byp) { const ax = A.byp.x - v.pos.x, az = A.byp.z - v.pos.z; if (Math.hypot(ax, az) < 3 || ax * fx + az * fz < 0) { A.byp = null; A.bypT = 0.4; } else { wx = A.byp.x; wz = A.byp.z; } }
   let want = Math.atan2(-(wx - v.pos.x), -(wz - v.pos.z));
   // next corner: slow down for it
   const nx = P[Math.min(P.length - 1, A.wp + 1)], turnAhead = Math.abs(wrap(Math.atan2(-(nx.x - w.x), -(nx.z - w.z)) - want));
@@ -90,16 +109,17 @@ export function autoDrive(v, dt, map, vehicles, dest, opt = {}) {
   A.pT = (A.pT || 0) - dt;
   if (A.pT <= 0) { A.pT = 0.1; A.pc = probe(0); A.pl = probe(0.2); A.pr = probe(-0.2); }   // 10 Hz is plenty at these speeds
   let avoid = 0; if (A.pc < look * 0.95 || A.pl < look * 0.4 || A.pr < look * 0.4) avoid = (A.pl > A.pr ? 1 : -1) * (1 - Math.min(A.pc, A.pl, A.pr) / look);
-  want += avoid * 0.9;
+  want += avoid * (A.byp ? 0.4 : 0.9);
   const err = wrap(want - v.yaw);
   const cruise = opt.cruise ? Math.min(v.T.max * 0.85, opt.cruise) : Math.min(v.T.max * 0.6, 14);
   let tgt = cruise * (1 - Math.min(0.6, Math.abs(err) * 0.6));
   if (dW < 18 && turnAhead > 0.6) tgt = Math.min(tgt, 7);
-  if (A.pc < look * 0.6) tgt = Math.min(tgt, 3 + A.pc * 0.5);
+  if (A.pc < look * 0.6) tgt = Math.min(tgt, A.byp ? Math.max(4, 3 + A.pc * 0.5) : 3 + A.pc * 0.5);
+  if (A.byp) tgt = Math.min(tgt, 7);
   tgt = Math.min(tgt, 3 + toEnd * 0.6);
   // stuck: barely moving while we want to go -> back up with the wheel turned for a second
-  if (A.rev > 0) { A.rev -= dt; return { thr: -0.8, st: err > 0 ? 1 : -1, done: false }; }
-  if (Math.abs(v.speed) < 0.8 && tgt > 2) { A.stuck = (A.stuck || 0) + dt; if (A.stuck > 1.6) { A.stuck = 0; A.rev = 1.1; A.path = null; } } else A.stuck = 0;
+  if (A.rev > 0) { A.rev -= dt; return { thr: -0.8, st: A.revSd || (err > 0 ? 1 : -1), done: false }; }
+  if (Math.abs(v.speed) < 0.8 && tgt > 2) { A.stuck = (A.stuck || 0) + dt; if (A.stuck > 1.0) { A.stuck = 0; A.rev = 1.1; A.path = null; if (A.byp) { A.bad = A.byp.sd; A.badT = 6; A.revSd = -A.byp.sd; } else A.revSd = 0; A.byp = null; A.bypT = 0; } } else A.stuck = 0;
   const st = Math.max(-1, Math.min(1, -err * 2.2));
   const thr = Math.max(-1, Math.min(1, (tgt - v.speed) / 3));
   return { thr, st, done: false };
