@@ -629,13 +629,13 @@ export function freeKilled(G, t, h) {
 }
 function respawnFree(G, h) {
   const F = G.freeState, p = G.player; if (!p) return;
-  const sp = F?.hospital || { x: 0, z: 0 };
+  const sp = G.g6?.home || F?.hospital || { x: 0, z: 0 };
   p.pos.set(sp.x, 0, sp.z); p.vel.set(0, 0, 0); p.hp = 100; p.alive = true; p.air = null; p.onGround = true;
   p.crouch = false; p.protectUntil = G.now + 2; p.respawnAt = 0;
   $('deathScr')?.classList.add('hidden');
   hideJewel();
   if (F) F.rob = null;
-  h.HUD.centerMsg('在医院醒来 · 存款还在', 1600);
+  h.HUD.centerMsg(G.g6?.home ? '在海景公寓醒来 · 存款还在' : '在医院醒来 · 存款还在', 1600);
 }
 
 export function updateFree(G, dt, h) {

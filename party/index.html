@@ -278,7 +278,7 @@ body.forceLand .wdGrid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr))}
 #gpsTag{display:none;position:fixed;left:50%;transform:translateX(-50%);top:calc(70px + env(safe-area-inset-top));font:800 13px system-ui;color:#fff;background:rgba(20,10,40,.72);border:1px solid #ff2bd6;border-radius:12px;padding:4px 12px;pointer-events:none;z-index:30;white-space:nowrap}
 #lifePhone{position:fixed;right:calc(70px + env(safe-area-inset-right));top:8px;bottom:8px;width:250px;background:#0e0a1c;border:3px solid #2a2440;border-radius:26px;z-index:60;display:flex;flex-direction:column;overflow:hidden;color:#fff;font:13px system-ui;box-shadow:0 6px 30px rgba(0,0,0,.6)}#lifePhone.hidden{display:none}
 .phHead{display:flex;justify-content:space-between;align-items:center;padding:10px 14px 6px;background:linear-gradient(90deg,#ff2bd6,#ff7a1a)}.phHead b{font:900 18px system-ui;letter-spacing:1px}.phClose{background:none;border:0;color:#fff;font-size:18px}
-.phTabs{display:flex}.phTabs button{flex:1;background:#1a1430;color:#bbb;border:0;padding:7px;font:700 13px system-ui}.phTabs button.on{color:#fff;background:#2c2250;box-shadow:inset 0 -2px #ff2bd6}
+.phTabs{display:flex}.phTabs button{flex:1;background:#1a1430;color:#bbb;border:0;padding:7px 1px;font:700 12px system-ui;white-space:nowrap}.phTabs button.on{color:#fff;background:#2c2250;box-shadow:inset 0 -2px #ff2bd6}
 .phBody{flex:1;overflow:auto;padding:6px}.phPost{background:#1a1430;border-radius:10px;padding:7px 9px;margin-bottom:6px}.phPost.cur{border:1px solid #7dff4a}.phPost b{color:#ff8fd8}.phPost small{float:right;color:#888}.phPost p{margin:4px 0}.phPost i{color:#ff6b9a;font-style:normal;font-size:12px}.phPost button{background:#ff2bd6;color:#fff;border:0;border-radius:8px;padding:4px 12px;font-weight:800}.phEmpty{color:#888;text-align:center}
 </style>
 </head>
@@ -330,7 +330,7 @@ body.forceLand .wdGrid{grid-template-columns:repeat(auto-fill,minmax(78px,1fr))}
 </div>
 <div id="centerMsg"></div>
 <div id="newsTick"><span></span></div><div id="gpsTag"></div>
-<div id="lifePhone" class="hidden"><div class="phHead"><b>嗨拍</b><button class="phClose">✕</button></div><div class="phTabs"><button data-t="feed">动态</button><button data-t="jobs">任务</button><button data-t="news">新闻</button></div><div class="phBody"></div></div>
+<div id="lifePhone" class="hidden"><div class="phHead"><b>嗨拍</b><button class="phClose">✕</button></div><div class="phTabs"><button data-t="feed">动态</button><button data-t="jobs">任务</button><button data-t="news">新闻</button><button data-t="trend">热搜</button><button data-t="asset">资产</button></div><div class="phBody"></div></div>
 
 <div id="touch" class="hidden">
   <div id="joyBase" class="hidden"><div id="joyKnob"></div></div>

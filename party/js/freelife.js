@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { spawnVehicles } from './vehicles.js';
 import { routePath } from './autodrive.js';
+import { setupG6, updateG6, cleanupG6, g6Minimap, g6Event, g6PhoneTab, g6PhoneClick, g6StartHeist, g6HeistInfo, g6QuitHeist } from './gta6.js';
 
 const $ = (id) => document.getElementById(id);
 const R = (a, b) => a + Math.random() * (b - a);
@@ -137,11 +138,13 @@ const JOBS = [
   { id: 'deliver', name: '送货', desc: '去取一个包裹，90 秒内送到指定地点', pay: 350 },
   { id: 'jack', name: '偷跑车', desc: '找到标记的跑车，开到船坞车库交货', pay: 900 },
   { id: 'photo', name: '狗仔', desc: '去海滩拍到那位网红，再送到报社', pay: 500 },
+  { id: 'heist', name: '大劫案 · 双人', desc: '和同伙抢椰林储蓄所：踩点、取车、抢钱、甩警察、分赃', pay: 6000 },
 ];
 
 // ---------------- setup / cleanup ----------------
 export function lifeCleanup(G, scene) {
   const L = G.life; if (!L) return;
+  cleanupG6(G, scene);
   for (const b of L.bub) scene.remove(b.sp);
   for (const o of L.objs) scene.remove(o);
   for (const a of L.gators) scene.remove(a.m);
@@ -190,6 +193,7 @@ export function setupLife(G, h, F) {
   bindPhone(G, h);
   post(L, pick(USERS), '欢迎来到这座城市 🌴 今天也是疯狂的一天', true);
   news(L, '本台消息：海滨大道今晚霓虹节，交警提醒注意安全');
+  setupG6(G, h);
 }
 
 // ---------------- feed / news ----------------
@@ -208,6 +212,7 @@ function news(L, text) {
 }
 export function lifeCrime(G, why, n) {
   const L = G.life; if (!L) return;
+  g6Event(G, 'crime', { why, n });
   const pool = CRIME_POST[why] || CRIME_POST.default;
   setTimeout(() => { if (G.life === L) post(L, pick(USERS), pick(pool) + (G.freeMask ? '（戴着面具）' : '')); }, 1500 + Math.random() * 2500);
   const st = G.wanted?.stars || 0;
@@ -216,23 +221,28 @@ export function lifeCrime(G, why, n) {
 
 // ---------------- phone UI ----------------
 function ago(t) { const s = ((Date.now() - t) / 1000) | 0; return s < 60 ? s + ' 秒前' : ((s / 60) | 0) + ' 分钟前'; }
+let G0 = null;
 function renderPhone(L) {
+  const hi = G0 && g6HeistInfo(G0);
   const el = $('lifePhone'); if (!el) return;
   const tab = L.tab || 'feed', body = el.querySelector('.phBody');
   el.querySelectorAll('.phTabs button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
   if (tab === 'feed') body.innerHTML = L.feed.map(p => `<div class="phPost"><b>@${p.user}</b><small>${ago(p.t)}</small><p>${p.text}</p><i>♥ ${p.likes}</i></div>`).join('');
+  else if (g6PhoneTab(G0, tab) != null) body.innerHTML = g6PhoneTab(G0, tab);
   else if (tab === 'news') body.innerHTML = L.news.map(n => `<div class="phPost"><b>城市新闻台</b><p>${n}</p></div>`).join('') || '<p class="phEmpty">暂无新闻</p>';
-  else body.innerHTML = (L.job ? `<div class="phPost cur"><b>进行中：${L.job.def.name}</b><p>${L.job.stageTxt}</p><button data-j="quit">放弃任务</button></div>` : '') +
-    JOBS.map(j => `<div class="phPost"><b>${j.name} · $${j.pay}</b><p>${j.desc}</p>${L.job ? '' : `<button data-j="${j.id}">接任务</button>`}</div>`).join('');
+  else body.innerHTML = (hi ? `<div class="phPost cur"><b>进行中：${hi.name}</b><p>${hi.txt}</p><button data-j="quit">放弃任务</button></div>` : '') + (L.job ? `<div class="phPost cur"><b>进行中：${L.job.def.name}</b><p>${L.job.stageTxt}</p><button data-j="quit">放弃任务</button></div>` : '') +
+    JOBS.map(j => `<div class="phPost"><b>${j.name} · $${j.pay}</b><p>${j.desc}</p>${L.job || hi ? '' : `<button data-j="${j.id}">接任务</button>`}</div>`).join('');
 }
 function bindPhone(G, h) {
+  G0 = G;
   const el = $('lifePhone'); if (!el || el._bound) return; el._bound = true;
   el.addEventListener('click', (e) => {
     e.stopPropagation();
     const L = G.life; if (!L) return;
     const t = e.target.closest('button'); if (!t) return;
+    if (g6PhoneClick(G, h, t)) return;
     if (t.dataset.t) { L.tab = t.dataset.t; renderPhone(L); }
-    else if (t.dataset.j === 'quit') { endJob(G, h, false); renderPhone(L); }
+    else if (t.dataset.j === 'quit') { if (g6HeistInfo(G)) g6QuitHeist(G, h, false); else endJob(G, h, false); renderPhone(L); }
     else if (t.dataset.j) { startJob(G, h, t.dataset.j); el.classList.add('hidden'); }
     else if (t.classList.contains('phClose')) el.classList.add('hidden');
   });
@@ -256,6 +266,8 @@ function setBeam(G, h, pt, col) {
   L.beam.material.color.setHex(col); L.beam.position.set(pt.x, 30, pt.z); L.beam.visible = true;
 }
 function startJob(G, h, id) {
+  if (id === 'heist') { if (!G.life.job) g6StartHeist(G, h); return; }
+  if (g6HeistInfo(G)) return;
   const L = G.life, def = JOBS.find(j => j.id === id), p = G.player.pos;
   const J = L.job = { def, stage: 0, t: 0, stageTxt: '' };
   if (id === 'deliver') { J.a = freeSpot(G, p, 30, 90); J.b = freeSpot(G, J.a, 60, 160); J.tgt = J.a; J.stageTxt = '去取包裹（看 GPS 光柱）'; setBeam(G, h, J.a, 0xffd24a); }
@@ -408,6 +420,7 @@ export function updateLife(G, dt, h) {
   updateHonks(G, dt, h);
   updateGators(G, dt, h);
   updateJob(G, dt, h);
+  updateG6(G, dt, h);
   // radio only plays inside a vehicle
   const car = h.inCar?.(); const rb = $('bRadio'); if (rb) rb.style.display = car ? 'flex' : 'none';
   if (L.station >= 0 && L.ac) { L.rg.gain.value = car ? 0.18 : 0; if (car) radioTick(L); }
@@ -424,10 +437,14 @@ export function updateLife(G, dt, h) {
 export function lifeMinimap(G, ctx, mx, mz) {
   const L = G.life; if (!L) return;
   ctx.save();
+  g6Minimap(G, ctx, mx, mz);
   for (const a of L.gators) if (a.alive) { ctx.fillStyle = '#4a7a2a'; ctx.fillRect(mx(a.m.position.x) - 2, mz(a.m.position.z) - 1, 4, 2); }
-  if (L.job) { const p = G.player.pos, t = L.job.tgt;
+  const hj = g6HeistInfo(G), job = L.job || hj;
+  if (job) { const p = G.player.pos, t = job.tgt;
     if (!L.gps || G.now - L.gps.at > 1 || L.gps.tx !== t.x || L.gps.tz !== t.z) L.gps = { at: G.now, tx: t.x, tz: t.z, pts: routePath(G.map, p.x, p.z, t.x, t.z) };
     ctx.strokeStyle = '#ff2bd6'; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(mx(p.x), mz(p.z)); for (const w of L.gps.pts) ctx.lineTo(mx(w.x), mz(w.z)); ctx.stroke();
     ctx.fillStyle = '#ffd24a'; ctx.beginPath(); ctx.arc(mx(t.x), mz(t.z), 4.5, 0, 7); ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke(); }
   ctx.restore();
 }
+
+export function lifeSay(G, owner, text) { if (G.life) say(G.life, owner, text, 2.2); }
