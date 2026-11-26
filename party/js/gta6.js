@@ -6,6 +6,8 @@
 import * as THREE from 'three';
 import { spawnVehicles } from './vehicles.js';
 import { addCash, refreshWantedHud } from './wanted.js';
+import { createSoldier, animateSoldier } from './critter.js';
+import { FREE_LEADS, freeLeadIdx } from './roster.js';
 
 const $ = (id) => document.getElementById(id);
 const R = (a, b) => a + Math.random() * (b - a);
@@ -36,6 +38,13 @@ function marker(S, scene, x, z, color, text) {
 function setLabel(m, text) { const old = m.sp.material.map; const s = label(text, m.color); m.sp.material.map = s.material.map; m.sp.material.needsUpdate = true; old?.dispose(); }
 function load(key, def) { try { return Object.assign(def, JSON.parse(localStorage.getItem(key) || '{}')); } catch (e) { return def; } }
 function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
+// the partner is the other lead (马科 / 维拉), same rigged model as the player
+function partner() {
+  const lead = FREE_LEADS[1 - freeLeadIdx()];
+  const g = createSoldier('player', { char: lead.char, look: lead.look, hat: 'none' });
+  const gs = new Set(); g.traverse(o => { if (o.isMesh && /Headband/i.test(o.name)) gs.add(o.geometry); }); g.traverse(o => { if (o.isMesh && gs.has(o.geometry)) o.visible = false; });
+  g.userData.leadName = lead.name; return g;
+}
 function boxMan(color) {
   const g = new THREE.Group(), m = (c) => new THREE.MeshLambertMaterial({ color: c });
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.75, 0.32), m(color)); body.position.y = 1.05; g.add(body);
@@ -131,9 +140,9 @@ const HEIST_LINES = ['准备好了吗？', '保安两个，后门在东边', '�
 export function g6StartHeist(G, h) {
   const S = G.g6; if (!S || S.heist) return;
   const scene = h.scene, p = G.player.pos;
-  const buddy = boxMan(0x6a3dc8); buddy.position.set(p.x + 2, 0, p.z + 2); scene.add(buddy); S.objs.push(buddy);
+  let buddy; try { buddy = partner(); } catch (e) { buddy = boxMan(0x6a3dc8); } buddy.position.set(p.x + 2, 0, p.z + 2); scene.add(buddy); S.objs.push(buddy);
   S.heist = { stage: 0, t: 0, hold: 0, buddy, total: 6000, tgt: { x: S.bank.x, z: S.bank.z }, txt: '去椰林储蓄所门口踩点（步行停 4 秒）', sayT: 0 };
-  h.HUD.centerMsg('接到大任务：椰林储蓄所大劫案', 1800);
+  h.HUD.centerMsg(`接到大任务：和${buddy.userData.leadName || '同伙'}一起抢椰林储蓄所`, 1800);
 }
 export function g6HeistInfo(G) { const H = G.g6?.heist; return H ? { name: '储蓄所大劫案', txt: H.txt, tgt: H.tgt } : null; }
 export function g6QuitHeist(G, h, ok) {
@@ -173,7 +182,9 @@ function updateHeist(G, dt, h) {
     const dx = tx - b.position.x, dz = tz - b.position.z, d = Math.hypot(dx, dz);
     if (d > 12) b.position.set(tx, 0, tz);
     else if (d > 0.3) { const s = Math.min(d, 7 * dt) / d; b.position.x += dx * s; b.position.z += dz * s; }
-    b.rotation.y = d > 0.5 ? Math.atan2(dx, dz) : y + Math.PI; const sw = d > 0.5 ? Math.sin(H.t * 10) * 0.5 : 0; b.userData.legs[0].rotation.x = sw; b.userData.legs[1].rotation.x = -sw; }
+    const mv = d > 0.5, fy = mv ? Math.atan2(dx, dz) : y + Math.PI; b.rotation.set(0, fy, 0);
+    if (b.userData.legs) { const sw = mv ? Math.sin(H.t * 10) * 0.5 : 0; b.userData.legs[0].rotation.x = sw; b.userData.legs[1].rotation.x = -sw; }
+    else animateSoldier(b, Math.min(dt, 0.1), { moveX: mv ? Math.sin(fy) : 0, moveZ: mv ? Math.cos(fy) : 0, speed: mv ? Math.min(4.2, d * 3) : 0, yaw: fy, wep: 'none', cheer: false, firing: false, crouch: false, aim: false, pitch: 0, reload: -1, ground: true, vy: 0 }); }
   else b.position.set(car.pos.x, 0, car.pos.z);
   H.sayT -= dt;
   const d = Math.hypot(here.x - H.tgt.x, here.z - H.tgt.z);
