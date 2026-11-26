@@ -323,10 +323,11 @@ function updateTraffic(G, dt, h) {
   for (const v of F.traffic) {
     if (v.dead || !v.civ) continue;
     v.ghostT = Math.max(0, (v.ghostT || 0) - dt);
-    // 'jammed' = has not got 3 m away from where it was 4.5 s ago (catches cars rocking back and forth too)
-    if (!v.jamP || Math.hypot(v.pos.x - v.jamP.x, v.pos.z - v.jamP.z) > 3) { v.jamP = { x: v.pos.x, z: v.pos.z }; v.jamT = 0; } else v.jamT += dt;
-    if (v.jamT > 4.5 && !(v.ghostT > 0)) {
-      v.jamT = 0;
+    // 'jammed' = less than 4 m net progress over a 3.5 s window (catches cars rocking back and forth too)
+    if (!v.jamP) { v.jamP = { x: v.pos.x, z: v.pos.z }; v.jamT = 0; }
+    v.jamT += dt; let jammed = false;
+    if (v.jamT > 3.5) { jammed = Math.hypot(v.pos.x - v.jamP.x, v.pos.z - v.jamP.z) < 4; v.jamP = { x: v.pos.x, z: v.pos.z }; v.jamT = 0; }
+    if (jammed && !(v.ghostT > 0)) {
       if (pp && Math.hypot(v.pos.x - pp.x, v.pos.z - pp.z) > 40) { v.pos.x += 1e4; }   // far from the player: let the hop below move it to a free road
       else { v.ghostT = 2.2; v.civDest = null; resetAuto(v); }
     }
@@ -336,7 +337,7 @@ function updateTraffic(G, dt, h) {
         const sp = roadPoint(G, pp, 60);
         if (Math.hypot(sp.x - pp.x, sp.z - pp.z) > 90) continue;
         if (G.vehicles.some(o => o !== v && Math.hypot(o.pos.x - sp.x, o.pos.z - sp.z) < 6)) continue;
-        v.pos.set(sp.x, 0, sp.z); v.yaw = sp.yaw + (Math.random() < 0.5 ? Math.PI : 0); v.speed = 0; v.civDest = null; resetAuto(v); poseVehicle(v, 0);
+        v.pos.set(sp.x, 0, sp.z); v.yaw = sp.yaw + (Math.random() < 0.5 ? Math.PI : 0); v.speed = 0; v.civDest = null; v.jamP = null; resetAuto(v); poseVehicle(v, 0);
         break;
       }
     }
