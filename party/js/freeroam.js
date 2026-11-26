@@ -318,8 +318,18 @@ function civJack(G, h, v) {
 }
 function updateTraffic(G, dt, h) {
   const F = G.freeState, pp = G.player?.pos; if (!F?.traffic?.length) return;
+  // jam breaker: a civilian car stuck for a while turns 'ghost' for a moment and slips through the other civilian cars
+  const solid = G.vehicles.filter(o => !(o.ghostT > 0)), hard = G.vehicles.filter(o => !o.civ);
   for (const v of F.traffic) {
     if (v.dead || !v.civ) continue;
+    v.ghostT = Math.max(0, (v.ghostT || 0) - dt);
+    // 'jammed' = has not got 3 m away from where it was 4.5 s ago (catches cars rocking back and forth too)
+    if (!v.jamP || Math.hypot(v.pos.x - v.jamP.x, v.pos.z - v.jamP.z) > 3) { v.jamP = { x: v.pos.x, z: v.pos.z }; v.jamT = 0; } else v.jamT += dt;
+    if (v.jamT > 4.5 && !(v.ghostT > 0)) {
+      v.jamT = 0;
+      if (pp && Math.hypot(v.pos.x - pp.x, v.pos.z - pp.z) > 40) { v.pos.x += 1e4; }   // far from the player: let the hop below move it to a free road
+      else { v.ghostT = 2.2; v.civDest = null; resetAuto(v); }
+    }
     // keep the streets busy: far-away cars hop to a road 60-90 m from the player, out of sight
     if (pp && Math.hypot(v.pos.x - pp.x, v.pos.z - pp.z) > 120) {
       for (let t = 0; t < 12; t++) {
@@ -331,7 +341,7 @@ function updateTraffic(G, dt, h) {
       }
     }
     if (!v.civDest || Math.hypot(v.civDest.x - v.pos.x, v.civDest.z - v.pos.z) < 14) { const sp = roadPoint(G, v.pos, 50); v.civDest = { x: sp.x, z: sp.z }; }
-    const r = autoDrive(v, dt, G.map, G.vehicles, v.civDest, { cruise: 9, arrive: 10 });
+    const r = autoDrive(v, dt, G.map, v.ghostT > 0 ? hard : solid, v.civDest, { cruise: 9, arrive: 10 });
     let thr = r.thr;
     // brake for people in front (pedestrians and the player on foot)
     const fx = -Math.sin(v.yaw), fz = -Math.cos(v.yaw), reach = v.T.len + 4;
@@ -339,7 +349,7 @@ function updateTraffic(G, dt, h) {
     let stop = pp && !h.inCar?.() && G.player.alive && blocked(pp.x, pp.z);
     if (!stop) for (const q of F.peds) if (q.alive && blocked(q.pos.x, q.pos.z)) { stop = true; break; }
     if (stop) { thr = v.speed > 0.3 ? -1 : 0; if (!v.honkT || G.now > v.honkT) { v.honkT = G.now + 3; } }
-    driveVehicle(v, dt, thr, r.st, G.map, G.vehicles);
+    driveVehicle(v, dt, thr, r.st, G.map, v.ghostT > 0 ? hard : solid);
     poseVehicle(v, dt);
     // cars that are not stopped still hurt careless pedestrians
     if (Math.abs(v.speed) > 5) for (const q of F.peds) if (q.alive && inFootprint(v, q.pos.x, q.pos.z, 0.3)) { q.alive = false; q.deadT = 20; scare(G, q.pos, 18); }

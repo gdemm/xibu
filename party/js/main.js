@@ -494,9 +494,9 @@ function updateDriving(dt) {
   // 自动驾驶: any manual throttle / steering takes the wheel back
   if (P.auto) {
     if (Math.abs(thr) > 0.15 || Math.abs(st) > 0.1 || v.T.fly) setAuto(false, '已切换手动驾驶');
-    else if (G.free && G.life?.job) { const t = G.life.job.tgt; const r = autoDrive(v, dt, G.map, G.vehicles, { x: t.x, z: t.z }, { arrive: 4, arriveMsg: '已到达任务点' }); thr = r.thr; st = r.st; if (r.done && !G.life.job) setAuto(false, r.msg); else if (r.done) { thr = 0; st = 0; } }
+    else if (G.free && G.life?.job) { const t = G.life.job.tgt; const r = autoDrive(v, dt, G.map, G.vehicles, { x: t.x, z: t.z }, { arrive: 4, arriveMsg: '已到达任务点', eager: true }); thr = r.thr; st = r.st; if (r.done && !G.life.job) setAuto(false, r.msg); else if (r.done) { thr = 0; st = 0; } }
     else { const B = G.br, z = B ? (B.next && B.stage !== 'final' ? B.next.c : B.c) : null;
-      if (!z) setAuto(false); else { const r = autoDrive(v, dt, G.map, G.vehicles, { x: z.x, z: z.y }); thr = r.thr; st = r.st; if (r.done) setAuto(false, r.msg); } }
+      if (!z) setAuto(false); else { const r = autoDrive(v, dt, G.map, G.vehicles, { x: z.x, z: z.y }, { eager: true }); thr = r.thr; st = r.st; if (r.done) setAuto(false, r.msg); } }
   }
   const prevYaw = v.yaw;
   const lift = (P.liftUp || P.keys.Space ? 1 : 0) - (P.liftDown || P.keys.KeyC ? 1 : 0);

@@ -62,6 +62,7 @@ export function autoDrive(v, dt, map, vehicles, dest, opt = {}) {
   if (!map.roads?.length) return { thr: 0, st: 0, done: true, msg: '这张地图没有道路' };
   if (GRAPH_ROADS !== map.roads) { GRAPH = buildGraph(map.roads); GRAPH_ROADS = map.roads; }
   if (!Number.isFinite(v.pos.x) || !Number.isFinite(v.pos.z)) return { thr: 0, st: 0, done: false };
+  v.stillT = Math.abs(v.speed) < 0.5 ? (v.stillT || 0) + dt : 0;
   const A = v.auto || (v.auto = {});
   if (!A.path || Math.hypot(A.dest.x - dest.x, A.dest.z - dest.z) > 15 || (A.repath -= dt) < 0) {
     A.path = route(GRAPH, v.pos.x, v.pos.z, dest.x, dest.z); A.dest = { x: dest.x, z: dest.z }; A.repath = 6; A.wp = 0;
@@ -86,6 +87,7 @@ export function autoDrive(v, dt, map, vehicles, dest, opt = {}) {
   if (!(A.bypT > 0)) {
     A.byp = null; let blk = null, bd = 6 + Math.abs(v.speed) * 0.9;
     for (const o of vehicles) { if (o === v || Math.abs(o.speed || 0) > 2.5 || !o.T) continue;
+      if (!opt.eager && o.civ && !((o.stillT || 0) > 2.5)) continue;   // traffic queues behind cars that only paused; it overtakes cars that stay stopped
       const ox = o.pos.x - v.pos.x, oz = o.pos.z - v.pos.z, al = ox * fx + oz * fz, lat = ox * Lx + oz * Lz;
       if (al > 0 && al < bd && Math.abs(lat) < o.T.wid + v.T.wid + 0.7) { bd = al; blk = { o, lat }; } }
     if (blk) {

@@ -151,7 +151,7 @@ export function updateWanted(G, dt, h) {
       if (dd < 9) { if (!W.searchPt || G.now > (W.searchT || 0)) { W.searchT = G.now + 7; const a = Math.random() * 6.28, r = 10 + Math.random() * 18; W.searchPt = { x: dest.x + Math.cos(a) * r, z: dest.z + Math.sin(a) * r }; } dest = W.searchPt; }
     }
     let thr = 0, st = 0;
-    if (d > 16 || !v.cop.los) { const r = autoDrive(v, dt, G.map, G.vehicles, dest, { cruise: (v.cop.los ? 15 : 11) + W.stars * 2, arrive: 8 }); thr = r.thr; st = r.st; }
+    if (d > 16 || !v.cop.los) { const r = autoDrive(v, dt, G.map, G.vehicles, dest, { cruise: (v.cop.los ? 15 : 11) + W.stars * 2, arrive: 8, eager: true }); thr = r.thr; st = r.st; }
     else thr = v.speed > 0.5 ? -1 : 0;
     const hit = driveVehicle(v, dt, thr, st, G.map, G.vehicles);
     if (hit > 8 && h.inCar() && Math.hypot(h.inCar().pos.x - v.pos.x, h.inCar().pos.z - v.pos.z) < 7) h.damage(p, hit * 0.8, COP, { name: '警车撞击' }, false, true);
